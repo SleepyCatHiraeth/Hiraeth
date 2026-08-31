@@ -992,6 +992,17 @@ Item {
                             Layout.bottomMargin: -4
                         }
 
+                        ToggleRow {
+                            label: "Enabled"
+                            checked: Config.notch.enabled ?? true
+                            onToggled: value => {
+                                if (value !== Config.notch.enabled) {
+                                    GlobalStates.markShellChanged();
+                                    Config.notch.enabled = value;
+                                }
+                            }
+                        }
+
                         SelectorRow {
                             label: ""
                             options: [
@@ -1062,12 +1073,23 @@ Item {
                         }
 
                         ToggleRow {
-                            label: "Disable Hover Expansion"
-                            checked: Config.notch.disableHoverExpansion ?? true
+                            label: "Auto-hide When Windows Are Present"
+                            checked: Config.notch.autoHideWithWindows ?? false
                             onToggled: value => {
-                                if (value !== Config.notch.disableHoverExpansion) {
+                                if (value !== Config.notch.autoHideWithWindows) {
                                     GlobalStates.markShellChanged();
-                                    Config.notch.disableHoverExpansion = value;
+                                    Config.notch.autoHideWithWindows = value;
+                                }
+                            }
+                        }
+
+                        ToggleRow {
+                            label: "Expand Dashboard on Hover"
+                            checked: Config.notch.hoverToDashboard ?? true
+                            onToggled: value => {
+                                if (value !== Config.notch.hoverToDashboard) {
+                                    GlobalStates.markShellChanged();
+                                    Config.notch.hoverToDashboard = value;
                                 }
                             }
                         }

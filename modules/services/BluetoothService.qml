@@ -32,7 +32,6 @@ Singleton {
             if (discovering) {
                 root.stopDiscovery();
             }
-            scanTimer.stop();
             infoQueueTimer.stop();
         }
         function onWakingUp() {
@@ -166,8 +165,9 @@ Singleton {
     function startDiscovery(): void {
         if (enabled && !SuspendManager.isSuspending) {
             discovering = true;
-            runAsync(["bluetoothctl", "scan", "on"]).then(() => {
-                scanTimer.restart();
+            runAsync(["bluetoothctl", "--timeout", "15", "scan", "on"]).then(() => {
+                discovering = false;
+                updateDevices();
             }).catch(e => {
                 discovering = false;
             });
@@ -176,9 +176,7 @@ Singleton {
 
     function stopDiscovery(): void {
         discovering = false;
-        runAsync(["bluetoothctl", "scan", "off"]).then(() => {
-            scanTimer.stop();
-        }).catch(e => {});
+        runAsync(["bluetoothctl", "scan", "off"]).catch(e => {});
     }
 
     function connectDevice(address: string): void {
@@ -250,14 +248,6 @@ Singleton {
         running: root.enabled && !SuspendManager.isSuspending && (GlobalStates.dashboardOpen || GlobalStates.launcherOpen || GlobalStates.overviewOpen)
         repeat: true
         onTriggered: root.updateDevices()
-    }
-
-    Timer {
-        id: scanTimer
-        interval: 15000
-        running: false
-        repeat: false
-        onTriggered: root.stopDiscovery()
     }
 
     // Processes

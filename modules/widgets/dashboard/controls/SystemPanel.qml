@@ -720,6 +720,19 @@ Item {
                                     }
                                 }
 
+                                ToggleRow {
+                                    label: "Enabled"
+                                    checked: modelData.enabled !== false
+                                    onToggled: val => {
+                                        var list = [];
+                                        for (var i = 0; i < Config.system.idle.listeners.length; i++)
+                                            list.push(Config.system.idle.listeners[i]);
+                                        list[index].enabled = val;
+                                        Config.system.idle.listeners = list;
+                                        GlobalStates.markShellChanged();
+                                    }
+                                }
+
                                 NumberInputRow {
                                     label: "Timeout (s)"
                                     value: modelData.timeout || 0
@@ -789,6 +802,7 @@ Item {
                                             list.push(Config.system.idle.listeners[i]);
                                     }
                                     list.push({
+                                        "enabled": true,
                                         "timeout": 60,
                                         "onTimeout": "",
                                         "onResume": ""

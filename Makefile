@@ -6,8 +6,9 @@ BACKEND_DIR := backend
 
 GO ?= go
 GOFLAGS ?=
+QMLLINT ?= $(shell command -v qmllint 2>/dev/null || command -v /usr/lib/qt6/bin/qmllint 2>/dev/null)
 
-.PHONY: all build vet lint run nix clean dev install
+.PHONY: all build vet qml-lint lint run nix clean dev install
 
 all: build
 
@@ -20,8 +21,13 @@ build:
 vet:
 	@cd $(BACKEND_DIR) && $(GO) vet ./...
 
-## lint: go vet + QML lint (best effort)
-lint: vet
+## qml-lint: statically check the shell's QML
+qml-lint:
+	@test -n "$(QMLLINT)" || { echo "qmllint not found (install Qt Declarative tooling)" >&2; exit 1; }
+	@find config modules -name '*.qml' -type f -print0 | xargs -0 "$(QMLLINT)" shell.qml
+
+## lint: run Go and QML static checks
+lint: vet qml-lint
 
 ## run: build and launch the shell (the ambxst binary itself is the
 ##       daemon; it supervises Quickshell, axctl and wl-paste children)

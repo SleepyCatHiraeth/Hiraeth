@@ -39,6 +39,8 @@ PanelWindow {
     property string currentScreenName: wallpaper.screen ? wallpaper.screen.name : ""
     property alias tintEnabled: wallpaperAdapter.tintEnabled
     property int thumbnailsVersion: 0
+    property bool matugenWaitingForVideoFrame: false
+    property string lockscreenFrameInProgress: ""
 
     // QUICKSHELL-GIT: property string mpvShaderDir: Quickshell.cacheDir + "/mpv_shaders_" + (currentScreenName ? currentScreenName : "ALL")
     property string mpvShaderDir: Quickshell.env("HOME") + "/.cache/ambxst/mpv_shaders_" + (currentScreenName ? currentScreenName : "ALL")
@@ -177,9 +179,9 @@ PanelWindow {
     function getColorSource(filePath) {
         var fileType = getFileType(filePath);
 
-        // Para generación de colores: solo videos usan thumbnails
+        // Video colors use the same extracted frame as the lockscreen.
         if (fileType === 'video') {
-            return getThumbnailPath(filePath);
+            return getLockscreenFramePath(filePath);
         }
 
         // Imágenes y GIFs usan el archivo original para colores
@@ -215,12 +217,16 @@ PanelWindow {
             return;
         }
 
+        if (lockscreenWallpaperScript.running && lockscreenFrameInProgress === filePath)
+            return;
+
         console.log("Generating lockscreen frame for:", filePath);
 
         // QUICKSHELL-GIT: var dataPath = Quickshell.cacheDir;
         var dataPath = Quickshell.env("HOME") + "/.cache/ambxst";
 
         lockscreenWallpaperScript.command = ["ambxst", "lockwall", filePath, dataPath];
+        lockscreenFrameInProgress = filePath;
 
         lockscreenWallpaperScript.running = true;
     }
@@ -297,19 +303,11 @@ PanelWindow {
                 perScreen[targetScreen] = path;
                 wallpaperConfig.adapter.perScreenWallpapers = perScreen;
                 
-                // If this targetScreen is the primary screen, it must update currentWall
-                // because currentWall is exactly the primary monitor fallback.
-                let isPrimary = false;
-                if (GlobalStates.wallpaperManager && GlobalStates.wallpaperManager.screen) {
-                    isPrimary = (targetScreen === GlobalStates.wallpaperManager.screen.name);
-                }
-
-                if (isPrimary || !wallpaperConfig.adapter.currentWall) {
-                    currentIndex = pathIndex;
-                    wallpaperConfig.adapter.currentWall = path;
-                    currentWallpaper = path;
-                    runMatugenForCurrentWallpaper();
-                }
+                // The most recently selected wallpaper drives the global palette.
+                currentIndex = pathIndex;
+                wallpaperConfig.adapter.currentWall = path;
+                currentWallpaper = path;
+                runMatugenForCurrentWallpaper();
             } else {
                 // Global fallback target
                 currentIndex = pathIndex;
@@ -400,7 +398,7 @@ PanelWindow {
     // property string mpvSocket: "/tmp/ambxst_mpv_socket"
     property string mpvSocket: "/tmp/ambxst_mpv_socket_" + (currentScreenName ? currentScreenName : "ALL")
 
-    function runMatugenForCurrentWallpaper() {
+    function runMatugenForCurrentWallpaper(videoFrameReady = false) {
         if (activeColorPreset) {
             console.log("Skipping Matugen because color preset is active:", activeColorPreset);
             return;
@@ -413,6 +411,12 @@ PanelWindow {
             var matugenSource = getColorSource(currentWallpaper);
 
             console.log("Using source for matugen:", matugenSource, "(type:", fileType + ")");
+
+            if (fileType === "video" && !videoFrameReady) {
+                matugenWaitingForVideoFrame = true;
+                generateLockscreenFrame(currentWallpaper);
+                return;
+            }
 
             // Stop existing processes if running to prioritize new request
             if (matugenProcessWithConfig.running) {
@@ -876,6 +880,7 @@ PanelWindow {
         }
 
         onExited: function (exitCode) {
+            lockscreenFrameInProgress = "";
             if (exitCode === 0) {
                 console.log("✅ Video thumbnails generated successfully");
                 thumbnailsVersion++;
@@ -917,7 +922,12 @@ PanelWindow {
         onExited: function (exitCode) {
             if (exitCode === 0) {
                 console.log("✅ Lockscreen wallpaper ready");
+                if (matugenWaitingForVideoFrame) {
+                    matugenWaitingForVideoFrame = false;
+                    runMatugenForCurrentWallpaper(true);
+                }
             } else {
+                matugenWaitingForVideoFrame = false;
                 console.warn("⚠️ Lockscreen wallpaper generation failed with code:", exitCode);
             }
         }

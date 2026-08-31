@@ -26,7 +26,14 @@ Singleton {
                 const path = text.trim();
                 if (path) {
                     console.log("Selected icon:", path);
-                    copyIconProcess.command = ["cp", path, Quickshell.env("HOME") + "/.face.icon"];
+                    copyIconProcess.command = ["sh", "-c", `
+                        set -eu
+                        cache="$HOME/.cache/ambxst/sddm-face.png"
+                        [ "$1" = "$HOME/.face.icon" ] || cp -- "$1" "$HOME/.face.icon"
+                        mkdir -p "$HOME/.cache/ambxst"
+                        magick "$1" -auto-orient -thumbnail '256x256^' -gravity center -extent 256x256 "$cache"
+                        busctl call org.freedesktop.Accounts "/org/freedesktop/Accounts/User$(id -u)" org.freedesktop.Accounts.User SetIconFile s "$cache"
+                    `, "ambxst-avatar", path];
                     copyIconProcess.running = true;
                 }
             }
@@ -222,7 +229,7 @@ Singleton {
     }
 
     readonly property var _simpleThemeProps: [
-        "roundness", "oledMode", "lightMode", "font", "fontSize", "monoFont", "monoFontSize",
+        "roundness", "oledMode", "lightMode", "font", "fontSize", "monoFont", "monoFontSize", "cursorTheme",
         "tintIcons", "enableCorners", "animDuration",
         "shadowOpacity", "shadowColor", "shadowXOffset", "shadowYOffset", "shadowBlur"
     ]
@@ -358,7 +365,7 @@ Singleton {
     // Shell config sections and their properties
     readonly property var _shellSections: {
         "bar": ["position", "launcherIcon", "launcherIconTint", "launcherIconFullTint", "launcherIconSize", "enableFirefoxPlayer", "screenList", "frameEnabled", "frameThickness", "pinnedOnStartup", "hoverToReveal", "hoverRegionHeight", "showPinButton", "availableOnFullscreen", "pillStyle", "use12hFormat", "containBar", "keepBarShadow", "keepBarBorder"],
-        "notch": ["theme", "position", "hoverRegionHeight", "keepHidden"],
+        "notch": ["enabled", "theme", "position", "hoverRegionHeight", "keepHidden", "autoHideWithWindows", "hoverToDashboard"],
         "workspaces": ["shown", "showAppIcons", "alwaysShowNumbers", "showNumbers", "dynamic"],
         "overview": ["rows", "columns", "scale", "workspaceSpacing"],
         "dock": ["enabled", "theme", "position", "height", "iconSize", "spacing", "margin", "hoverRegionHeight", "pinnedOnStartup", "hoverToReveal", "availableOnFullscreen", "showRunningIndicators", "showPinButton", "showOverviewButton", "screenList", "keepHidden"],

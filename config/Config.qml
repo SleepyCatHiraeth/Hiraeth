@@ -140,6 +140,7 @@ Singleton {
             property int fontSize: 14
             property string monoFont: "Iosevka Nerd Font Mono"
             property int monoFontSize: 14
+            property string cursorTheme: "Numix-Cursor"
             property bool tintIcons: false
             property bool enableCorners: true
             property int animDuration: 300
@@ -672,13 +673,15 @@ Singleton {
         }
 
         adapter: JsonAdapter {
+            property bool enabled: true
             property string theme: "default"
             property string position: "top"
             property int hoverRegionHeight: 8
             property bool keepHidden: false
+            property bool autoHideWithWindows: false
             property string noMediaDisplay: "userHost"
             property string customText: "Ambxst"
-            property bool disableHoverExpansion: true
+            property bool hoverToDashboard: true
         }
     }
 
@@ -1015,20 +1018,24 @@ Singleton {
                 }
                 property list<var> listeners: [
                     {
+                        "enabled": true,
                         "timeout": 150,
                         "onTimeout": "ambxst brightness 10 -s",
                         "onResume": "ambxst brightness -r"
                     },
                     {
+                        "enabled": true,
                         "timeout": 300,
                         "onTimeout": "loginctl lock-session"
                     },
                     {
+                        "enabled": true,
                         "timeout": 330,
                         "onTimeout": "ambxst screen off",
                         "onResume": "ambxst screen on"
                     },
                     {
+                        "enabled": true,
                         "timeout": 1800,
                         "onTimeout": "ambxst suspend"
                     }

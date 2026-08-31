@@ -257,6 +257,76 @@ Item {
                             text: "Colors"
                             sectionId: "colors"
                         }
+                        SectionButton {
+                            text: "Cursor"
+                            sectionId: "cursor"
+                        }
+                    }
+
+                    // Cursor section
+                    Item {
+                        visible: root.currentSection === "cursor"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: cursorContent.implicitHeight
+
+                        ColumnLayout {
+                            id: cursorContent
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            spacing: 8
+
+                            Text {
+                                text: "Cursor Theme"
+                                font.family: Config.theme.font
+                                font.pixelSize: Styling.fontSize(-1)
+                                font.weight: Font.Medium
+                                color: Colors.overSurfaceVariant
+                                Layout.bottomMargin: -4
+                            }
+
+                            Repeater {
+                                model: ["Numix-Cursor", "Numix-Cursor-Light"]
+
+                                delegate: StyledRect {
+                                    id: cursorButton
+                                    required property string modelData
+
+                                    property bool isSelected: Config.theme.cursorTheme === modelData
+                                    property bool isHovered: false
+
+                                    variant: isSelected ? "primary" : (isHovered ? "focus" : "pane")
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 48
+                                    radius: Styling.radius(0)
+
+                                    Text {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 16
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: cursorButton.modelData
+                                        font.family: Config.theme.font
+                                        font.pixelSize: Styling.fontSize(0)
+                                        font.bold: cursorButton.isSelected
+                                        color: cursorButton.item
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onEntered: cursorButton.isHovered = true
+                                        onExited: cursorButton.isHovered = false
+                                        onClicked: {
+                                            if (!cursorButton.isSelected) {
+                                                GlobalStates.markThemeChanged();
+                                                Config.theme.cursorTheme = cursorButton.modelData;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // General section

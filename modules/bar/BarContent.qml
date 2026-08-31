@@ -27,6 +27,13 @@ Item {
 
     property string barPosition: (Config.bar && Config.bar.position !== undefined && ["top", "bottom", "left", "right"].includes(Config.bar.position) ? Config.bar.position : "top")
     property string orientation: barPosition === "left" || barPosition === "right" ? "vertical" : "horizontal"
+    property var barPluginModel: PluginService.barPlugins
+
+    Connections {
+        target: PluginService
+        function onPluginsAboutToChange() { root.barPluginModel = []; }
+        function onBarPluginsChanged() { root.barPluginModel = PluginService.barPlugins; }
+    }
 
     // Auto-hide properties
     onPinnedChanged: {
@@ -544,6 +551,18 @@ Item {
                             endRadius: root.innerRadius
                         }
 
+                        Repeater {
+                            model: root.barPluginModel
+                            delegate: Loader {
+                                required property var modelData
+                                Component.onCompleted: setSource(modelData.component, {
+                                    orientation: root.orientation,
+                                    screen: root.screen,
+                                    pluginService: PluginService
+                                })
+                            }
+                        }
+
                         PowerButton {
                             id: powerButton
                             startRadius: root.innerRadius
@@ -590,6 +609,19 @@ Item {
                             endRadius: root.outerRadius
                             vertical: true
                             enableShadow: root.shadowsEnabled
+                        }
+
+                        Repeater {
+                            model: root.barPluginModel
+                            delegate: Loader {
+                                required property var modelData
+                                Layout.alignment: Qt.AlignHCenter
+                                Component.onCompleted: setSource(modelData.component, {
+                                    orientation: root.orientation,
+                                    screen: root.screen,
+                                    pluginService: PluginService
+                                })
+                            }
                         }
 
                         // Center Group Container

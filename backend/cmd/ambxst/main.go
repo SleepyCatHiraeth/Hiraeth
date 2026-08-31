@@ -233,7 +233,7 @@ func runShell() {
 	}
 
 	runDetached("pkill -f 'dunst|mako|swaync'")
-	runDetached("pkill -f 'easyeffects.*gapplication-service' ; nohup easyeffects --gapplication-service >/dev/null 2>&1 &")
+	exec.Command("easyeffects", "--gapplication-service").Start()
 
 	if iconTheme, err := exec.Command("gsettings", "get", "org.gnome.desktop.interface", "icon-theme").Output(); err == nil {
 		os.Setenv("QS_ICON_THEME", strings.Trim(strings.TrimSpace(string(iconTheme)), "'"))

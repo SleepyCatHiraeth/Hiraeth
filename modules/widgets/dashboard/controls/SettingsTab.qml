@@ -259,6 +259,12 @@ Rectangle {
             label: "Ambxst",
             section: 9,
             isIcon: false
+        },
+        {
+            icon: Icons.apps,
+            label: "Plugins",
+            section: 10,
+            isIcon: true
         }
     ]
 
@@ -595,6 +601,10 @@ Rectangle {
                 {
                     component: "ShellPanel.qml",
                     section: 9
+                },
+                {
+                    component: "PluginsPanel.qml",
+                    section: 10
                 }
             ]
 

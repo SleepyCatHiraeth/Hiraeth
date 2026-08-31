@@ -11,20 +11,24 @@ var data = {
         },
         "listeners": [
             {
+                "enabled": true,
                 "timeout": 150,
                 "onTimeout": "ambxst brightness 10 -s",
                 "onResume": "ambxst brightness -r"
             },
             {
+                "enabled": true,
                 "timeout": 300,
                 "onTimeout": "loginctl lock-session"
             },
             {
+                "enabled": true,
                 "timeout": 330,
                 "onTimeout": "ambxst screen off",
                 "onResume": "ambxst screen on"
             },
             {
+                "enabled": true,
                 "timeout": 1800,
                 "onTimeout": "ambxst suspend"
             }

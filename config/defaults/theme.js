@@ -8,6 +8,7 @@ var data = {
     "fontSize": 14,
     "monoFont": "Iosevka Nerd Font Mono",
     "monoFontSize": 14,
+    "cursorTheme": "Numix-Cursor",
     "tintIcons": false,
     "enableCorners": true,
     "animDuration": 300,

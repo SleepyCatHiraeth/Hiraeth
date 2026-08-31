@@ -23,12 +23,18 @@ NotchAnimationBehavior {
         property int currentTab: GlobalStates.dashboardCurrentTab
     }
 
-    readonly property var tabModel: [Icons.widgets, Icons.wallpapers, Icons.heartbeat]
+    readonly property var builtInTabs: [
+        { id: "widgets", icon: Icons.widgets, component: unifiedLauncherComponent },
+        { id: "wallpapers", icon: Icons.wallpapers, component: wallpapersComponent },
+        { id: "metrics", icon: Icons.heartbeat, component: metricsComponent }
+    ]
+    property var pluginTabs: PluginService.dashboardPlugins
+    readonly property var tabModel: builtInTabs.concat(pluginTabs)
     readonly property int tabCount: tabModel.length
     readonly property int tabSpacing: 8
 
     readonly property int tabWidth: 48
-    readonly property real nonAnimWidth: (state.currentTab === 0 ? 600 : 400) + tabWidth + 16 // unified launcher tab is wider
+    readonly property real nonAnimWidth: (state.currentTab === 0 ? 600 : 400) + tabWidth + 16 // plugin tabs use the fixed 400px content width
 
     implicitWidth: nonAnimWidth
     implicitHeight: 430
@@ -151,6 +157,23 @@ NotchAnimationBehavior {
         }
     }
 
+    Connections {
+        target: PluginService
+
+        function onPluginsAboutToChange() {
+            root.pluginTabs = [];
+        }
+
+        function onDashboardPluginsChanged() {
+            root.pluginTabs = PluginService.dashboardPlugins;
+            if (GlobalStates.dashboardCurrentTab >= root.builtInTabs.length) {
+                GlobalStates.dashboardCurrentTab = 0;
+                root.state.currentTab = 0;
+                root.updateLRUAccess(0);
+            }
+        }
+    }
+
     Row {
         id: mainLayout
         anchors.fill: parent
@@ -200,12 +223,7 @@ NotchAnimationBehavior {
 
                 // Calcular posición Y para un índice dado
                 function getYForIndex(idx) {
-                    if (idx <= 2) {
-                        return idx * (width + root.tabSpacing);
-                    } else {
-                        // Controls button at the bottom
-                        return controlsButtonContainer.y;
-                    }
+                    return idx * (width + root.tabSpacing);
                 }
 
                 property real targetY1: getYForIndex(idx1)
@@ -249,9 +267,9 @@ NotchAnimationBehavior {
 
                     Button {
                         required property int index
-                        required property string modelData
+                        required property var modelData
 
-                        text: modelData
+                        text: modelData.icon
                         flat: true
                         width: tabsContainer.width
                         height: width
@@ -401,20 +419,24 @@ NotchAnimationBehavior {
 
                 // Generic Tab Loader Component
                 component TabLoader : Loader {
+                    required property int tabIndex
+                    required property var descriptor
                     anchors.fill: parent
+                    source: typeof descriptor.component === "string" ? descriptor.component : ""
+                    sourceComponent: typeof descriptor.component === "string" ? null : descriptor.component
                     // Load based on LRU strategy or if currently active.
                     // When the dashboard closes (isVisible false) tabs are
                     // unloaded so their image caches / GL pools are released;
                     // currentTab alone must NOT keep heavy tabs resident.
-                    active: root.shouldTabBeLoaded(index)
+                    active: root.shouldTabBeLoaded(tabIndex)
                     
                     // Visibility handles the "switching"
-                    visible: root.state.currentTab === index
+                    visible: root.state.currentTab === tabIndex
                     
                     // Transitions
                     opacity: visible ? 1 : 0
                     transform: Translate {
-                        y: visible ? 0 : (root.state.currentTab > index ? -20 : 20)
+                        y: visible ? 0 : (root.state.currentTab > tabIndex ? -20 : 20)
                         Behavior on y {
                              enabled: Config.animDuration > 0
                              NumberAnimation { duration: Config.animDuration; easing.type: Easing.OutQuart } 
@@ -441,35 +463,22 @@ NotchAnimationBehavior {
                     }
                 }
 
-                // Tab 0: Unified Launcher
-                TabLoader {
-                    property int index: 0
-                    sourceComponent: unifiedLauncherComponent
-                    z: visible ? 1 : 0
-                }
-
-                // Tab 1: Wallpapers
-                TabLoader {
-                    property int index: 1
-                    sourceComponent: wallpapersComponent
-                    z: visible ? 1 : 0
-                }
-
-                // Tab 2: Metrics
-                TabLoader {
-                    property int index: 2
-                    sourceComponent: metricsComponent
-                    z: visible ? 1 : 0
+                Repeater {
+                    id: tabRepeater
+                    model: root.tabModel
+                    delegate: TabLoader {
+                        required property int index
+                        required property var modelData
+                        tabIndex: index
+                        descriptor: modelData
+                        z: visible ? 1 : 0
+                    }
                 }
                 
                 // Helper to access current item for focus
                 property var currentItem: {
-                    switch(root.state.currentTab) {
-                        case 0: return children[0].item;
-                        case 1: return children[1].item;
-                        case 2: return children[2].item;
-                        default: return null;
-                    }
+                    const loader = tabRepeater.itemAt(root.state.currentTab);
+                    return loader ? loader.item : null;
                 }
 
                 // Gesture handling para swipe vertical

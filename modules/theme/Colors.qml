@@ -37,6 +37,8 @@ FileView {
         id: gtkGenerator
     }
 
+    property CursorGenerator cursorGenerator: CursorGenerator {}
+
     property PywalGenerator pywalGenerator: PywalGenerator {
         id: pywalGenerator
     }
@@ -45,12 +47,25 @@ FileView {
         id: kittyGenerator
     }
 
+    property SddmGenerator sddmGenerator: SddmGenerator {
+        id: sddmGenerator
+        colors: colors
+    }
+
     property NvChadGenerator nvChadGenerator: NvChadGenerator {
         id: nvChadGenerator
     }
 
     property DiscordGenerator discordGenerator: DiscordGenerator {
         id: discordGenerator
+    }
+
+    property SpotifyGenerator spotifyGenerator: SpotifyGenerator {
+        id: spotifyGenerator
+    }
+
+    property MillenniumGenerator millenniumGenerator: MillenniumGenerator {
+        id: millenniumGenerator
     }
 
     property PywalZenGenerator pywalZenGenerator: PywalZenGenerator {
@@ -66,8 +81,11 @@ FileView {
             gtkGenerator.generate(colors);
             pywalGenerator.generate(colors);
             kittyGenerator.generate(colors);
+            sddmGenerator.generate();
             nvChadGenerator.generate(colors);
             discordGenerator.generate(colors);
+            spotifyGenerator.generate(colors);
+            millenniumGenerator.generate(colors);
             pywalZenGenerator.generate(colors);
         }
     }

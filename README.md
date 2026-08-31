@@ -168,7 +168,7 @@ Nope! Besides the Ambxst import block in your `hyprland.conf` or `hyprland.lua`,
 - [x] Support for different layouts (dwindle, master, scrolling, etc.)
 - [x] Multi-monitor support
 - [x] Customizable keybindings
-- [ ] Plugin and extension system
+- [x] Plugin and extension system
 - [ ] Compatibility with other Wayland compositors
 
 ---

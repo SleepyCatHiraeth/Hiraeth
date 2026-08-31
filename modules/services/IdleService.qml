@@ -112,6 +112,8 @@ Singleton {
         let listeners = Config.system.idle.listeners;
         for (let i = 0; i < listeners.length; i++) {
             let listener = listeners[i];
+            if (listener.enabled === false)
+                continue;
             let tVal = listener.timeout || 60;
 
             // If time matches and hasn't been triggered yet

@@ -24,6 +24,15 @@ Backend singletons bridging Wayland protocols, CLI tools (nmcli, upower, wpctl, 
 | **App Search** | `AppSearch.qml` | Application indexing for launcher |
 | **Weather** | `WeatherService.qml` | Forecast, sunrise/sunset, day/night detection |
 | **Keybinds** | `GlobalShortcuts.qml` | Compositor-level keybind management |
+| **Plugins** | `PluginService.qml` | User plugin discovery/validation/enable-state |
+
+## PLUGIN SYSTEM
+- **Location**: Plugins live at `$XDG_CONFIG_HOME/ambxst/plugins/<id>/plugin.json`, falling back to `~/.config/ambxst/plugins/<id>/plugin.json` when `XDG_CONFIG_HOME` is unset.
+- **Manifest**: Every manifest requires a non-empty, unique string `id`, a non-empty string `name`, `type` (`"bar"` or `"dashboard"` only), a non-empty relative `component` path, and a boolean `enabled` default. Dashboard plugins also require a non-empty string `icon`; bar plugin icons are optional. Component paths are URI-decoded and lexically normalized, rejecting absolute paths, query/fragment suffixes, malformed encoding, and `..` traversal outside the plugin directory.
+- **Discovery and watching**: A startup scan finds immediate plugin directories and their `plugin.json` files. `FileView` watches the plugins root and an `Instantiator` watches each discovered plugin directory; changes trigger a 100 ms debounced rescan. Adding, removing, or editing a manifest is discovered automatically. Editing an already-loaded plugin QML component does not hot-replace it; use `ambxst reload`.
+- **Enable state**: The manifest's `enabled` value is the default. `setEnabled(id, enabled)` persists a user override in `StateService` as `pluginEnabledOverride.<id>` and requests an immediate rescan. Plugin-owned settings use the separate `plugin.<id>.<key>` namespace through public `get(pluginId, key, fallback)` / `set(pluginId, key, value)` methods.
+- **Exposed models**: `barPlugins` and `dashboardPlugins` contain effectively enabled plugin descriptors with `file://` component URLs for loaders. `allPlugins` contains every valid plugin, including disabled ones, for settings UI such as `PluginsPanel.qml`.
+- **Trust model**: There is deliberately no plugin permissions or sandboxing model. Plugin QML runs with full shell authority and must be trusted like any other shell code.
 
 ## CONVENTIONS
 - **Singleton pattern**: `pragma Singleton` + `Singleton { id: root }` root component.
@@ -38,3 +47,15 @@ Backend singletons bridging Wayland protocols, CLI tools (nmcli, upower, wpctl, 
 - Polling without a timer guard (use `Timer` with configurable intervals).
 - Modifying list models synchronously inside `Process.onStdout` handlers.
 - Creating new services without registering them in `shell.qml` init sequence.
+- Editing a plugin's own `plugin.json` to toggle it; use `PluginService.setEnabled()` and the persisted `StateService` override.
+- Merging `pluginEnabledOverride.<id>` with plugin-owned `plugin.<id>.<key>` settings; the namespaces are separate to prevent collisions.
+
+## AI OVERVIEW CONTROL REFERENCE
+
+- Canonical maintained copy: `/mnt/Files/Projects/AMBXST-AiOverviewControl/plugin`; installed copy: `~/.config/ambxst/plugins/ai-overview-control`. Keep them byte-identical after changes. The reviewed DMS upstream is pinned at commit `f2d0fc19493539c3134da3090b0887538ecbdfb0` under the same project directory.
+- Manifest id is `ai-overview-control`, type `dashboard`, component `Main.qml`, default `enabled: false`. The user's effective enable choice remains a `pluginEnabledOverride.ai-overview-control` StateService entry; never change the manifest to toggle it.
+- Plugin settings use only `plugin.ai-overview-control.providers` and `plugin.ai-overview-control.refreshMinutes`. `Main.qml` validates provider ids, removes duplicates, preserves at least one provider, and clamps refresh to 1–60 minutes before use.
+- Provider helpers are trusted upstream Bash. QML passes fixed argv arrays—never interpolated shell source—and does not store tokens. Helpers may read provider-owned CLI state, environment variables, keyrings, or local databases and contact provider APIs over TLS.
+- `get-provider-usage` normalizes results, isolates provider errors, writes bounded local history under `${XDG_CACHE_HOME:-~/.cache}/AiOverviewControl`, and caps fan-out at six workers (`AIOC_MAX_PARALLEL`, clamped 1–12). Keep its per-run temporary-directory cleanup and network timeouts.
+- The dashboard stops refresh work when hidden or destroyed, uses a 45-second outer timeout, and stops usage, health, history, and export processes on destruction. Do not move its timers/processes into a permanent shell singleton.
+- CSV history export uses the upstream helper and mode `0600`. Notification thresholds are intentionally not enabled yet; review AMBXST notification behavior and privacy before wiring `send-quota-alert`.

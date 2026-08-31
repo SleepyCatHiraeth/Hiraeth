@@ -18,9 +18,7 @@ Item {
     readonly property real sideMargin: (width - contentWidth) / 2
 
     Component.onCompleted: {
-        // Only refresh device list, don't start scanning automatically
         if (BluetoothService.enabled) {
-            // Defer update to avoid blocking UI initialization
             initialUpdateTimer.start();
         }
     }
@@ -29,7 +27,7 @@ Item {
         id: initialUpdateTimer
         interval: 300
         repeat: false
-        onTriggered: BluetoothService.updateDevices()
+        onTriggered: BluetoothService.startDiscovery()
     }
 
     Component.onDestruction: {

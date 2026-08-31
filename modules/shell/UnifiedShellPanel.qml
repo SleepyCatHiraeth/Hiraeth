@@ -155,7 +155,7 @@ PanelWindow {
                 item: barContent.visible ? barContent.barHitbox : null
             },
             Region {
-                item: notchContent.notchHitbox
+                item: notchContent.visible ? notchContent.notchHitbox : null
             },
             Region {
                 // Only include the dock hitbox if the dock is actually enabled and visible on this screen.

@@ -21,16 +21,14 @@ Item {
 
     required property ShellScreen screen
     property bool unifiedEffectActive: false
+    readonly property bool notchEnabled: (Config.notch && Config.notch.enabled !== undefined) ? Config.notch.enabled : true
 
     // Get this screen's visibility state
     readonly property var screenVisibilities: Visibilities.getForScreen(screen.name)
     readonly property bool isScreenFocused: AxctlService.focusedMonitor && AxctlService.focusedMonitor.name === screen.name
 
-    // Monitor reference and refrence to toplevels on monitor
     readonly property var compositorMonitor: AxctlService.monitorFor(screen)
     readonly property var toplevels: (!compositorMonitor || !compositorMonitor.activeWorkspace || !AxctlService.clients.values) ? [] : AxctlService.clients.values.filter(c => c.workspace.id === compositorMonitor.activeWorkspace.id)
-
-    // Check if there are any windows on the current monitor and workspace
     readonly property bool hasWindows: toplevels.length > 0
 
     // Get the bar position for this screen
@@ -73,15 +71,13 @@ Item {
         return toplevel.fullscreen === true;
     }
 
-    // Should auto-hide logic:
-    // 1. If notch and bar are on different sides: hide if keepHidden is ON, OR if windows/fullscreen are present
-    // 2. If notch and bar are on same side: hide only if bar is unpinned OR if fullscreen is present
+    // Follow explicit hide/pin settings, but never disappear just because a window is present.
     readonly property bool shouldAutoHide: {
+        const hideForWindows = (Config.notch && Config.notch.autoHideWithWindows === true) && (hasWindows || activeWindowFullscreen);
         if (barPosition !== notchPosition) {
-            if ((Config.notch && Config.notch.keepHidden !== undefined) ? Config.notch.keepHidden : false) return true;
-            return hasWindows || activeWindowFullscreen;
+            return ((Config.notch && Config.notch.keepHidden !== undefined) ? Config.notch.keepHidden : false) || hideForWindows;
         }
-        return !barPinned || activeWindowFullscreen;
+        return !barPinned || hideForWindows;
     }
 
     // Check if the bar for this screen is vertical
@@ -89,6 +85,7 @@ Item {
 
     // Notch state properties
     readonly property bool screenNotchOpen: screenVisibilities ? (screenVisibilities.launcher || screenVisibilities.dashboard || screenVisibilities.powermenu || screenVisibilities.tools) : false
+    visible: notchEnabled || screenNotchOpen
     readonly property bool hasActiveNotifications: Notifications.popupList.length > 0
 
     // Hover state with delay to prevent flickering
@@ -103,12 +100,6 @@ Item {
         // UNLESS notch and bar are on same side (e.g. both top), then keepHidden is IGNORED for sync consistency
         if (((Config.notch && Config.notch.keepHidden !== undefined) ? Config.notch.keepHidden : false) && barPosition !== notchPosition) {
             return (screenNotchOpen || hasActiveNotifications || hoverActive || barHoverActive);
-        }
-
-        // If fullscreen and bar is NOT available on fullscreen, hard-hide the notch too
-        // This prevents barHoverActive from leaking through when the bar itself is hidden
-        if (activeWindowFullscreen && !(Config.bar && Config.bar.availableOnFullscreen !== undefined ? Config.bar.availableOnFullscreen : false)) {
-            return false;
         }
 
         // If not auto-hiding (pinned and not fullscreen), always show
@@ -141,6 +132,10 @@ Item {
             // Immediately show when mouse enters any notch area
             hideDelayTimer.stop();
             hoverActive = true;
+            if ((!Config.notch || Config.notch.hoverToDashboard !== false) && !screenNotchOpen) {
+                GlobalStates.dashboardCurrentTab = 0;
+                Visibilities.setActiveModule("dashboard");
+            }
         } else {
             // Delay hiding when mouse leaves
             hideDelayTimer.restart();
@@ -211,7 +206,7 @@ Item {
         // HoverHandler doesn't block mouse events
         HoverHandler {
             id: notchMouseAreaHover
-            enabled: true
+            enabled: root.notchEnabled
         }
     }
 
@@ -227,7 +222,7 @@ Item {
         // HoverHandler to detect when mouse is over the revealed notch
         HoverHandler {
             id: notchRegionHover
-            enabled: true
+            enabled: root.notchEnabled || root.screenNotchOpen
         }
 
         // Animation container for reveal/hide

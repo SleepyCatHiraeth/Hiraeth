@@ -71,6 +71,8 @@ Ambxst is a highly customizable Wayland shell built with Quickshell. It provides
 | **Lockscreen** | `modules/lockscreen/LockScreen.qml` | PAM auth + `WlSessionLockSurface` |
 | **Notifications** | `modules/notifications/` | Popup system + delegate + history |
 | **Adding Config** | `config/defaults/*.js` + `Config.qml` | Always update both when adding keys |
+| **Plugins** | `modules/services/AGENTS.md` | Full plugin manifest, discovery, enable-state, and trust-model reference |
+| **AI Overview plugin** | `modules/widgets/dashboard/AGENTS.md` | Installed AiOverviewControl port: source/live paths, lifecycle, styling, security, tests, and deployment |
 
 ## CODE MAP
 
@@ -90,6 +92,8 @@ Ambxst is a highly customizable Wayland shell built with Quickshell. It provides
 | `BackendService` | Singleton | `modules/services/BackendService.qml` | JSON-RPC client + subscription manager for the ambxst daemon |
 | `StateService` | Singleton | `modules/services/StateService.qml` | JSON persistence for session state |
 | `FocusGrabManager` | Singleton | `modules/services/FocusGrabManager.qml` | Input focus coordination |
+| `PluginService` | Singleton | `modules/services/PluginService.qml` | Discovers/validates user plugins, exposes bar/dashboard lists + enable state |
+| `AI Overview Control` | External dashboard plugin | `~/.config/ambxst/plugins/ai-overview-control/Main.qml` | Trusted multi-provider quota dashboard; maintained from `/mnt/Files/Projects/AMBXST-AiOverviewControl/plugin` |
 
 ## CONVENTIONS
 - **Singletons**: `pragma Singleton` + `Singleton { id: root }` for all services and global state.
