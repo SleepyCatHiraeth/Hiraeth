@@ -1020,8 +1020,8 @@ Singleton {
                     {
                         "enabled": true,
                         "timeout": 150,
-                        "onTimeout": "ambxst brightness 10 -s",
-                        "onResume": "ambxst brightness -r"
+                        "onTimeout": "axctl brightness save && axctl brightness set 0.1",
+                        "onResume": "axctl brightness restore"
                     },
                     {
                         "enabled": true,
@@ -2445,7 +2445,7 @@ Singleton {
                     "actions": [
                         {
                             "dispatcher": "exec",
-                            "argument": "ambxst brightness +5",
+                            "argument": "axctl brightness adjust 0.05",
                             "flags": "le",
                             "layouts": []
                         }
@@ -2463,7 +2463,7 @@ Singleton {
                     "actions": [
                         {
                             "dispatcher": "exec",
-                            "argument": "ambxst brightness -5",
+                            "argument": "axctl brightness adjust -0.05",
                             "flags": "le",
                             "layouts": []
                         }
