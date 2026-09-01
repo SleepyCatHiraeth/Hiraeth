@@ -113,8 +113,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.themeReady) {
+        onLoadFailed: error => {
+            if (!root.themeReady) {
                 handleMissingConfig("theme", themeLoader, ThemeDefaults.data, () => {
                     root.themeReady = true;
                 });
@@ -509,8 +509,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.barReady) {
+        onLoadFailed: error => {
+            if (!root.barReady) {
                 handleMissingConfig("bar", barLoader, BarDefaults.data, () => {
                     root.barReady = true;
                 });
@@ -568,8 +568,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.workspacesReady) {
+        onLoadFailed: error => {
+            if (!root.workspacesReady) {
                 handleMissingConfig("workspaces", workspacesLoader, WorkspacesDefaults.data, () => {
                     root.workspacesReady = true;
                 });
@@ -611,8 +611,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.overviewReady) {
+        onLoadFailed: error => {
+            if (!root.overviewReady) {
                 handleMissingConfig("overview", overviewLoader, OverviewDefaults.data, () => {
                     root.overviewReady = true;
                 });
@@ -653,8 +653,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.notchReady) {
+        onLoadFailed: error => {
+            if (!root.notchReady) {
                 handleMissingConfig("notch", notchLoader, NotchDefaults.data, () => {
                     root.notchReady = true;
                 });
@@ -700,8 +700,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.compositorReady) {
+        onLoadFailed: error => {
+            if (!root.compositorReady) {
                 handleMissingConfig("compositor", compositorLoader, CompositorDefaults.data, () => {
                     root.compositorReady = true;
                 });
@@ -780,8 +780,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.performanceReady) {
+        onLoadFailed: error => {
+            if (!root.performanceReady) {
                 handleMissingConfig("performance", performanceLoader, PerformanceDefaults.data, () => {
                     root.performanceReady = true;
                 });
@@ -824,8 +824,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.weatherReady) {
+        onLoadFailed: error => {
+            if (!root.weatherReady) {
                 handleMissingConfig("weather", weatherLoader, WeatherDefaults.data, () => {
                     root.weatherReady = true;
                 });
@@ -864,8 +864,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.desktopReady) {
+        onLoadFailed: error => {
+            if (!root.desktopReady) {
                 handleMissingConfig("desktop", desktopLoader, DesktopDefaults.data, () => {
                     root.desktopReady = true;
                 });
@@ -906,8 +906,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.lockscreenReady) {
+        onLoadFailed: error => {
+            if (!root.lockscreenReady) {
                 handleMissingConfig("lockscreen", lockscreenLoader, LockscreenDefaults.data, () => {
                     root.lockscreenReady = true;
                 });
@@ -945,8 +945,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.prefixReady) {
+        onLoadFailed: error => {
+            if (!root.prefixReady) {
                 handleMissingConfig("prefix", prefixLoader, PrefixDefaults.data, () => {
                     root.prefixReady = true;
                 });
@@ -988,8 +988,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.systemReady) {
+        onLoadFailed: error => {
+            if (!root.systemReady) {
                 handleMissingConfig("system", systemLoader, SystemDefaults.data, () => {
                     root.systemReady = true;
                 });
@@ -1074,8 +1074,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.dockReady) {
+        onLoadFailed: error => {
+            if (!root.dockReady) {
                 handleMissingConfig("dock", dockLoader, DockDefaults.data, () => {
                     root.dockReady = true;
                 });
@@ -1164,8 +1164,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.aiReady) {
+        onLoadFailed: error => {
+            if (!root.aiReady) {
                 handleMissingConfig("ai", aiLoader, AiDefaults.data, () => {
                     root.aiReady = true;
                 });
@@ -1209,8 +1209,8 @@ Singleton {
                 });
             }
         }
-        onLoadFailed: {
-            if (error.toString().includes("FileNotFound") && !root.generalReady) {
+        onLoadFailed: error => {
+            if (!root.generalReady) {
                 handleMissingConfig("general", generalLoader, GeneralDefaults.data, () => {
                     root.generalReady = true;
                 });
@@ -3384,30 +3384,13 @@ Singleton {
         }
     }
 
-    // Handle missing config files - copy from preset or create with defaults
+    // A missing FileView already has its QML adapter defaults. Persist that
+    // adapter directly; copying presets here raced reload and many modules do
+    // not have preset files.
     function handleMissingConfig(name, loader, defaults, onComplete) {
-        var presetPath = root.presetDir + "/" + name + ".json";
-        var targetPath = root.configDir + "/" + name + ".json";
-        console.log(name + ".json not found, checking preset: " + presetPath);
-
-        // Create a Process component dynamically to copy the file
-        var copyProcess = Qt.createQmlObject(
-            "import QtQuick 2.0; Process { running: true; command: ['cp', '" + presetPath + "', '" + targetPath + "']; onFinished: { console.log('Copy finished for " + name + "'); } }",
-            root,
-            "copyProcess"
-        );
-
-        // Reload the loader to pick up the copied file
-        loader.reload();
-
-        // If still not ready after reload, use defaults as fallback
-        Qt.callLater(() => {
-            if (!root[name + "Ready"]) {
-                console.log("Using defaults for " + name + ".json");
-                loader.setText(JSON.stringify(defaults, null, 2));
-            }
-            onComplete();
-        });
+        console.log(name + ".json not found, creating adapter defaults");
+        loader.writeAdapter();
+        onComplete();
     }
 
 
