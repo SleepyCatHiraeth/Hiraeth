@@ -172,14 +172,14 @@ Singleton {
                 if (root.trackedPlayer === modelData) {
                     for (let i = 0; i < root.filteredPlayers.length; i++) {
                         const player = root.filteredPlayers[i];
-                        if (player.playbackState.isPlaying) {
+                        if (player && player !== modelData && player.isPlaying) {
                             root.trackedPlayer = player;
                             break;
                         }
                     }
 
                     if (root.trackedPlayer === modelData) {
-                        root.trackedPlayer = root.filteredPlayers.length > 0 ? root.filteredPlayers[0] : null;
+                        root.trackedPlayer = root.filteredPlayers.find(player => player && player !== modelData) || null;
                     }
                 }
             }

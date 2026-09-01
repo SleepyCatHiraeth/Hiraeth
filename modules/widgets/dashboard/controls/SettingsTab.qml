@@ -612,7 +612,7 @@ Rectangle {
             Loader {
                 id: panelLoader
                 anchors.fill: parent
-                asynchronous: true
+                asynchronous: false
                 source: contentArea.panelComponents[root.currentSection]?.component ?? ""
 
                 // Fade in animation

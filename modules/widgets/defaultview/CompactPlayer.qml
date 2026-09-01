@@ -10,6 +10,7 @@ import qs.modules.theme
 import qs.modules.bar.workspaces
 import qs.modules.services
 import qs.modules.components
+import qs.modules.globals
 import qs.config
 
 Item {
@@ -154,6 +155,7 @@ Item {
         }
 
         ClippingRectangle {
+            id: artworkClip
             anchors.fill: parent
             radius: Styling.radius(-4)
             color: "transparent"
@@ -266,7 +268,7 @@ Item {
                         anchors.fill: parent
                         variant: "internalbg"
                         opacity: ((hasArtwork || wallpaperPath !== "") && compactPlayer.notchHovered) ? 0.5 : 0.0
-                        radius: parent.radius
+                        radius: artworkClip.radius
                         Behavior on opacity {
                             enabled: Config.animDuration > 0
                             NumberAnimation {
