@@ -615,6 +615,7 @@ Item {
                     id: pomodoroWidget
                     anchors.centerIn: parent
                     width: 300
+                    screenName: root.bar.screen.name
                     onRequestPopupOpen: clockPopup.open()
                 }
             }
