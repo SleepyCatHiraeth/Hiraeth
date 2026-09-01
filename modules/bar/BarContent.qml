@@ -558,6 +558,7 @@ Item {
                                 Component.onCompleted: setSource(modelData.component, {
                                     orientation: root.orientation,
                                     screen: root.screen,
+                                    bar: root,
                                     pluginService: PluginService
                                 })
                             }
@@ -619,6 +620,7 @@ Item {
                                 Component.onCompleted: setSource(modelData.component, {
                                     orientation: root.orientation,
                                     screen: root.screen,
+                                    bar: root,
                                     pluginService: PluginService
                                 })
                             }

@@ -82,6 +82,10 @@ NotchAnimationBehavior {
 
     // Check if a tab should be loaded
     function shouldTabBeLoaded(tabIndex) {
+        const descriptor = root.tabModel[tabIndex];
+        if (descriptor && descriptor.keepAlive === true)
+            return true;
+
         // When the dashboard is closed, keep only tab 0 (launcher) alive so
         // the heavy tabs (wallpapers, clipboard, notes...) release their
         // objects and image caches instead of remaining resident.

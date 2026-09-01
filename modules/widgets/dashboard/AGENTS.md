@@ -31,7 +31,7 @@ Central interactive hub of Ambxst. Tabbed interface with LRU-based lazy-loading 
 | **Notes** | `notes/NotesTab.qml` | Rich text, file tree, search |
 
 ## CONVENTIONS
-- **LRU management**: Use `shouldTabBeLoaded(index)` for conditional `Loader.active`. Tabs evicted when exceeding cache limit.
+- **LRU management**: Use `shouldTabBeLoaded(index)` for conditional `Loader.active`. Tabs are evicted when exceeding the cache limit unless an enabled dashboard plugin explicitly declares boolean `keepAlive` for required background work.
 - **Keyboard flow**: Components implement `focusSearchInput()` so root can forward focus on open.
 - **UI primitives**: ALWAYS use `StyledRect` variants (`"pane"`, `"internalbg"`, `"focus"`) for containers.
 - **Service bindings**: Connect directly to service singletons (`NetworkService`, `Audio`). No prop-drilling.
