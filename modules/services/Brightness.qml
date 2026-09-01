@@ -102,7 +102,8 @@ Singleton {
         running: false
         repeat: true
         onTriggered: {
-            if (monitors.length > 0 && !SuspendManager.isSuspending) {
+            if (monitors.length > 0 && !SuspendManager.isSuspending
+                && !monitors.some(m => m && m.busy)) {
                 listProc.running = true;
             }
         }
@@ -224,8 +225,12 @@ Singleton {
                         });
                     }
                 }
-                root.ddcMonitors = ddc;
-                root.ddcMonitorsChanged();
+                // DDC discovery can transiently omit an awake monitor. Keep
+                // the last complete mapping instead of remapping screens.
+                if (ddc.length >= root.ddcMonitors.length) {
+                    root.ddcMonitors = ddc;
+                    root.ddcMonitorsChanged();
+                }
                 for (let j = 0; j < root.monitors.length; ++j) {
                     const mon = root.monitors[j];
                     if (mon && mon.ready) {
@@ -236,22 +241,6 @@ Singleton {
                         }
                     }
                 }
-            }
-        }
-    }
-
-    // Reusable factory for one-shot writes (debounced per monitor so we
-    // don't spawn a process per slider tick).
-    Component {
-        id: writeProcFactory
-
-        Process {
-            property string monitorName: ""
-            property real targetValue: 0
-            command: ["axctl", "brightness", "set", monitorName, String(targetValue)]
-            onExited: exitCode => {
-                if (exitCode !== 0)
-                    console.warn("axctl brightness set failed", exitCode, monitorName, targetValue);
             }
         }
     }
@@ -286,6 +275,12 @@ Singleton {
         property real brightness: 0
         property bool ready: false
 
+        property real pendingValue: brightness
+        property bool hasPendingWrite: false
+        property real lastWrittenValue: -1
+        property real ignoreReportsUntil: 0
+        readonly property bool busy: setTimer.running || writeProc.running || hasPendingWrite
+
         onBrightnessChanged: {
             if (monitor.ready) {
                 root.brightnessChanged(monitor.brightness, monitor.screen);
@@ -311,6 +306,15 @@ Singleton {
         function applyReportedBrightness(value) {
             if (value === undefined)
                 return;
+            // While a write settles, ignore stale values and accept only
+            // confirmation of the newest target (within DDC quantization).
+            if (Date.now() < monitor.ignoreReportsUntil) {
+                if (Math.abs(value - monitor.lastWrittenValue) >= 0.02)
+                    return;
+                monitor.ignoreReportsUntil = 0;
+            }
+            if (Math.abs(value - monitor.brightness) < 0.001)
+                return;
             monitor.brightness = value;
         }
 
@@ -318,23 +322,44 @@ Singleton {
             id: setTimer
             interval: monitor.isDdc ? 300 : 0
             onTriggered: {
-                monitor.syncBrightness();
+                monitor.startPendingWrite();
             }
         }
 
-        function syncBrightness() {
-            if (monitor.isDdc && !monitor.busNum)
+        property Process writeProc: Process {
+            onExited: exitCode => {
+                if (exitCode !== 0) {
+                    console.warn("axctl brightness set failed", exitCode, monitor.monitorName(), monitor.lastWrittenValue);
+                    monitor.ignoreReportsUntil = 0;
+                }
+                if (monitor.hasPendingWrite && !setTimer.running)
+                    monitor.startPendingWrite();
+            }
+        }
+
+        function startPendingWrite() {
+            if (!monitor.hasPendingWrite || writeProc.running)
                 return;
-            const proc = writeProcFactory.createObject(monitor, {
-                monitorName: monitor.monitorName(),
-                targetValue: monitor.brightness
-            });
-            proc.running = true;
+            if (monitor.isDdc && !monitor.busNum) {
+                monitor.hasPendingWrite = false;
+                monitor.ignoreReportsUntil = 0;
+                return;
+            }
+            const value = monitor.pendingValue;
+            monitor.hasPendingWrite = false;
+            monitor.lastWrittenValue = value;
+            monitor.ignoreReportsUntil = Date.now() + 2000;
+            writeProc.command = ["axctl", "brightness", "set", monitor.monitorName(), String(value)];
+            writeProc.running = true;
         }
 
         function setBrightness(value: real): void {
             value = Math.max(0.01, Math.min(1, value));
             monitor.brightness = value;
+            monitor.pendingValue = value;
+            monitor.hasPendingWrite = true;
+            monitor.lastWrittenValue = value;
+            monitor.ignoreReportsUntil = Date.now() + 2000;
             setTimer.restart();
         }
 
