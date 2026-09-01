@@ -22,6 +22,7 @@ import "defaults/system.js" as SystemDefaults
 import "defaults/dock.js" as DockDefaults
 import "defaults/ai.js" as AiDefaults
 import "defaults/general.js" as GeneralDefaults
+import "defaults/sound.js" as SoundDefaults
 import "ConfigValidator.js" as ConfigValidator
 
 Singleton {
@@ -57,9 +58,10 @@ Singleton {
     property bool dockReady: false
     property bool aiReady: false
     property bool generalReady: false
+    property bool soundReady: false
     property bool keybindsInitialLoadComplete: false
 
-    property bool initialLoadComplete: themeReady && barReady && workspacesReady && overviewReady && notchReady && compositorReady && performanceReady && weatherReady && desktopReady && lockscreenReady && prefixReady && systemReady && dockReady && aiReady && generalReady
+    property bool initialLoadComplete: themeReady && barReady && workspacesReady && overviewReady && notchReady && compositorReady && performanceReady && weatherReady && desktopReady && lockscreenReady && prefixReady && systemReady && dockReady && aiReady && generalReady && soundReady
 
     // Compatibility aliases
     property alias loader: themeLoader
@@ -1232,6 +1234,52 @@ Singleton {
             property string terminal: "kitty"
             property bool terminalAdvanced: false
             property string terminalCommand: "$TERMINAL -e $COMMAND"
+        }
+    }
+
+    // ============================================
+    // SOUND MODULE
+    // ============================================
+    FileView {
+        id: soundLoader
+        path: root.configDir + "/sound.json"
+        atomicWrites: true
+        watchChanges: true
+        onLoaded: {
+            if (!root.soundReady) {
+                validateModule("sound", soundLoader, SoundDefaults.data, () => {
+                    root.soundReady = true;
+                });
+            }
+        }
+        onLoadFailed: error => {
+            if (error.toString().includes("FileNotFound") && !root.soundReady) {
+                handleMissingConfig("sound", soundLoader, SoundDefaults.data, () => {
+                    root.soundReady = true;
+                });
+            }
+        }
+        onFileChanged: {
+            root.pauseAutoSave = true;
+            reload();
+            root.pauseAutoSave = false;
+        }
+        onPathChanged: reload()
+        onAdapterUpdated: {
+            if (root.soundReady && !root.pauseAutoSave) {
+                soundLoader.writeAdapter();
+            }
+        }
+
+        adapter: JsonAdapter {
+            property bool enabled: true
+            property string theme: "default"
+            property real volume: 0.8
+            property var events: ({
+                "notification": { "sound": "", "muted": false },
+                "critical": { "sound": "", "muted": false },
+                "low": { "sound": "", "muted": false }
+            })
         }
     }
 
@@ -3499,6 +3547,9 @@ Singleton {
 
     // General configuration
     property QtObject general: generalLoader.adapter
+
+    // Sound configuration
+    property QtObject sound: soundLoader.adapter
 
     // Module save functions
     function saveBar() {
