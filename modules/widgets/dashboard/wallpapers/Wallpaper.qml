@@ -445,23 +445,21 @@ PanelWindow {
     }
 
     function updateMpvRuntime(enable) {
-        var cmdString;
+        var jsonCmd;
         if (enable) {
             // Since we are using unique filenames, we can just set the new path.
             // MPV will handle the switch smoothly and won't use cached versions.
-            var setCmd = JSON.stringify({
+            jsonCmd = JSON.stringify({
                 "command": ["set_property", "glsl-shaders", mpvShaderPath]
             });
-            cmdString = "echo '" + setCmd + "' | socat - " + mpvSocket;
         } else {
             // Clear shaders
-            var jsonCmd = JSON.stringify({
+            jsonCmd = JSON.stringify({
                 "command": ["set_property", "glsl-shaders", ""]
             });
-            cmdString = "echo '" + jsonCmd + "' | socat - " + mpvSocket;
         }
 
-        mpvIpcProcess.command = ["bash", "-c", cmdString];
+        mpvIpcProcess.command = ["ambxst", "mpvipc", mpvSocket, jsonCmd];
         mpvIpcProcess.running = true;
     }
 
@@ -488,7 +486,7 @@ PanelWindow {
     Process {
         id: mpvSyncProcess
         running: false
-        command: ["bash", "-c", "for sock in /tmp/ambxst_mpv_socket_*; do echo '{ \"command\": [\"set_property\", \"time-pos\", 0] }' | socat - \"$sock\" 2>/dev/null; done"]
+        command: ["ambxst", "mpvipc", "--all", JSON.stringify({"command": ["set_property", "time-pos", 0]})]
         onExited: code => {
             console.log("Video sync broadcast completed with code:", code);
         }

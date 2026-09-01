@@ -86,6 +86,8 @@ func main() {
 		os.Exit(runThumbs(args[1:], 140, true))
 	case "dthumbs":
 		os.Exit(runThumbs(args[1:], 64, false))
+	case "mpvipc":
+		os.Exit(runMpvIpc(args[1:]))
 	case "ipc":
 		os.Exit(runIpc(args[1:]))
 	case "chatlist":
@@ -376,6 +378,7 @@ Commands:
     lockwall <wallpaper> <data>      Extract lockscreen frame from video/GIF
     thumbs <config> <cache> [fall]   Generate wallpaper thumbnails (140x140)
     dthumbs <dir> <cache>            Generate desktop thumbnails (64x64)
+    mpvipc <socket|--all> <json>     Send a command to mpvpaper
     ipc call <method> <json>         Send a raw JSON-RPC call to the daemon
     wallpaper <file>                Set wallpaper (with optional flags)
         -scheme <name>              Use a specific matugen color scheme

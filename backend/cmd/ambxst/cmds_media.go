@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 var mediaVideoExts = map[string]bool{
@@ -85,6 +87,11 @@ type thumbWorker struct {
 
 func needsThumbnail(filePath, thumbPath string) bool {
 	if _, err := os.Stat(thumbPath); err != nil {
+		if fi, sourceErr := os.Stat(filePath); sourceErr == nil {
+			if failed, failedErr := os.Stat(thumbPath + ".failed"); failedErr == nil && !fi.ModTime().After(failed.ModTime()) {
+				return false
+			}
+		}
 		return true
 	}
 	fi, err1 := os.Stat(filePath)
@@ -95,13 +102,41 @@ func needsThumbnail(filePath, thumbPath string) bool {
 	return fi.ModTime().After(ti.ModTime())
 }
 
+func sendMpvIpc(socketPath, payload string) error {
+	conn, err := net.DialTimeout("unix", socketPath, 500*time.Millisecond)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, err = fmt.Fprintln(conn, payload)
+	return err
+}
+
+func runMpvIpc(args []string) int {
+	if len(args) != 2 {
+		fmt.Fprintln(os.Stderr, "Usage: ambxst mpvipc <socket|--all> <json>")
+		return 1
+	}
+	sockets := []string{args[0]}
+	if args[0] == "--all" {
+		sockets, _ = filepath.Glob("/tmp/ambxst_mpv_socket_*")
+	}
+	for _, socket := range sockets {
+		if err := sendMpvIpc(socket, args[1]); err != nil {
+			fmt.Fprintf(os.Stderr, "MPV IPC failed for %s: %v\n", socket, err)
+			return 1
+		}
+	}
+	return 0
+}
+
 func generateThumb(filePath, thumbPath string, size int) error {
 	if err := os.MkdirAll(filepath.Dir(thumbPath), 0o755); err != nil {
 		return err
 	}
 	ext := strings.ToLower(filepath.Ext(filePath))
 	if mediaVideoExts[ext] {
-		scale := fmt.Sprintf("%d:%d:force_original_aspect_ratio=increase,crop=%d:%d", size, size, size, size)
+		scale := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d", size, size, size, size)
 		_, err := exec.Command("ffmpeg", "-y", "-i", filePath,
 			"-ss", "00:00:01", "-vframes", "1", "-vf", scale, "-q:v", "2", "-f", "image2", thumbPath).Output()
 		return err
@@ -223,7 +258,13 @@ func runThumbs(args []string, size int, recursive bool) int {
 			defer wg.Done()
 			for j := range ch {
 				if err := generateThumb(j.file, j.thumb, size); err != nil {
+					os.Remove(j.thumb)
+					if markerErr := os.WriteFile(j.thumb+".failed", nil, 0o644); markerErr != nil {
+						fmt.Fprintf(os.Stderr, "Failed to record thumbnail error for %s: %v\n", j.file, markerErr)
+					}
 					fmt.Fprintf(os.Stderr, "Failed: %s: %v\n", j.file, err)
+				} else {
+					os.Remove(j.thumb + ".failed")
 				}
 			}
 		}()
