@@ -79,9 +79,10 @@ Singleton {
         if (!str || str.length == 0) return "image-missing";
 
         const desktopIcon = getIconFromDesktopEntry(str);
-        if (desktopIcon) return desktopIcon;
+        if (desktopIcon && validateIcon(desktopIcon) !== "image-missing")
+            return desktopIcon;
 
-        if (substitutions[str])
+        if (substitutions[str] && iconExists(substitutions[str]))
             return substitutions[str];
 
         for (let i = 0; i < regexSubstitutions.length; i++) {
@@ -90,7 +91,11 @@ Singleton {
                 substitution.regex,
                 substitution.replace,
             );
-            if (replacedName != str) return replacedName;
+            if (replacedName != str) {
+                if (iconExists(replacedName)) return replacedName;
+                if (substitution.fallback && iconExists(substitution.fallback))
+                    return substitution.fallback;
+            }
         }
 
         if (iconExists(str)) return str;
@@ -101,7 +106,7 @@ Singleton {
         const dashedGuess = str.toLowerCase().replace(/\s+/g, "-");
         if (iconExists(dashedGuess)) return dashedGuess;
 
-        return str;
+        return "application-x-executable";
     }
 
     property var substitutions: ({
@@ -117,7 +122,8 @@ Singleton {
     property list<var> regexSubstitutions: [
         {
             "regex": /^steam_app_(\d+)$/,
-            "replace": "steam_icon_$1"
+            "replace": "steam_icon_$1",
+            "fallback": "steam"
         },
         {
             "regex": /Minecraft.*/,
