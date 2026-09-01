@@ -12,9 +12,11 @@ Singleton {
     property var barPlugins: []
     property var dashboardPlugins: []
     property var pluginDirs: []
+    property var runtimeData: ({})
 
     signal pluginsAboutToChange()
     signal settingsChanged(string pluginId)
+    signal runtimeChanged(string pluginId, string key)
 
     function stateKey(pluginId, key) {
         return "plugin." + pluginId + "." + key;
@@ -40,6 +42,20 @@ Singleton {
     function set(pluginId, key, value) {
         StateService.set(stateKey(pluginId, key), value);
         settingsChanged(pluginId);
+    }
+
+    function runtimeValue(pluginId, key, fallback) {
+        const plugin = runtimeData[pluginId];
+        return plugin && plugin[key] !== undefined ? plugin[key] : fallback;
+    }
+
+    function setRuntimeValue(pluginId, key, value) {
+        const nextPlugin = Object.assign({}, runtimeData[pluginId] || {});
+        nextPlugin[key] = value;
+        const next = Object.assign({}, runtimeData);
+        next[pluginId] = nextPlugin;
+        runtimeData = next;
+        runtimeChanged(pluginId, key);
     }
 
     function componentPath(pluginDir, component) {
