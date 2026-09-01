@@ -14,80 +14,6 @@ Item {
     property int maxContentWidth: 480
     readonly property int contentWidth: Math.min(width, maxContentWidth)
 
-    component ToggleRow: RowLayout {
-        id: toggleRowRoot
-
-        property string label: ""
-        property string type: ""
-        property bool checked: false
-        signal toggled(bool value)
-
-        spacing: 8
-
-        Text {
-            text: toggleRowRoot.label
-            font.family: Config.theme.font
-            font.pixelSize: Styling.fontSize(0)
-            color: Colors.overBackground
-            Layout.fillWidth: true
-        }
-
-        StyledRect {
-            variant: "common"
-            Layout.preferredWidth: typeLabel.implicitWidth + 12
-            Layout.preferredHeight: typeLabel.implicitHeight + 4
-            radius: Styling.radius(-4)
-
-            Text {
-                id: typeLabel
-                anchors.centerIn: parent
-                text: toggleRowRoot.type
-                font.family: Config.theme.font
-                font.pixelSize: Styling.fontSize(-2)
-                color: Colors.overSurfaceVariant
-            }
-        }
-
-        Switch {
-            id: toggleSwitch
-            checked: toggleRowRoot.checked
-            onToggled: toggleRowRoot.toggled(checked)
-
-            indicator: Rectangle {
-                implicitWidth: 40
-                implicitHeight: 20
-                x: toggleSwitch.leftPadding
-                y: parent.height / 2 - height / 2
-                radius: height / 2
-                color: toggleSwitch.checked ? Styling.srItem("overprimary") : Colors.surfaceBright
-                border.color: toggleSwitch.checked ? Styling.srItem("overprimary") : Colors.outline
-
-                Behavior on color {
-                    enabled: Config.animDuration > 0
-                    ColorAnimation { duration: Config.animDuration / 2 }
-                }
-
-                Rectangle {
-                    x: toggleSwitch.checked ? parent.width - width - 2 : 2
-                    y: 2
-                    width: parent.height - 4
-                    height: width
-                    radius: width / 2
-                    color: toggleSwitch.checked ? Colors.background : Colors.overSurfaceVariant
-
-                    Behavior on x {
-                        enabled: Config.animDuration > 0
-                        NumberAnimation {
-                            duration: Config.animDuration / 2
-                            easing.type: Easing.OutCubic
-                        }
-                    }
-                }
-            }
-            background: null
-        }
-    }
-
     ListView {
         id: pluginList
         anchors.fill: parent
@@ -116,16 +42,117 @@ Item {
             id: pluginDelegate
             required property var modelData
             width: pluginList.width
-            height: toggleRow.implicitHeight + 12
+            height: pluginCard.implicitHeight
 
-            ToggleRow {
-                id: toggleRow
+            StyledRect {
+                id: pluginCard
                 width: root.contentWidth
                 anchors.centerIn: parent
-                label: pluginDelegate.modelData.name
-                type: pluginDelegate.modelData.type
-                checked: pluginDelegate.modelData.enabled
-                onToggled: value => PluginService.setEnabled(pluginDelegate.modelData.id, value)
+                implicitHeight: pluginContent.implicitHeight + 20
+                variant: pluginHover.hovered ? "focus" : "common"
+                radius: Styling.radius(-2)
+
+                HoverHandler {
+                    id: pluginHover
+                }
+
+                RowLayout {
+                    id: pluginContent
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 8
+
+                    Text {
+                        text: pluginDelegate.modelData.icon || Icons.plug
+                        textFormat: Text.RichText
+                        font.family: Icons.font
+                        font.pixelSize: 20
+                        font.weight: Font.Medium
+                        color: Colors.overBackground
+                        Layout.preferredWidth: 24
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+
+                    ColumnLayout {
+                        spacing: 2
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: pluginDelegate.modelData.name
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(0)
+                            color: Colors.overBackground
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            visible: text !== ""
+                            text: pluginDelegate.modelData.description || ""
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-2)
+                            color: Colors.overSurfaceVariant
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    StyledRect {
+                        variant: "common"
+                        Layout.preferredWidth: typeLabel.implicitWidth + 12
+                        Layout.preferredHeight: typeLabel.implicitHeight + 4
+                        radius: Styling.radius(-4)
+
+                        Text {
+                            id: typeLabel
+                            anchors.centerIn: parent
+                            text: pluginDelegate.modelData.type
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-2)
+                            color: Colors.overSurfaceVariant
+                        }
+                    }
+
+                    Switch {
+                        id: toggleSwitch
+                        checked: pluginDelegate.modelData.enabled
+                        onToggled: PluginService.setEnabled(pluginDelegate.modelData.id, checked)
+
+                        indicator: Rectangle {
+                            implicitWidth: 40
+                            implicitHeight: 20
+                            x: toggleSwitch.leftPadding
+                            y: parent.height / 2 - height / 2
+                            radius: height / 2
+                            color: toggleSwitch.checked ? Styling.srItem("overprimary") : Colors.surfaceBright
+                            border.color: toggleSwitch.checked ? Styling.srItem("overprimary") : Colors.outline
+
+                            Behavior on color {
+                                enabled: Config.animDuration > 0
+                                ColorAnimation { duration: Config.animDuration / 2 }
+                            }
+
+                            Rectangle {
+                                x: toggleSwitch.checked ? parent.width - width - 2 : 2
+                                y: 2
+                                width: parent.height - 4
+                                height: width
+                                radius: width / 2
+                                color: toggleSwitch.checked ? Colors.background : Colors.overSurfaceVariant
+
+                                Behavior on x {
+                                    enabled: Config.animDuration > 0
+                                    NumberAnimation {
+                                        duration: Config.animDuration / 2
+                                        easing.type: Easing.OutCubic
+                                    }
+                                }
+                            }
+                        }
+                        background: null
+                    }
+                }
             }
         }
 

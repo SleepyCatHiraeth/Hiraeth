@@ -138,6 +138,10 @@ Singleton {
                 reject(manifestPath, "keepAlive must be boolean");
                 continue;
             }
+            if (manifest.description !== undefined && typeof manifest.description !== "string") {
+                reject(manifestPath, "description must be string");
+                continue;
+            }
 
             const path = componentPath(pluginDir, manifest.component);
             if (!path) {
@@ -152,6 +156,7 @@ Singleton {
                 name: manifest.name,
                 type: manifest.type,
                 icon: manifest.icon || "",
+                description: manifest.description || "",
                 enabled: enabled
             });
             if (!enabled) continue;
@@ -160,6 +165,7 @@ Singleton {
                 id: manifest.id,
                 name: manifest.name,
                 icon: manifest.icon || "",
+                description: manifest.description || "",
                 keepAlive: manifest.keepAlive === true,
                 component: "file://" + path
             };
