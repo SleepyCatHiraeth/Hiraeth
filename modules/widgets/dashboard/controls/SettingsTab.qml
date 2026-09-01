@@ -265,6 +265,12 @@ Rectangle {
             label: "Plugins",
             section: 10,
             isIcon: true
+        },
+        {
+            icon: Icons.speakerHigh,
+            label: "System Sounds",
+            section: 11,
+            isIcon: true
         }
     ]
 
@@ -605,6 +611,10 @@ Rectangle {
                 {
                     component: "PluginsPanel.qml",
                     section: 10
+                },
+                {
+                    component: "SoundsPanel.qml",
+                    section: 11
                 }
             ]
 
