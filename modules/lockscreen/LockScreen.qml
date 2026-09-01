@@ -80,34 +80,6 @@ WlSessionLockSurface {
         }
     }
 
-    // Screen capture background (fondo absoluto con zoom sincronizado)
-    ScreencopyView {
-        id: screencopyBackground
-        anchors.fill: parent
-        captureSource: root.screen
-        live: false
-        paintCursor: false
-        visible: startAnim  // Visible solo cuando startAnim es true
-        z: 0  // Capa más baja - fondo absoluto
-
-        property real zoomScale: startAnim ? 1.25 : 1.0
-
-        transform: Scale {
-            origin.x: screencopyBackground.width / 2
-            origin.y: screencopyBackground.height / 2
-            xScale: screencopyBackground.zoomScale
-            yScale: screencopyBackground.zoomScale
-        }
-
-        Behavior on zoomScale {
-            enabled: Config.animDuration > 0
-            NumberAnimation {
-                duration: Config.animDuration * 2
-                easing.type: Easing.OutExpo
-            }
-        }
-    }
-
     // Overlay for dimming
     Rectangle {
         id: dimOverlay
@@ -404,7 +376,6 @@ WlSessionLockSurface {
                     anchors.verticalCenter: parent.verticalCenter
 
                     Image {
-                        mipmap: true
                         id: userAvatar
                         anchors.fill: parent
                         source: `file://${Quickshell.env("HOME")}/.face.icon`
@@ -740,9 +711,6 @@ WlSessionLockSurface {
 
     // Initialize when component is created (when lock becomes active)
     Component.onCompleted: {
-        // Capture screen immediately
-        screencopyBackground.captureFrame();
-
         // Start animations
         startAnim = true;
         passwordInput.forceActiveFocus();

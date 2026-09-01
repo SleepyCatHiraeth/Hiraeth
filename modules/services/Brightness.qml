@@ -341,8 +341,6 @@ Singleton {
             if (!monitor.hasPendingWrite || writeProc.running)
                 return;
             if (monitor.isDdc && !monitor.busNum) {
-                monitor.hasPendingWrite = false;
-                monitor.ignoreReportsUntil = 0;
                 return;
             }
             const value = monitor.pendingValue;
@@ -365,6 +363,8 @@ Singleton {
 
         onBusNumChanged: {
             initialize();
+            if (monitor.hasPendingWrite)
+                monitor.startPendingWrite();
         }
     }
 

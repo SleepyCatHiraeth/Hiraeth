@@ -43,7 +43,7 @@ ClippingRectangle {
 
     readonly property color halftoneBackgroundColor: Config.resolveColor(variantConfig.halftoneBackgroundColor)
 
-    readonly property var borderData: variantConfig.border
+    readonly property var borderData: variantConfig.border || ["transparent", 0]
 
     readonly property color solidColor: Config.resolveColor(variantConfig.color)
     readonly property bool hasSolidColor: variantConfig.color !== undefined && variantConfig.color !== ""
