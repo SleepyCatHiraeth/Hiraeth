@@ -61,7 +61,7 @@ Singleton {
     property bool soundReady: false
     property bool keybindsInitialLoadComplete: false
 
-    property bool initialLoadComplete: themeReady && barReady && workspacesReady && overviewReady && notchReady && compositorReady && performanceReady && weatherReady && desktopReady && lockscreenReady && prefixReady && systemReady && dockReady && aiReady && generalReady && soundReady
+    property bool initialLoadComplete: themeReady && barReady && workspacesReady && overviewReady && notchReady && compositorReady && performanceReady && weatherReady && desktopReady && lockscreenReady && prefixReady && systemReady && dockReady && aiReady && generalReady
 
     // Compatibility aliases
     property alias loader: themeLoader
@@ -1280,6 +1280,20 @@ Singleton {
                 "critical": { "sound": "", "muted": false },
                 "low": { "sound": "", "muted": false }
             })
+        }
+    }
+
+    Timer {
+        interval: 1500
+        running: true
+        repeat: false
+        onTriggered: {
+            if (!root.soundReady) {
+                console.log("sound.json fallback bootstrap triggered — onLoaded/onLoadFailed did not fire in time");
+                handleMissingConfig("sound", soundLoader, SoundDefaults.data, () => {
+                    root.soundReady = true;
+                });
+            }
         }
     }
 
