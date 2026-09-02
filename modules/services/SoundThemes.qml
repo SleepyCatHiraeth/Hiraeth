@@ -18,7 +18,12 @@ Singleton {
         "events": {
             "notification": "polite-warning-tone.wav",
             "critical": "polite-warning-tone.wav",
-            "low": "polite-warning-tone.wav"
+            "low": "polite-warning-tone.wav",
+            "loginSuccess": "polite-warning-tone.wav",
+            "wrongPassword": "polite-warning-tone.wav",
+            "bootUp": "polite-warning-tone.wav",
+            "deviceConnect": "polite-warning-tone.wav",
+            "deviceDisconnect": "polite-warning-tone.wav"
         }
     })
     readonly property var portalTurretTheme: ({
@@ -30,7 +35,12 @@ Singleton {
         "events": {
             "notification": "notification.wav",
             "critical": "critical.wav",
-            "low": "low.wav"
+            "low": "low.wav",
+            "loginSuccess": "loginSuccess.wav",
+            "wrongPassword": "wrongPassword.wav",
+            "bootUp": "bootUp.wav",
+            "deviceConnect": "deviceConnect.wav",
+            "deviceDisconnect": "deviceDisconnect.wav"
         }
     })
 

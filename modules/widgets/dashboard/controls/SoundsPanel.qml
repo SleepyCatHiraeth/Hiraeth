@@ -16,7 +16,12 @@ Item {
     readonly property var eventModel: [
         { key: "notification", label: "Notification", icon: Icons.bell },
         { key: "critical", label: "Critical / Error", icon: Icons.alert },
-        { key: "low", label: "Low Priority", icon: Icons.info }
+        { key: "low", label: "Low Priority", icon: Icons.info },
+        { key: "loginSuccess", label: "Login Success", icon: Icons.shieldCheck },
+        { key: "wrongPassword", label: "Wrong Password", icon: Icons.lock },
+        { key: "bootUp", label: "Boot Up", icon: Icons.power },
+        { key: "deviceConnect", label: "Device Connect", icon: Icons.plug },
+        { key: "deviceDisconnect", label: "Device Disconnect", icon: Icons.bluetoothOff }
     ]
 
     function updateEvent(key, property, value) {

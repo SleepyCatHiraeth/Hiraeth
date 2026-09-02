@@ -12,6 +12,7 @@ import qs.modules.corners
 import qs.modules.theme
 import qs.modules.globals
 import qs.modules.widgets.dashboard.widgets
+import qs.modules.services
 import qs.config
 
 // Lock surface UI - shown on each screen when locked
@@ -661,10 +662,12 @@ WlSessionLockSurface {
 
                 errorMessage = "";
                 authenticating = false;
+                SoundService.play("loginSuccess");
             } else {
                 // Error de autenticación
                 errorMessage = "Authentication failed";
                 console.warn("PAM auth failed with result:", result);
+                SoundService.play("wrongPassword");
 
                 if (Config.animDuration > 0) {
                     wrongPasswordAnim.start();

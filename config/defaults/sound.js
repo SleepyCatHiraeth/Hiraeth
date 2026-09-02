@@ -7,6 +7,11 @@ var data = {
     "events": {
         "notification": { "sound": "", "muted": false },
         "critical": { "sound": "", "muted": false },
-        "low": { "sound": "", "muted": false }
+        "low": { "sound": "", "muted": false },
+        "loginSuccess": { "sound": "", "muted": false },
+        "wrongPassword": { "sound": "", "muted": false },
+        "bootUp": { "sound": "", "muted": false },
+        "deviceConnect": { "sound": "", "muted": false },
+        "deviceDisconnect": { "sound": "", "muted": false }
     }
 }
