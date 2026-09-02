@@ -58,6 +58,9 @@ ActionGrid {
 
     onActionTriggered: action => {
         console.log("Action triggered:", action.command);
+        if (action.command === "systemctl poweroff" || action.command === "systemctl reboot") {
+            SoundService.play("shutdown");
+        }
         if (action.command) {
             actionProcess.command = ["/bin/bash", "-c", action.command];
             console.log("Starting process with command:", actionProcess.command);

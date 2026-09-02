@@ -21,7 +21,8 @@ Item {
         { key: "wrongPassword", label: "Wrong Password", icon: Icons.lock },
         { key: "bootUp", label: "Boot Up", icon: Icons.power },
         { key: "deviceConnect", label: "Device Connect", icon: Icons.plug },
-        { key: "deviceDisconnect", label: "Device Disconnect", icon: Icons.bluetoothOff }
+        { key: "deviceDisconnect", label: "Device Disconnect", icon: Icons.bluetoothOff },
+        { key: "shutdown", label: "Shutdown / Reboot", icon: Icons.shutdown }
     ]
 
     function updateEvent(key, property, value) {

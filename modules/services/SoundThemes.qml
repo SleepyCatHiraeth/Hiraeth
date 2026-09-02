@@ -23,7 +23,8 @@ Singleton {
             "wrongPassword": "polite-warning-tone.wav",
             "bootUp": "polite-warning-tone.wav",
             "deviceConnect": "polite-warning-tone.wav",
-            "deviceDisconnect": "polite-warning-tone.wav"
+            "deviceDisconnect": "polite-warning-tone.wav",
+            "shutdown": "polite-warning-tone.wav"
         }
     })
     readonly property var portalTurretTheme: ({
@@ -40,7 +41,8 @@ Singleton {
             "wrongPassword": "wrongPassword.wav",
             "bootUp": "bootUp.wav",
             "deviceConnect": "deviceConnect.wav",
-            "deviceDisconnect": "deviceDisconnect.wav"
+            "deviceDisconnect": "deviceDisconnect.wav",
+            "shutdown": "shutdown.wav"
         }
     })
 
