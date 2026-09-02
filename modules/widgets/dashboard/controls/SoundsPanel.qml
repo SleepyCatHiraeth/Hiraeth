@@ -42,12 +42,14 @@ Item {
         section.property: "category"
         section.criteria: ViewSection.FullString
         section.delegate: Item {
+            id: sectionDelegate
+            required property string section
             width: eventList.width
             height: sectionLabel.implicitHeight + 16
 
             Text {
                 id: sectionLabel
-                text: section
+                text: sectionDelegate.section
                 width: root.contentWidth
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
