@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import qs.modules.services
 
 QtObject {
     id: root
@@ -14,6 +15,7 @@ QtObject {
     property int battery: -1
     property bool batteryAvailable: battery >= 0
     property bool connecting: false
+    property bool connectionStateKnown: false
 
     signal infoUpdated()
 
@@ -47,7 +49,12 @@ QtObject {
                     if (trimmed.startsWith("Paired:")) {
                         root.paired = trimmed.includes("yes");
                     } else if (trimmed.startsWith("Connected:")) {
-                        root.connected = trimmed.includes("yes");
+                        const newConnected = trimmed.includes("yes");
+                        if (root.connectionStateKnown && newConnected !== root.connected) {
+                            SoundService.play(newConnected ? "deviceConnect" : "deviceDisconnect");
+                        }
+                        root.connected = newConnected;
+                        root.connectionStateKnown = true;
                         if (root.connected) root.connecting = false;
                     } else if (trimmed.startsWith("Trusted:")) {
                         root.trusted = trimmed.includes("yes");

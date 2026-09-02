@@ -10,6 +10,22 @@ Singleton {
     id: root
 
     readonly property real effectiveVolume: Math.max(0, Math.min(1, Config.sound.volume))
+    readonly property bool shellReady: Config.initialLoadComplete && Config.soundReady
+    property bool bootUpPlayed: false
+
+    function playBootUpOnce() {
+        if (shellReady && !bootUpPlayed) {
+            bootUpPlayed = true;
+            // Deferred: on the very first play() call ever, playerLoader.item
+            // may not exist yet (async Loader creation) — every later call is
+            // fine since active is already true by then. See SoundService.qml
+            // incident notes in the wiki for the TypeError this guards.
+            Qt.callLater(() => play("bootUp"));
+        }
+    }
+
+    onShellReadyChanged: playBootUpOnce()
+    Component.onCompleted: playBootUpOnce()
 
     function play(eventKey) {
         if (!Config.sound.enabled)
