@@ -14,15 +14,15 @@ Item {
     property int maxContentWidth: 480
     readonly property int contentWidth: Math.min(width, maxContentWidth)
     readonly property var eventModel: [
-        { key: "notification", label: "Notification", icon: Icons.bell },
-        { key: "critical", label: "Critical / Error", icon: Icons.alert },
-        { key: "low", label: "Low Priority", icon: Icons.info },
-        { key: "loginSuccess", label: "Login Success", icon: Icons.shieldCheck },
-        { key: "wrongPassword", label: "Wrong Password", icon: Icons.lock },
-        { key: "bootUp", label: "Boot Up", icon: Icons.power },
-        { key: "deviceConnect", label: "Device Connect", icon: Icons.plug },
-        { key: "deviceDisconnect", label: "Device Disconnect", icon: Icons.bluetoothOff },
-        { key: "shutdown", label: "Shutdown / Reboot", icon: Icons.shutdown }
+        { key: "notification", label: "Notification", icon: Icons.bell, category: "General" },
+        { key: "critical", label: "Critical / Error", icon: Icons.alert, category: "General" },
+        { key: "low", label: "Low Priority", icon: Icons.info, category: "General" },
+        { key: "bootUp", label: "Boot Up", icon: Icons.power, category: "Session" },
+        { key: "loginSuccess", label: "Login Success", icon: Icons.shieldCheck, category: "Session" },
+        { key: "wrongPassword", label: "Wrong Password", icon: Icons.lock, category: "Session" },
+        { key: "shutdown", label: "Shutdown / Reboot", icon: Icons.shutdown, category: "Session" },
+        { key: "deviceConnect", label: "Device Connect", icon: Icons.plug, category: "Devices" },
+        { key: "deviceDisconnect", label: "Device Disconnect", icon: Icons.bluetoothOff, category: "Devices" }
     ]
 
     function updateEvent(key, property, value) {
@@ -36,8 +36,27 @@ Item {
         id: eventList
         anchors.fill: parent
         clip: true
-        spacing: 4
+        spacing: 6
         model: root.eventModel
+
+        section.property: "category"
+        section.criteria: ViewSection.FullString
+        section.delegate: Item {
+            width: eventList.width
+            height: sectionLabel.implicitHeight + 16
+
+            Text {
+                id: sectionLabel
+                text: section
+                width: root.contentWidth
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                font.family: Config.theme.font
+                font.pixelSize: Styling.fontSize(-1)
+                font.weight: Font.Medium
+                color: Colors.overSurfaceVariant
+            }
+        }
 
         header: Item {
             width: eventList.width
@@ -168,124 +187,153 @@ Item {
             id: eventDelegate
             required property var modelData
             width: eventList.width
-            height: 48
+            height: eventCard.implicitHeight
 
-            RowLayout {
+            StyledRect {
+                id: eventCard
                 width: root.contentWidth
                 anchors.centerIn: parent
-                spacing: 8
+                implicitHeight: eventContent.implicitHeight + 20
+                variant: eventHover.hovered ? "focus" : "common"
+                radius: Styling.radius(-2)
 
-                Text {
-                    text: eventDelegate.modelData.icon
-                    font.family: Icons.font
-                    font.pixelSize: 16
-                    color: Colors.overBackground
-                    Layout.preferredWidth: 20
+                HoverHandler {
+                    id: eventHover
                 }
 
-                Text {
-                    text: eventDelegate.modelData.label
-                    font.family: Config.theme.font
-                    font.pixelSize: Styling.fontSize(0)
-                    color: Colors.overBackground
-                    Layout.preferredWidth: 100
-                }
+                ColumnLayout {
+                    id: eventContent
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 8
 
-                StyledRect {
-                    variant: "common"
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 32
-                    radius: Styling.radius(-2)
-
-                    TextInput {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        font.family: Config.theme.font
-                        font.pixelSize: Styling.fontSize(0)
-                        color: Colors.overBackground
-                        selectByMouse: true
-                        clip: true
-                        verticalAlignment: TextInput.AlignVCenter
-                        text: Config.sound.events?.[eventDelegate.modelData.key]?.sound || ""
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
 
                         Text {
-                            anchors.fill: parent
-                            verticalAlignment: Text.AlignVCenter
-                            text: "Use theme default"
-                            font: parent.font
-                            color: Colors.overSurfaceVariant
-                            visible: !parent.text && !parent.activeFocus
+                            text: eventDelegate.modelData.icon
+                            font.family: Icons.font
+                            font.pixelSize: 18
+                            color: Colors.overBackground
+                            Layout.preferredWidth: 22
+                            horizontalAlignment: Text.AlignHCenter
                         }
 
-                        onEditingFinished: root.updateEvent(eventDelegate.modelData.key, "sound", text)
-                    }
-                }
-
-                Button {
-                    id: testButton
-                    flat: true
-                    implicitWidth: 28
-                    implicitHeight: 28
-
-                    background: StyledRect {
-                        variant: testButton.hovered ? "focus" : "common"
-                        radius: Styling.radius(-4)
-                    }
-
-                    contentItem: Text {
-                        text: Icons.play
-                        font.family: Icons.font
-                        font.pixelSize: 14
-                        color: Colors.overBackground
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
-
-                    onClicked: SoundService.play(eventDelegate.modelData.key)
-
-                    StyledToolTip {
-                        visible: testButton.hovered
-                        tooltipText: "Test sound"
-                    }
-                }
-
-                Switch {
-                    id: muteSwitch
-                    checked: Config.sound.events?.[eventDelegate.modelData.key]?.muted ?? false
-                    onToggled: root.updateEvent(eventDelegate.modelData.key, "muted", checked)
-
-                    indicator: Rectangle {
-                        implicitWidth: 40
-                        implicitHeight: 20
-                        x: muteSwitch.leftPadding
-                        y: parent.height / 2 - height / 2
-                        radius: height / 2
-                        color: muteSwitch.checked ? Styling.srItem("overprimary") : Colors.surfaceBright
-                        border.color: muteSwitch.checked ? Styling.srItem("overprimary") : Colors.outline
-
-                        Behavior on color {
-                            enabled: Config.animDuration > 0
-                            ColorAnimation { duration: Config.animDuration / 2 }
+                        Text {
+                            text: eventDelegate.modelData.label
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(0)
+                            color: Colors.overBackground
+                            Layout.fillWidth: true
+                            elide: Text.ElideRight
                         }
 
-                        Rectangle {
-                            x: muteSwitch.checked ? parent.width - width - 2 : 2
-                            y: 2
-                            width: parent.height - 4
-                            height: width
-                            radius: width / 2
-                            color: muteSwitch.checked ? Colors.background : Colors.overSurfaceVariant
+                        Button {
+                            id: testButton
+                            flat: true
+                            implicitWidth: 28
+                            implicitHeight: 28
 
-                            Behavior on x {
-                                enabled: Config.animDuration > 0
-                                NumberAnimation {
-                                    duration: Config.animDuration / 2
-                                    easing.type: Easing.OutCubic
-                                }
+                            background: StyledRect {
+                                variant: testButton.hovered ? "focus" : "common"
+                                radius: Styling.radius(-4)
+                            }
+
+                            contentItem: Text {
+                                text: Icons.play
+                                font.family: Icons.font
+                                font.pixelSize: 14
+                                color: Colors.overBackground
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+
+                            onClicked: SoundService.play(eventDelegate.modelData.key)
+
+                            StyledToolTip {
+                                visible: testButton.hovered
+                                tooltipText: "Test sound"
                             }
                         }
+
+                        Switch {
+                            id: enabledSwitch
+                            // checked means "this event will play a sound" (i.e. NOT muted).
+                            // Colored/right = enabled, grey/left = muted — matches the
+                            // enabled/colored convention every other toggle in this app
+                            // uses (see PluginsPanel.qml's toggleSwitch). The underlying
+                            // persisted field is still "muted"; only this binding's
+                            // direction is inverted from the old, backwards version.
+                            checked: !(Config.sound.events?.[eventDelegate.modelData.key]?.muted ?? false)
+                            onToggled: root.updateEvent(eventDelegate.modelData.key, "muted", !checked)
+
+                            indicator: Rectangle {
+                                implicitWidth: 40
+                                implicitHeight: 20
+                                x: enabledSwitch.leftPadding
+                                y: parent.height / 2 - height / 2
+                                radius: height / 2
+                                color: enabledSwitch.checked ? Styling.srItem("overprimary") : Colors.surfaceBright
+                                border.color: enabledSwitch.checked ? Styling.srItem("overprimary") : Colors.outline
+
+                                Behavior on color {
+                                    enabled: Config.animDuration > 0
+                                    ColorAnimation { duration: Config.animDuration / 2 }
+                                }
+
+                                Rectangle {
+                                    x: enabledSwitch.checked ? parent.width - width - 2 : 2
+                                    y: 2
+                                    width: parent.height - 4
+                                    height: width
+                                    radius: width / 2
+                                    color: enabledSwitch.checked ? Colors.background : Colors.overSurfaceVariant
+
+                                    Behavior on x {
+                                        enabled: Config.animDuration > 0
+                                        NumberAnimation {
+                                            duration: Config.animDuration / 2
+                                            easing.type: Easing.OutCubic
+                                        }
+                                    }
+                                }
+                            }
+                            background: null
+                        }
                     }
-                    background: null
+
+                    StyledRect {
+                        variant: "common"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 28
+                        radius: Styling.radius(-4)
+
+                        TextInput {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-1)
+                            color: Colors.overSurfaceVariant
+                            selectByMouse: true
+                            clip: true
+                            verticalAlignment: TextInput.AlignVCenter
+                            text: Config.sound.events?.[eventDelegate.modelData.key]?.sound || ""
+
+                            Text {
+                                anchors.fill: parent
+                                verticalAlignment: Text.AlignVCenter
+                                text: "Use theme default"
+                                font: parent.font
+                                color: Colors.overSurfaceVariant
+                                opacity: 0.7
+                                visible: !parent.text && !parent.activeFocus
+                            }
+
+                            onEditingFinished: root.updateEvent(eventDelegate.modelData.key, "sound", text)
+                        }
+                    }
                 }
             }
         }
