@@ -370,5 +370,17 @@ Singleton {
         updateStatus();
     }
 
-    Component.onCompleted: root.initialize()
+    // Deferred rather than immediate: this used to only run once the
+    // dashboard/launcher/overview was opened (far after startup settled).
+    // Self-initializing at Singleton construction now makes it compete with
+    // the earliest, most latency-sensitive shell startup work; a short delay
+    // keeps background Bluetooth polling working without adding to that
+    // critical path.
+    Timer {
+        id: initDelay
+        interval: 2000
+        running: true
+        repeat: false
+        onTriggered: root.initialize()
+    }
 }

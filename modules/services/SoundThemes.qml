@@ -9,6 +9,11 @@ Singleton {
 
     readonly property string portalBasePath: Quickshell.env("HOME") + "/.config/ambxst/sounds/portal-turret/"
     property bool portalAvailable: false
+    // False until the async directory-existence check below has completed at
+    // least once. play() (SoundService.qml) must not treat "not yet checked"
+    // as "confirmed unavailable" — that race silently played the Default
+    // theme's sound instead of Portal Turret's on early startup/login events.
+    property bool availabilityChecked: false
     readonly property var defaultTheme: ({
         "id": "default",
         "name": "Default",
@@ -63,7 +68,10 @@ Singleton {
         running: false
         command: ["sh", "-c", "test -d \"$1\" && echo yes || echo no", "sh", root.portalBasePath]
         stdout: StdioCollector {
-            onStreamFinished: root.portalAvailable = text.trim() === "yes"
+            onStreamFinished: {
+                root.portalAvailable = text.trim() === "yes";
+                root.availabilityChecked = true;
+            }
         }
     }
 

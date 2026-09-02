@@ -12,15 +12,17 @@ Singleton {
     readonly property real effectiveVolume: Math.max(0, Math.min(1, Config.sound.volume))
     readonly property bool shellReady: Config.initialLoadComplete && Config.soundReady
     property bool bootUpPlayed: false
+    // Set when play() is called for the Portal Turret theme before its async
+    // directory-existence check (SoundThemes.availabilityChecked) has
+    // resolved — retried once that check completes, instead of silently
+    // falling back to the Default theme for whichever event fired first
+    // during startup/login.
+    property string pendingEventKey: ""
 
     function playBootUpOnce() {
         if (shellReady && !bootUpPlayed) {
             bootUpPlayed = true;
-            // Deferred: on the very first play() call ever, playerLoader.item
-            // may not exist yet (async Loader creation) — every later call is
-            // fine since active is already true by then. See SoundService.qml
-            // incident notes in the wiki for the TypeError this guards.
-            Qt.callLater(() => play("bootUp"));
+            play("bootUp");
         }
     }
 
@@ -35,11 +37,19 @@ Singleton {
         if (!event || event.muted)
             return;
 
+        const override = typeof event.sound === "string" && event.sound.startsWith("/") ? event.sound : "";
+
+        // An absolute-path override bypasses theme resolution entirely, so
+        // it never needs to wait on SoundThemes' async availability check.
+        if (!override && Config.sound.theme === "portal-turret" && !SoundThemes.availabilityChecked) {
+            pendingEventKey = eventKey;
+            return;
+        }
+
         let theme = SoundThemes.resolveTheme(Config.sound.theme);
         if (!theme.available)
             theme = SoundThemes.resolveTheme("default");
 
-        const override = typeof event.sound === "string" && event.sound.startsWith("/") ? event.sound : "";
         const sound = override || theme.events[eventKey];
         if (!sound)
             return;
@@ -51,6 +61,17 @@ Singleton {
     SoundEffect {
         id: player
         volume: root.effectiveVolume
+    }
+
+    Connections {
+        target: SoundThemes
+        function onAvailabilityCheckedChanged() {
+            if (SoundThemes.availabilityChecked && root.pendingEventKey) {
+                const key = root.pendingEventKey;
+                root.pendingEventKey = "";
+                root.play(key);
+            }
+        }
     }
 
     Connections {
