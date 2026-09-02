@@ -665,8 +665,14 @@ WlSessionLockSurface {
                 // Error de autenticación
                 errorMessage = "Authentication failed";
                 console.warn("PAM auth failed with result:", result);
+
                 if (Config.animDuration > 0) {
                     wrongPasswordAnim.start();
+                } else {
+                    // No animation to carry the reset - do it directly
+                    passwordInput.text = "";
+                    authenticating = false;
+                    passwordInputBox.showError = false;
                 }
             }
         }
