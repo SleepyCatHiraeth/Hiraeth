@@ -160,7 +160,12 @@ Item {
 
     Loader {
         id: persistentDashboardViewLoader
-        active: false
+        // Built eagerly when some enabled plugin asked to be kept alive. keepAlive only
+        // stops an already-loaded tab from unloading, and the dashboard itself is lazy,
+        // so without this a keepAlive plugin never starts at all in a session where the
+        // dashboard is never opened. A binding, not a constant: the plugin scan is async
+        // and lands after startup, and the answer changes when a plugin is enabled.
+        active: PluginService.dashboardPlugins.some(p => p.keepAlive)
         sourceComponent: Component { DashboardView { visible: false; screenName: root.screen.name } }
     }
 
