@@ -184,34 +184,36 @@ Singleton {
     
 
     function launchApp(app) {
-        const path = app.fileName || app.path || app.filePath;
-        
-        if (path && path.toString().endsWith('.desktop')) {
-            const escapedPath = path.toString().replace(/'/g, "'\\''");
-            runInActiveWorkspace("gio launch '" + escapedPath + "'");
-            return;
-        }
-
         if (app.command && app.command.length > 0) {
-            const safeArgs = [];
-            for (let i = 0; i < app.command.length; i++) {
-                const arg = app.command[i];
-                if (/^%[fFuUijkc]$/.test(arg)) continue;
-                safeArgs.push("'" + arg.replace(/'/g, "'\\''") + "'");
-            }
+            const q = s => "'" + s.toString().replace(/'/g, "'\\''") + "'";
+            const cmdArgs = app.command.map(q).join(" ");
 
-            if (safeArgs.length > 0) {
-                runInActiveWorkspace(safeArgs.join(" "));
-                return;
+            if (app.runInTerminal) {
+                // Terminal=true entries need a TTY; without one the program exits
+                // immediately. Hold the window open on failure so the error stays readable.
+                runInActiveWorkspace(q(TerminalService.binary) + " -e bash -c "
+                    + q(cmdArgs + '; rc=$?; [ "$rc" -ne 0 ] && read -rsn1 -p "exit $rc - press any key"'));
+            } else {
+                runInActiveWorkspace(cmdArgs);
             }
+            return;
         }
 
         app.execute();
     }
 
     function runInActiveWorkspace(command) {
+        // Failures are appended to launch.log so a launch that dies leaves evidence
+        // behind instead of vanishing into /dev/null.
+        // ponytail: log truncated at 1MB, swap in logrotate if that stops being enough.
+        const qcmd = "'" + command.replace(/'/g, "'\\''") + "'";
         const p = Qt.createQmlObject('import Quickshell.Io; Process { }', root);
-        p.command = ["bash", "-c", "cd ~ && env -u HL_INITIAL_WORKSPACE_TOKEN setsid " + command + " < /dev/null > /dev/null 2>&1 &"];
+        p.command = ["bash", "-c",
+            'L="${XDG_STATE_HOME:-$HOME/.local/state}/ambxst/launch.log"; mkdir -p "$(dirname "$L")"; '
+            + '[ -f "$L" ] && [ "$(stat -c%s "$L")" -gt 1048576 ] && : > "$L"; cd ~; '
+            + '( env -u HL_INITIAL_WORKSPACE_TOKEN setsid --wait ' + command
+            + ' < /dev/null > /dev/null 2>>"$L"; rc=$?; '
+            + '[ "$rc" -ne 0 ] && printf "%s rc=%s %s\\n" "$(date -Is)" "$rc" ' + qcmd + ' >> "$L" ) &'];
         p.onExited.connect(() => p.destroy());
         p.running = true;
     }
