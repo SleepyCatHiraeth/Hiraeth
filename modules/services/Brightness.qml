@@ -99,10 +99,16 @@ Singleton {
         interval: 1000
         repeat: false
         onTriggered: {
-            if (!SuspendManager.isSuspending) {
-                ddcProc.pending = [];
-                ddcProc.running = true;
+            if (SuspendManager.isSuspending)
+                return;
+            if (ddcProc.running) {
+                // Resetting pending under a running probe would drop the
+                // blocks it has already parsed without starting a new one.
+                ddcDetectTimer.restart();
+                return;
             }
+            ddcProc.pending = [];
+            ddcProc.running = true;
         }
     }
 
@@ -215,6 +221,12 @@ Singleton {
         // real, not int: Date.now() is ~1.8e12 and overflows a 32-bit QML int,
         // which would make the echo-skip elapsed check below meaningless.
         property real lastUserWriteAt: 0
+
+        // The last value actually handed to the hardware. lastUserWriteValue
+        // above records what the user asked for and is set on every
+        // setBrightness() call, so it can never tell whether a target is
+        // still unwritten; this can.
+        property real lastSentValue: -1
 
         // Concurrency guard for silentRefresh — a second pull while one is
         // already in flight reassigns initProc.command and would cancel the
@@ -352,7 +364,7 @@ Singleton {
                 // setBrightness() call can land between two ticks and never
                 // be written. Flush it before stopping, or the hardware keeps
                 // whatever mid-ramp value the previous tick wrote.
-                if (monitor.lastUserWriteValue !== monitor.brightness)
+                if (monitor.lastSentValue !== monitor.brightness)
                     monitor.syncBrightness();
                 monitor.setTimer.stop();
             }
@@ -363,6 +375,7 @@ Singleton {
                 return;
             monitor.lastUserWriteAt = Date.now();
             monitor.lastUserWriteValue = monitor.brightness;
+            monitor.lastSentValue = monitor.brightness;
             const rounded = Math.round(monitor.brightness * monitor.rawMaxBrightness);
             setProc.command = isDdc ? ["ddcutil", "-b", busNum, "setvcp", "10", rounded] : ["brightnessctl", "--class", "backlight", "s", rounded, "--quiet"];
             setProc.startDetached();
