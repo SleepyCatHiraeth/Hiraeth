@@ -1226,7 +1226,10 @@ Item {
                         ActionButton {
                             text: root.selectedMod?.enabled ? root.tr("mods.disable") : root.tr("mods.enable")
                             primary: !root.selectedMod?.enabled
-                            enabled: !ModsService.busy && (root.selectedMod?.enabled
+                            // !! : with no mod selected the optional chains
+                            // resolve to undefined, which is not assignable to
+                            // a bool property and warns on every startup.
+                            enabled: !ModsService.busy && !!(root.selectedMod?.enabled
                                 || ((root.selectedMod?.valid && (root.selectedMod?.compatible || ModsService.bypassVersionCheck))
                                     && root.dependenciesReady(root.selectedMod)))
                             onClicked: {
