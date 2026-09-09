@@ -210,10 +210,10 @@ Item {
 
                 Image {
                     mipmap: true
-                    source: Qt.resolvedUrl("../../../../assets/ambxst/ambxst-logo.svg")
+                    source: Qt.resolvedUrl("../../../../assets/hiraeth/logo-mono.png")
                     opacity: 0.25
-                    sourceSize.width: 64
-                    sourceSize.height: 64
+                    sourceSize.width: 111
+                    sourceSize.height: 111
                     fillMode: Image.PreserveAspectFit
                     anchors.horizontalCenter: parent.horizontalCenter
                     layer.enabled: true
