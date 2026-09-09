@@ -7,10 +7,12 @@ import qs.config
 import qs.modules.components
 import qs.modules.services
 import qs.modules.globals
+import qs.modules.ainotch
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 
-Item {
+FocusScope {
     id: root
     anchors.fill: parent
 
@@ -18,12 +20,175 @@ Item {
 
     readonly property bool active: GlobalStates.assistantVisible && targetScreen.name === GlobalStates.assistantScreenName
     property alias hitbox: sidebarContainer
-    property alias hasActiveFocus: inputField.activeFocus
+    property alias hoverHitbox: notchHoverRegion
+    readonly property bool hasActiveFocus: root.activeFocus
+    property alias resizeHitbox: resizeHandle
 
     readonly property bool frameEnabled: (Config.bar?.frameEnabled ?? false)
-    readonly property bool frameWrapped: frameEnabled && GlobalStates.assistantPinned
-    readonly property int sidebarMargin: frameWrapped ? 0 : 4
+
+    // Frame-wrapping is an expanded-panel behavior. The resting notch keeps its
+    // own silhouette, or it would read as a square tab stuck to the bezel.
+    readonly property bool frameWrapped: frameEnabled && GlobalStates.assistantMergedIntoFrame && root.active
+    // The resting notch is welded to the bezel, so it takes no outer margin;
+    // the expanded panel keeps the 4px gap it has always had.
+    readonly property int sidebarMargin: (frameWrapped || showAsNotch) ? 0 : 4
     property bool wantsFocus: false
+
+    // ── Right-edge notch ────────────────────────────────────────────────
+    // The notch is the assistant panel's collapsed state, not a separate
+    // widget that opens one: same container, same background, same geometry
+    // animation, so opening reads as the notch unfolding rather than a panel
+    // sliding in over it.
+    readonly property bool notchEnabled: Config.ai?.notchEnabled ?? true
+    readonly property bool notchKeepHidden: Config.ai?.notchKeepHidden ?? false
+    readonly property int notchHoverRegionSize: Math.max(4, Config.ai?.notchHoverRegionSize ?? 16)
+    readonly property bool notchHoverToOpen: Config.ai?.notchHoverToOpen ?? false
+    readonly property bool notchAutoHideWithWindows: Config.ai?.notchAutoHideWithWindows ?? false
+
+    // Window and fullscreen detection, matching the top notch: prefer the
+    // parent panel's own check (it consults both ToplevelManager and
+    // CompositorData) and fall back to ToplevelManager alone.
+    readonly property var shellPanelRef: Visibilities.barPanels[targetScreen.name]
+
+    // A notch module opening over the panel takes focus for its own view, and
+    // closing hands it back. Kept as a local property so its change signal
+    // resolves; a Connections on the var-typed panel reference does not.
+    readonly property var screenVisibilities: Visibilities.getForScreen(targetScreen.name)
+    readonly property bool notchModuleOpen: screenVisibilities ? (screenVisibilities.launcher || screenVisibilities.dashboard || screenVisibilities.powermenu || screenVisibilities.tools) : false
+
+    onNotchModuleOpenChanged: restoreInputFocus()
+
+    readonly property var compositorMonitor: AxctlService.monitorFor(targetScreen)
+
+    readonly property bool hasWindows: {
+        if (!compositorMonitor || !compositorMonitor.activeWorkspace || !AxctlService.clients.values)
+            return false;
+        return AxctlService.clients.values.some(client => client && client.workspace && client.workspace.id === compositorMonitor.activeWorkspace.id);
+    }
+
+    readonly property bool activeWindowFullscreen: {
+        if (shellPanelRef && typeof shellPanelRef.hasFullscreenWindow !== 'undefined')
+            return shellPanelRef.hasFullscreenWindow;
+        const toplevel = ToplevelManager.activeToplevel;
+        if (!toplevel || !toplevel.activated)
+            return false;
+        return toplevel.fullscreen === true;
+    }
+
+    readonly property bool hiddenByWindows: notchAutoHideWithWindows && (hasWindows || activeWindowFullscreen)
+
+    // How far this item sits from the physical screen edge. The panel insets it
+    // for the screen frame and for a bar on the same side, so anything anchored
+    // to `parent` stops short of the bezel. The top notch's wake strip starts at
+    // the real edge, and a strip you cannot hit by pushing the pointer into the
+    // corner of the screen is not much of a wake strip.
+    readonly property int edgeInset: {
+        if (!root.parent)
+            return 0;
+        if (GlobalStates.assistantPosition === "left")
+            return Math.max(0, root.x);
+        return Math.max(0, root.parent.width - (root.x + root.width));
+    }
+
+    readonly property bool expanded: root.active
+    readonly property bool showAsNotch: notchEnabled && !expanded
+    readonly property int collapsedDepth: Config.showBackground ? 44 : 40
+    readonly property int collapsedLength: Math.max(1, Math.min(height, Math.max(64, Config.ai?.notchLength ?? 180)))
+
+    property real dragWidth: -1
+    readonly property int effectiveWidth: Math.max(1, Math.min(width - sidebarMargin - 8, Math.max(300, Math.min(800, dragWidth >= 0 ? dragWidth : GlobalStates.assistantWidth))))
+    readonly property real expansionProgress: notchEnabled
+        ? Math.max(0, Math.min(1, (sidebarContainer.width - collapsedDepth) / Math.max(1, effectiveWidth + sidebarMargin - collapsedDepth)))
+        : (revealed ? 1 : 0)
+
+    readonly property string notchEdge: GlobalStates.assistantPosition === "left" ? "left" : "right"
+
+    // Same rest/open radii the top notch uses, so both surfaces round by the
+    // same amounts as they open.
+    property int notchFlareSize: (frameWrapped || !showAsNotch) ? 0 : Styling.radius(4)
+    property int notchBodyRadius: frameWrapped ? 0 : (showAsNotch ? Styling.radius(4) : Styling.radius(0))
+
+    Behavior on notchFlareSize {
+        enabled: Config.animDuration > 0
+        NumberAnimation {
+            duration: Config.animDuration
+            easing.type: Easing.OutQuart
+        }
+    }
+
+    Behavior on notchBodyRadius {
+        enabled: Config.animDuration > 0
+        NumberAnimation {
+            duration: Config.animDuration
+            easing.type: root.expanded ? Easing.OutBack : Easing.OutQuart
+            easing.overshoot: root.expanded ? 1.2 : 1.0
+        }
+    }
+
+    // Hover, with the top notch's 1000 ms grace so the notch does not flicker
+    // shut while the pointer crosses the gap to it.
+    property bool notchHoverActive: false
+    property bool hoverOpenBlocked: false
+    readonly property bool notchHovered: notchHoverHandler.hovered || notchBodyHover.hovered
+
+    Timer {
+        id: notchHideTimer
+        interval: 1000
+        repeat: false
+        onTriggered: {
+            if (!root.notchHovered)
+                root.notchHoverActive = false;
+        }
+    }
+
+    onNotchHoveredChanged: {
+        if (notchHovered) {
+            notchHideTimer.stop();
+            notchHoverActive = true;
+            if (notchHoverToOpen && !root.active && !hoverOpenBlocked)
+                hoverOpenTimer.restart();
+        } else {
+            hoverOpenTimer.stop();
+            hoverOpenBlocked = false;
+            notchHideTimer.restart();
+        }
+    }
+
+    Timer {
+        id: hoverOpenTimer
+        interval: 250
+        onTriggered: if (root.notchHoverToOpen && root.notchHovered && !root.active && !root.hoverOpenBlocked) root.openFromNotch()
+    }
+    Timer {
+        id: hoverRearmTimer
+        interval: Math.max(250, Config.animDuration)
+        onTriggered: if (!root.notchHovered) root.hoverOpenBlocked = false
+    }
+
+    // An open panel always stays. Otherwise the notch is out of the way when it
+    // has been asked to be — kept hidden, or hidden while windows are on this
+    // workspace — but hovering the wake strip still brings it back, which is
+    // how the top notch behaves in the same situation.
+    readonly property bool revealed: {
+        if (root.active)
+            return true;
+        if (!notchEnabled)
+            return false;
+        if (notchKeepHidden || hiddenByWindows)
+            return notchHoverActive;
+        return true;
+    }
+
+    // Opens on the screen whose notch was used, rather than on whichever
+    // monitor happens to hold focus.
+    function openFromNotch() {
+        if (root.active) {
+            GlobalStates.hideAssistant();
+            return;
+        }
+        GlobalStates.assistantScreenName = targetScreen.name;
+        GlobalStates.assistantVisible = true;
+    }
     property bool menuExpanded: false
     property real menuWidth: 250
     property var slashCommands: [
@@ -50,40 +215,58 @@ Item {
     ]
 
     function focusSearchInput() {
-        inputField.forceActiveFocus();
+        if (root.active && root.wantsFocus && !root.notchModuleOpen && !modelSelector.visible && !suggestionsPopup.visible)
+            inputField.forceActiveFocus();
     }
 
+    function restoreInputFocus() {
+        if (!root.active || !root.wantsFocus || root.notchModuleOpen || modelSelector.visible || suggestionsPopup.visible)
+            return;
+        if (root.shellPanelRef && root.shellPanelRef.reassertKeyboardFocus)
+            root.shellPanelRef.reassertKeyboardFocus();
+        Qt.callLater(() => {
+            if (root.active && root.wantsFocus && !root.notchModuleOpen && !root.activeFocus)
+                focusSearchInput();
+        });
+    }
+    onWantsFocusChanged: restoreInputFocus()
+
+    Connections {
+        target: ToplevelManager
+        function onActiveToplevelChanged() { root.restoreInputFocus(); }
+    }
     Connections {
         target: GlobalStates
         function onAssistantFocusRequested(wasAlreadyOpen) {
-            if (targetScreen.name === GlobalStates.assistantScreenName) {
-                Qt.callLater(() => {
-                    if (wasAlreadyOpen) {
-                        // It was already open. If it currently has focus, close it. Otherwise, regain focus.
-                        if (root.active && root.wantsFocus && inputField.activeFocus) {
-                            GlobalStates.hideAssistant();
-                        } else {
-                            root.wantsFocus = true;
-                            focusSearchInput();
-                        }
-                    } else {
-                        // It just opened. Just ensure it has focus.
-                        root.wantsFocus = true;
-                        focusSearchInput();
-                    }
-                });
+            if (!root.active)
+                return;
+            if (wasAlreadyOpen && root.wantsFocus && root.activeFocus)
+                GlobalStates.hideAssistant();
+            else {
+                root.wantsFocus = true;
+                root.restoreInputFocus();
             }
         }
     }
-
     onActiveChanged: {
+        root.wantsFocus = active;
         if (active) {
-            root.wantsFocus = true;
-            Qt.callLater(() => {
-                focusSearchInput();
-            });
+            hoverOpenTimer.stop();
+            root.restoreInputFocus();
         } else {
-            root.wantsFocus = false;
+            root.hoverOpenBlocked = true;
+            hoverRearmTimer.restart();
+            modelSelector.close();
+            suggestionsPopup.close();
+        }
+    }
+    Keys.onEscapePressed: event => {
+        if (root.active) {
+            if (root.menuExpanded)
+                root.menuExpanded = false;
+            else
+                root.wantsFocus = false;
+            event.accepted = true;
         }
     }
 
@@ -119,7 +302,8 @@ Item {
         onPressed: {
             let mapped = mapToItem(root, mouseX, 0);
             pressMouseX = mapped.x;
-            pressWidth = GlobalStates.assistantWidth;
+            pressWidth = root.effectiveWidth;
+            root.dragWidth = pressWidth;
         }
 
         onMouseXChanged: {
@@ -131,47 +315,153 @@ Item {
                 delta = pressMouseX - mapped.x;
             else
                 delta = mapped.x - pressMouseX;
-            GlobalStates.assistantWidth = Math.max(300, Math.min(800, pressWidth + delta));
+            root.dragWidth = Math.max(Math.min(300, root.width - root.sidebarMargin - 8), Math.min(root.width - root.sidebarMargin - 8, 800, pressWidth + delta));
         }
 
+        onCanceled: root.dragWidth = -1
         onReleased: {
-            Config.ai.sidebarWidth = GlobalStates.assistantWidth;
+            // Plain assignment, not markShellChanged(): there is no Apply button
+            // out here, so opening a shell-settings transaction would leave
+            // Config.pauseAutoSave stuck true and block every module's autosave.
+            Config.ai.sidebarWidth = root.effectiveWidth;
+            root.dragWidth = -1;
+        }
+    }
+
+    // Wake region for a notch set to keep hidden. Deliberately wider than the
+    // notch is deep: a strip on a screen edge is a small target.
+    Item {
+        id: notchHoverRegion
+        // Spans from the notch's own edge out to the bezel.
+        width: root.notchHoverRegionSize + root.edgeInset
+        height: root.collapsedLength
+        x: GlobalStates.assistantPosition === "left" ? -root.edgeInset : parent.width - root.notchHoverRegionSize
+        y: Math.round((parent.height - height) / 2)
+        visible: root.notchEnabled && !root.active && (root.notchKeepHidden || root.hiddenByWindows)
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: root.openFromNotch()
+        }
+        HoverHandler {
+            id: notchHoverHandler
+            enabled: notchHoverRegion.visible
         }
     }
 
     Item {
         id: sidebarContainer
-        width: GlobalStates.assistantWidth + root.sidebarMargin
-        height: parent.height
+        width: (root.showAsNotch ? root.collapsedDepth : root.effectiveWidth) + root.sidebarMargin
+        height: root.showAsNotch ? root.collapsedLength : parent.height
 
-        x: {
-            if (GlobalStates.assistantPosition === "left")
-                return root.active ? 0 : -(width);
-            return root.active ? parent.width - width : parent.width;
-        }
+        // Pinned by anchors, never by a binding on its own animated size.
+        // Deriving `x` from `width` and `y` from `height` and then giving each
+        // of those its own Behavior makes position chase a target that is
+        // itself still moving: the panel unpins from the screen edge, lags
+        // behind the shrink in the middle of the desktop, and only slides into
+        // place once the size animation has finished. Anchored, the two edges
+        // stay put and only the size animates, so the panel retracts into the
+        // notch instead of detaching from it.
+        anchors.left: GlobalStates.assistantPosition === "left" ? parent.left : undefined
+        anchors.right: GlobalStates.assistantPosition === "right" ? parent.right : undefined
+        anchors.verticalCenter: parent.verticalCenter
 
-        visible: root.active || slideAnimation.running
+        visible: root.revealed || revealAnimation.running
 
-        Behavior on x {
-            NumberAnimation {
-                id: slideAnimation
-                duration: Config.animDuration
-                easing.type: Easing.OutCubic
+        // Hiding travels outward along the bezel normal, the way the top notch
+        // hides, rather than by moving the anchored edge.
+        transform: Translate {
+            x: {
+                if (root.revealed)
+                    return 0;
+                return GlobalStates.assistantPosition === "left" ? -sidebarContainer.width : sidebarContainer.width;
+            }
+
+            Behavior on x {
+                enabled: Config.animDuration > 0
+                NumberAnimation {
+                    id: revealAnimation
+                    duration: Config.animDuration / 2
+                    easing.type: Easing.OutCubic
+                }
             }
         }
 
-        StyledRect {
+        // Width carries the notch's overshoot, since that is the axis the notch
+        // actually pops along. Height spans most of the screen when expanded,
+        // where an overshoot would only throw the flares off-screen.
+        Behavior on width {
+            enabled: Config.animDuration > 0 && root.dragWidth < 0
+            NumberAnimation {
+                id: widthAnimation
+                duration: Config.animDuration
+                easing.type: root.expanded ? Easing.OutBack : Easing.OutQuart
+                easing.overshoot: root.expanded ? 1.2 : 1.0
+            }
+        }
+
+        Behavior on height {
+            enabled: Config.animDuration > 0
+            NumberAnimation {
+                id: heightAnimation
+                duration: Config.animDuration
+                easing.type: Easing.OutQuart
+            }
+        }
+
+        HoverHandler {
+            id: notchBodyHover
+            enabled: !root.active
+        }
+
+        MouseArea {
             anchors.fill: parent
-            anchors.topMargin: root.sidebarMargin
-            anchors.bottomMargin: root.sidebarMargin
+            enabled: !root.active
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.openFromNotch()
+        }
+
+        AiNotch {
+            id: notchShell
+            anchors.fill: parent
+            anchors.topMargin: root.showAsNotch ? 0 : root.sidebarMargin
+            anchors.bottomMargin: root.showAsNotch ? 0 : root.sidebarMargin
             anchors.leftMargin: GlobalStates.assistantPosition === "left" ? root.sidebarMargin : 0
             anchors.rightMargin: GlobalStates.assistantPosition === "right" ? root.sidebarMargin : 0
-            variant: root.frameWrapped ? "transparent" : "bg"
 
-            radius: root.frameWrapped ? 0 : (variantConfig.radius !== undefined ? variantConfig.radius : Styling.radius(0))
+            edge: root.notchEdge
+            flareSize: root.notchFlareSize
+            bodyRadius: root.notchBodyRadius
+            surfaceVariant: root.frameWrapped && !widthAnimation.running && !heightAnimation.running ? "transparent" : "bg"
+            borderEnabled: !root.frameWrapped
+
+            AiNotchCollapsed {
+                anchors.fill: parent
+                hovered: root.notchHovered
+
+                // Driven by how notch-shaped the container currently is, not by
+                // a Behavior of its own. A timed fade puts the glyph on screen
+                // while the panel is still full width, so it reads as an icon
+                // floating in the middle of the desktop.
+                opacity: root.showAsNotch ? Math.max(0, Math.min(1, (root.collapsedDepth * 2 - sidebarContainer.width) / root.collapsedDepth)) : 0
+                visible: opacity > 0.01
+            }
+
             ColumnLayout {
                 anchors.fill: parent
                 spacing: 0
+                clip: true
+                enabled: root.expanded
+                opacity: root.expanded ? 1 : 0
+                visible: opacity > 0.01
+
+                Behavior on opacity {
+                    enabled: Config.animDuration > 0
+                    NumberAnimation {
+                        duration: Config.animDuration / 2
+                        easing.type: Easing.OutQuart
+                    }
+                }
 
                 Item {
                     Layout.fillWidth: true
@@ -183,6 +473,7 @@ Item {
                         anchors.rightMargin: 8
 
                         Button {
+                            Accessible.name: "Chat history"
                             Layout.preferredWidth: 32
                             Layout.preferredHeight: 32
                             flat: true
@@ -209,6 +500,8 @@ Item {
                         }
 
                         Button {
+                            Accessible.name: "New chat"
+                            enabled: !Ai.isLoading
                             Layout.preferredWidth: 32
                             Layout.preferredHeight: 32
                             flat: true
@@ -238,6 +531,7 @@ Item {
                         }
 
                         Button {
+                            Accessible.name: "Merge into frame"
                             Layout.preferredWidth: 32
                             Layout.preferredHeight: 32
                             flat: true
@@ -247,7 +541,7 @@ Item {
                                 text: Icons.pin
                                 font.family: Icons.font
                                 font.pixelSize: 16
-                                color: GlobalStates.assistantPinned ? Styling.srItem("overprimary") : Colors.overSurface
+                                color: GlobalStates.assistantMergedIntoFrame ? Styling.srItem("overprimary") : Colors.overSurface
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                             }
@@ -265,8 +559,7 @@ Item {
                             }
 
                             onClicked: {
-                                GlobalStates.assistantPinned = !GlobalStates.assistantPinned;
-                                Config.ai.sidebarPinnedOnStartup = GlobalStates.assistantPinned;
+                                Config.ai.sidebarMergeIntoFrame = !Config.ai.sidebarMergeIntoFrame;
                             }
                         }
 
@@ -275,6 +568,7 @@ Item {
                         }
 
                         Button {
+                            Accessible.name: "Close assistant"
                             Layout.preferredWidth: 32
                             Layout.preferredHeight: 32
                             flat: true
@@ -323,6 +617,28 @@ Item {
                         anchors.fill: parent
 
                         property var pendingAttachments: []
+                        property var attachmentQueue: []
+                        readonly property var supportedImageTypes: ["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"]
+
+                        function startNextAttachment() {
+                            if (attachmentReadProcess.running || attachmentQueue.length === 0)
+                                return;
+                            const next = attachmentQueue[0];
+                            attachmentQueue = attachmentQueue.slice(1);
+                            attachmentReadProcess.filePath = next.path;
+                            attachmentReadProcess.mimeType = next.mimeType;
+                            attachmentReadProcess.fileName = next.name;
+                            attachmentReadProcess.chatId = next.chatId;
+                            attachmentReadProcess.running = true;
+                        }
+
+                        Connections {
+                            target: Ai
+                            function onCurrentChatIdChanged() {
+                                mainChatArea.clearAttachments();
+                                mainChatArea.attachmentQueue = [];
+                            }
+                        }
 
                         function addAttachment(mimeType, base64Data, fileName) {
                             let list = pendingAttachments.slice();
@@ -368,10 +684,10 @@ Item {
                                 Ai.pushSystemMessage("Only image files are supported for attachments.");
                                 return;
                             }
-                            attachmentReadProcess.filePath = filePath;
-                            attachmentReadProcess.mimeType = mimeType;
-                            attachmentReadProcess.fileName = filePath.split("/").pop();
-                            attachmentReadProcess.running = true;
+                            attachmentQueue = attachmentQueue.concat([{
+                                path: filePath, mimeType: mimeType, name: filePath.split("/").pop(), chatId: Ai.currentChatId
+                            }]);
+                            startNextAttachment();
                         }
 
                         function addAttachmentsFromUriList(text) {
@@ -429,6 +745,7 @@ Item {
                                     spacing: 4
 
                                     delegate: Button {
+                                        enabled: !Ai.isLoading
                                         width: historyList.width
                                         height: 48
                                         flat: true
@@ -532,24 +849,19 @@ Item {
                             property string filePath: ""
                             property string mimeType: ""
                             property string fileName: ""
-                            command: ["bash", "-c", "/usr/bin/base64 -w 0 '" + filePath.replace(/'/g, "'\\''") + "'"]
-                            stdout: StdioCollector {
-                                onStreamFinished: {
-                                    let data = text.trim();
-                                    if (data.length > 0)
-                                        mainChatArea.addAttachment(attachmentReadProcess.mimeType, data, attachmentReadProcess.fileName);
-                                    else if (attachmentReadProcess.filePath.length > 0)
-                                        Ai.pushSystemMessage("Failed to read attachment data.");
-                                }
-                            }
-                            stderr: StdioCollector {
-                                id: attachmentReadStderr
-                            }
+                            property string chatId: ""
+                            command: ["/usr/bin/base64", "-w", "0", "--", filePath]
+                            stdout: StdioCollector { id: attachmentReadStdout }
+                            stderr: StdioCollector { id: attachmentReadStderr }
                             onExited: exitCode => {
-                                if (exitCode !== 0) {
-                                    let errorText = attachmentReadStderr.text.trim();
-                                    Ai.pushSystemMessage("Failed to read attachment: " + (errorText.length > 0 ? errorText : "unknown error"));
+                                if (attachmentReadProcess.chatId === Ai.currentChatId) {
+                                    const data = attachmentReadStdout.text.trim();
+                                    if (exitCode === 0 && data.length > 0)
+                                        mainChatArea.addAttachment(mimeType, data, fileName);
+                                    else
+                                        Ai.pushSystemMessage("Failed to read attachment: " + fileName);
                                 }
+                                Qt.callLater(mainChatArea.startNextAttachment);
                             }
                         }
 
@@ -561,13 +873,14 @@ Item {
                                     let types = text.trim().split("\n");
                                     let imageType = "";
                                     for (let i = 0; i < types.length; i++) {
-                                        if (types[i].startsWith("image/")) {
+                                        if (mainChatArea.supportedImageTypes.indexOf(types[i].trim()) >= 0) {
                                             imageType = types[i].trim();
                                             break;
                                         }
                                     }
                                     if (imageType.length > 0) {
                                         clipboardImageProcess.mimeType = imageType;
+                                        clipboardImageProcess.chatId = Ai.currentChatId;
                                         clipboardImageProcess.running = true;
                                         return;
                                     }
@@ -575,7 +888,7 @@ Item {
                                         clipboardUrisProcess.running = true;
                                         return;
                                     }
-                                    Ai.pushSystemMessage("Clipboard does not contain an image or file.");
+                                    // Plain text is pasted by TextArea itself.
                                 }
                             }
                             stderr: StdioCollector {
@@ -592,9 +905,12 @@ Item {
                         Process {
                             id: clipboardImageProcess
                             property string mimeType: ""
-                            command: ["bash", "-c", "wl-paste --type \"" + mimeType + "\" 2>/dev/null | /usr/bin/base64 -w 0" ]
+                            property string chatId: ""
+                            command: ["bash", "-c", "set -o pipefail; wl-paste --type \"$1\" | /usr/bin/base64 -w 0", "ambxst-clipboard", mimeType]
                             stdout: StdioCollector {
                                 onStreamFinished: {
+                                    if (clipboardImageProcess.chatId !== Ai.currentChatId)
+                                        return;
                                     let data = text.trim();
                                     if (data.length > 0) {
                                         let ext = clipboardImageProcess.mimeType.split("/")[1] || "png";
@@ -807,6 +1123,7 @@ Item {
                                                         radius: Styling.radius(4)
                                                     }
 
+                                                    enabled: !Ai.isLoading
                                                     onClicked: {
                                                         if (messageDelegate.isEditing) {
                                                             Ai.updateMessage(index, bubbleContentText.text);
@@ -842,8 +1159,7 @@ Item {
                                                     }
 
                                                     onClicked: {
-                                                        let p = Qt.createQmlObject('import Quickshell; import Quickshell.Io; Process { command: ["wl-copy", "' + modelData.content.replace(/"/g, '\\"') + '"] }', parent);
-                                                        p.running = true;
+                                                        Quickshell.clipboardText = modelData.content || "";
                                                     }
                                                 }
 
@@ -869,6 +1185,7 @@ Item {
                                                         radius: Styling.radius(4)
                                                     }
 
+                                                    enabled: !Ai.isLoading
                                                     onClicked: Ai.regenerateResponse(index)
                                                 }
                                             }
@@ -1141,7 +1458,7 @@ Item {
 
                                                 SequentialAnimation on opacity {
                                                     loops: Animation.Infinite
-                                                    running: Ai.isLoading
+                                                    running: root.active && visible && Ai.isLoading && Config.animDuration > 0
 
                                                     PauseAnimation {
                                                         duration: index * 200
@@ -1184,7 +1501,8 @@ Item {
                             target: Ai
 
                             function onModelSelectionRequested() {
-                                modelSelector.open();
+                                if (root.active)
+                                    modelSelector.open();
                             }
                         }
 
@@ -1413,7 +1731,7 @@ Item {
                                             id: inputField
                                             focus: true
                                             activeFocusOnTab: true
-                                            placeholderText: mainChatArea.isWelcome ? "Ask AI or type /help..." : "Message AI..."
+                                            placeholderText: Ai.isLoading ? "AI is responding…" : mainChatArea.isWelcome ? "Ask AI or type /help..." : "Message AI..."
                                             placeholderTextColor: Colors.outline
                                             font.pixelSize: 14
                                             color: Colors.overBackground
@@ -1465,10 +1783,15 @@ Item {
                                                     return;
                                                 }
                                                 if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && !(event.modifiers & Qt.ShiftModifier)) {
+                                                    if (attachmentReadProcess.running || mainChatArea.attachmentQueue.length > 0) {
+                                                        event.accepted = true;
+                                                        return;
+                                                    }
                                                     if (text.trim().length > 0 || mainChatArea.pendingAttachments.length > 0) {
-                                                        Ai.sendMessage(text.trim(), mainChatArea.pendingAttachments.length > 0 ? mainChatArea.pendingAttachments : undefined);
-                                                        text = "";
-                                                        mainChatArea.clearAttachments();
+                                                        if (Ai.sendMessage(text.trim(), mainChatArea.pendingAttachments.length > 0 ? mainChatArea.pendingAttachments : undefined) !== false) {
+                                                            text = "";
+                                                            mainChatArea.clearAttachments();
+                                                        }
                                                     }
                                                     event.accepted = true;
                                                 }
@@ -1481,6 +1804,7 @@ Item {
                                     }
 
                                     Button {
+                            Accessible.name: "Attach image"
                                         Layout.preferredWidth: 32
                                         Layout.preferredHeight: 32
                                         flat: true
@@ -1502,6 +1826,8 @@ Item {
                                         onClicked: zenityProcess.running = true
                                     }
                                     Button {
+                            Accessible.name: "Send message"
+                            enabled: !Ai.isLoading && !attachmentReadProcess.running && mainChatArea.attachmentQueue.length === 0
                                         Layout.preferredWidth: 32
                                         Layout.preferredHeight: 32
                                         flat: true
@@ -1523,9 +1849,10 @@ Item {
 
                                         onClicked: {
                                             if (inputField.text.trim().length > 0 || mainChatArea.pendingAttachments.length > 0) {
-                                                Ai.sendMessage(inputField.text.trim(), mainChatArea.pendingAttachments.length > 0 ? mainChatArea.pendingAttachments : undefined);
-                                                inputField.text = "";
-                                                mainChatArea.clearAttachments();
+                                                if (Ai.sendMessage(inputField.text.trim(), mainChatArea.pendingAttachments.length > 0 ? mainChatArea.pendingAttachments : undefined) !== false) {
+                                                    inputField.text = "";
+                                                    mainChatArea.clearAttachments();
+                                                }
                                             }
                                         }
                                     }
@@ -1549,7 +1876,7 @@ Item {
                                 anchors.fill: parent
                                 anchors.margins: -4
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: modelSelector.open()
+                                onClicked: if (!Ai.isLoading) modelSelector.open()
                             }
 
                             visible: mainChatArea.isWelcome

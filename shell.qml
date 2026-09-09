@@ -117,8 +117,9 @@ ShellRoot {
 
                 // Sidebar status for reservations
                 sidebarEnabled: GlobalStates.assistantVisible && screenShellContainer.modelData.name === GlobalStates.assistantScreenName
-                sidebarPinned: GlobalStates.assistantPinned
-                sidebarWidth: GlobalStates.assistantWidth
+                sidebarReserveSpace: Config.ai.sidebarReserveSpace ?? true
+                sidebarMerged: GlobalStates.assistantMergedIntoFrame
+                sidebarWidth: unifiedPanel.assistantWidth
                 sidebarPosition: GlobalStates.assistantPosition
             }
         }

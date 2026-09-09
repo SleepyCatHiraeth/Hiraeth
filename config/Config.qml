@@ -1192,7 +1192,17 @@ Singleton {
             property string defaultModel: "gemini-2.0-flash"
             property int sidebarWidth: 400
             property string sidebarPosition: "right"
-            property bool sidebarPinnedOnStartup: false
+            property bool sidebarMergeIntoFrame: true
+            property bool sidebarReserveSpace: true
+            property bool sidebarCloseOnClickOutside: true
+            property bool notchEnabled: true
+            property bool notchKeepHidden: false
+            property int notchLength: 180
+            property int notchHoverRegionSize: 16
+            property bool notchHoverToOpen: false
+            property bool notchAutoHideWithWindows: false
+            property bool notchUsageEnabled: true
+            property list<string> notchUsageProviders: []
         }
     }
 
@@ -1284,6 +1294,7 @@ Singleton {
                 "bootUp": { "sound": "", "muted": false },
                 "deviceConnect": { "sound": "", "muted": false },
                 "deviceDisconnect": { "sound": "", "muted": false },
+                "batteryLow": { "sound": "", "muted": false },
                 "shutdown": { "sound": "", "muted": false }
             })
         }
@@ -3437,6 +3448,13 @@ Singleton {
 
         try {
             var current = JSON.parse(raw);
+            // Preserve the old pin policy when importing a pre-SideNotch config.
+            if (name === "ai" && typeof current.sidebarPinnedOnStartup === "boolean") {
+                if (current.sidebarMergeIntoFrame === undefined)
+                    current.sidebarMergeIntoFrame = current.sidebarPinnedOnStartup;
+                if (current.sidebarReserveSpace === undefined)
+                    current.sidebarReserveSpace = current.sidebarPinnedOnStartup;
+            }
             var validated = ConfigValidator.validate(current, defaults);
 
             if (JSON.stringify(current) !== JSON.stringify(validated)) {
@@ -3446,7 +3464,17 @@ Singleton {
             onComplete();
         } catch (e) {
             console.log("Error validating " + name + " config (invalid JSON?): " + e);
-            console.log("Overwriting with defaults due to error.");
+            var backupView = Qt.createQmlObject('import Quickshell.Io; FileView { blockWrites: true }', root);
+            backupView.path = loader.path + ".bak";
+            var backupFailed = false;
+            backupView.saveFailed.connect(function () { backupFailed = true; });
+            backupView.setText(raw);
+            if (backupFailed) {
+                console.warn(name + ".json.bak backup failed — proceeding with defaults anyway, original invalid content NOT preserved.");
+            } else {
+                console.log("Backed up invalid " + name + ".json to " + name + ".json.bak");
+            }
+            backupView.destroy();
             loader.setText(JSON.stringify(defaults, null, 2));
             onComplete();
         }
@@ -3514,8 +3542,6 @@ Singleton {
                 } else {
                     dock.position = "left";
                 }
-                // Trigger save
-                GlobalStates.markShellChanged();
             }
         } 
         // If notch moves top
@@ -3524,7 +3550,6 @@ Singleton {
             if (dock.position === "left" || dock.position === "right") {
                 console.log("Notch moved to top, restoring Dock to bottom...");
                 dock.position = "bottom";
-                GlobalStates.markShellChanged();
             }
         }
     }

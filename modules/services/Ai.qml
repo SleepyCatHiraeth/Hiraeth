@@ -172,22 +172,120 @@ Singleton {
     }
 
     // ============================================
+    // REQUEST LIFECYCLE
+    // ============================================
+
+    // Exactly one request may be in flight. `activeRequest` is the snapshot of
+    // who owns it: the chat it was issued from, the index of the assistant
+    // message it streams into, and the strategy/model it was built with. Every
+    // delayed callback (mkdir, callLater, curl, command execution) validates
+    // against this snapshot instead of reading the live `currentChat` /
+    // `currentChatId` / `currentStrategy`, which can change under it.
+    property var activeRequest: null
+    property int requestSeq: 0
+
+    // The helpers below are pure JS with no QML dependencies; they are
+    // extracted and unit-tested by tests/ai-request-lifecycle.test.js. Keep
+    // them free of QML identifiers and of braces inside string literals.
+
+    function requestOwner(seq, chatId, index, strategy, model) {
+        return {
+            seq: seq,
+            chatId: chatId,
+            index: index,
+            strategy: strategy,
+            model: model
+        };
+    }
+
+    // A delayed callback may only act if it still owns the in-flight request.
+    function isRequestCurrent(owner, seq) {
+        return !!owner && owner.seq === seq;
+    }
+
+    // The owned message index, or -1 once the conversation moved on.
+    function ownedIndex(owner, chatId, chat) {
+        if (!owner || !chat)
+            return -1;
+        if (owner.chatId !== chatId)
+            return -1;
+        if (owner.index < 0 || owner.index >= chat.length)
+            return -1;
+        return owner.index;
+    }
+
+    // Index of the placeholder a stream may write into. Appends after it (a
+    // system message, a function result) leave it valid; truncation, a chat
+    // switch, or a different message landing on the index invalidate it.
+    function streamTargetIndex(owner, chatId, chat) {
+        const i = ownedIndex(owner, chatId, chat);
+        if (i < 0)
+            return -1;
+        const msg = chat[i];
+        return msg && msg.role === "assistant" ? i : -1;
+    }
+
+    // Index of the function-call message a command execution belongs to.
+    function functionCallIndex(owner, chatId, chat) {
+        const i = ownedIndex(owner, chatId, chat);
+        if (i < 0)
+            return -1;
+        const msg = chat[i];
+        return msg && msg.functionCall ? i : -1;
+    }
+
+    // What sendMessage() should do with an input: nothing ("empty"), run it as
+    // a slash command ("command"), refuse it because a request owns the
+    // conversation ("busy"), or send it ("send").
+    function classifySend(text, attachments, busy) {
+        const trimmed = typeof text === "string" ? text.trim() : "";
+        const hasAttachments = !!attachments && attachments.length > 0;
+        if (trimmed === "" && !hasAttachments)
+            return "empty";
+        if (trimmed.startsWith("/"))
+            return "command";
+        return busy ? "busy" : "send";
+    }
+
+    // Commands that rewrite the conversation cannot run while a request owns
+    // it; append-only ones stay available.
+    function commandConflictsWithRequest(command, busy) {
+        if (!busy)
+            return false;
+        return command === "/new" || command === "/model";
+    }
+
+    // Ends the request `seq` owns. A stale callback is ignored.
+    function failRequest(seq, message) {
+        if (!isRequestCurrent(activeRequest, seq))
+            return false;
+        activeRequest = null;
+        isLoading = false;
+        lastError = message;
+        return true;
+    }
+
+    // ============================================
     // TOOLS
     // ============================================
 
+    // Returns true when the regeneration was started.
     function regenerateResponse(index) {
+        if (isLoading)
+            return false;
         if (index < 0 || index >= currentChat.length)
-            return;
+            return false;
 
         let newChat = currentChat.slice(0, index);
         currentChat = newChat;
 
-        isLoading = true;
         lastError = "";
-        makeRequest();
+        return makeRequest();
     }
 
     function updateMessage(index, newContent) {
+        if (isLoading)
+            return false;
         if (index < 0 || index >= currentChat.length)
             return;
 
@@ -221,26 +319,38 @@ Singleton {
     // CHAT MANAGEMENT
     // ============================================
 
+    // Deleting the chat a request is streaming into would strand it; deleting
+    // any other chat stays available. Returns true when the delete was started.
     function deleteChat(id) {
+        if (isLoading && id === currentChatId)
+            return false;
+
         if (id === currentChatId)
             createNewChat();
 
         let filename = chatDir + "/" + id + ".json";
         deleteChatProcess.command = ["rm", filename];
         deleteChatProcess.running = true;
+        return true;
     }
 
     // ============================================
     // LOGIC
     // ============================================
 
+    // Switching the model swaps `currentStrategy`, so it is refused while a
+    // request is in flight. Returns true when the model was switched.
     function setModel(modelName) {
+        if (isLoading)
+            return false;
+
         for (let i = 0; i < models.length; i++) {
             if (models[i].name === modelName) {
                 currentModel = models[i];
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     function getApiKey(model) {
@@ -255,26 +365,31 @@ Singleton {
         return "";
     }
 
-    function processCommand(text) {
+    // Runs a slash command. Returns "none" when the text is not a command we
+    // own, "handled" when it ran, and "rejected" when it would rewrite a
+    // conversation the in-flight request owns.
+    function runCommand(text) {
         let cmd = text.trim();
         if (!cmd.startsWith("/"))
-            return false;
+            return "none";
 
         let parts = cmd.split(" ");
         let command = parts[0].toLowerCase();
         let args = parts.slice(1).join(" ");
 
+        if (commandConflictsWithRequest(command, isLoading))
+            return "rejected";
+
         switch (command) {
         case "/new":
             createNewChat();
-            return true;
+            return "handled";
         case "/model":
             if (args) {
                 let found = false;
                 for (let i = 0; i < models.length; i++) {
                     if (models[i].name.toLowerCase().includes(args.toLowerCase()) || models[i].model.toLowerCase() === args.toLowerCase()) {
-                        setModel(models[i].name);
-                        found = true;
+                        found = setModel(models[i].name);
                         break;
                     }
                 }
@@ -286,29 +401,51 @@ Singleton {
             } else {
                 modelSelectionRequested();
             }
-            return true;
+            return "handled";
         case "/help":
             pushSystemMessage("🤖 **Assistant Commands**\n\n" + "**`/new`**\n" + "Starts a fresh conversation context.\n\n" + "**`/model [name]`**\n" + "Switches the active AI model.\n" + "• **List models:** Type `/model` without arguments.\n" + "• **Switch:** Type `/model gemini` or `/model mistral`.\n\n" + "**`/help`**\n" + "Shows this help message.\n\n" + "💡 **Tips:**\n" + "• **Edit:** Click the pen icon on any message to modify it.\n" + "• **Regenerate:** Click the refresh icon to get a new response.\n" + "• **Copy:** Use the copy button to grab code or text.");
-            return true;
+            return "handled";
         }
 
-        return false;
+        return "none";
     }
 
-    function pushSystemMessage(text) {
+    // Kept for callers that only need to know whether the text was consumed.
+    function processCommand(text) {
+        return runCommand(text) === "handled";
+    }
+
+    // Append-only, so it can never move the message an in-flight request
+    // streams into. `chatId` is optional: a delayed caller that passes the chat
+    // it was started from gets its message dropped instead of landing in
+    // whatever chat happens to be current now.
+    function pushSystemMessage(text, chatId) {
+        if (chatId !== undefined && chatId !== currentChatId)
+            return false;
+
         let newChat = Array.from(currentChat);
         newChat.push({
             role: "system",
             content: text
         });
         currentChat = newChat;
+        return true;
     }
 
     // Function Call Handling
+    // The approval itself stays explicit: only a message that actually carries
+    // an unresolved function call can be approved, and only once.
     function approveCommand(index) {
+        if (isLoading)
+            return false;
+        if (index < 0 || index >= currentChat.length)
+            return false;
+
         let msg = currentChat[index];
-        if (!msg.functionCall)
-            return;
+        if (!msg || !msg.functionCall || msg.functionPending === false)
+            return false;
+        if (msg.functionCall.name !== "run_shell_command")
+            return false;
 
         let newChat = Array.from(currentChat);
         newChat[index].functionPending = false;
@@ -317,35 +454,64 @@ Singleton {
         saveCurrentChat();
 
         let args = msg.functionCall.args;
-        if (msg.functionCall.name === "run_shell_command") {
-            commandExecutionProc.command = ["bash", "-c", args.command];
-            commandExecutionProc.targetIndex = index;
-            commandExecutionProc.running = true;
-        }
+        // The follow-up request is part of this turn, so the command execution
+        // holds the busy state until it either issues that request or is
+        // dropped for having lost its conversation.
+        requestSeq += 1;
+        isLoading = true;
+        commandExecutionProc.owner = requestOwner(requestSeq, currentChatId, index, null, null);
+        commandExecutionProc.command = ["bash", "-c", args.command];
+        commandExecutionProc.running = true;
+        return true;
     }
 
     function rejectCommand(index) {
+        if (isLoading)
+            return false;
+        if (index < 0 || index >= currentChat.length)
+            return false;
+
+        let msg = currentChat[index];
+        if (!msg || !msg.functionCall || msg.functionPending === false)
+            return false;
+
         let newChat = Array.from(currentChat);
         newChat[index].functionPending = false;
         newChat[index].functionApproved = false;
 
         newChat.push({
             role: "function",
-            name: newChat[index].functionCall.name,
+            name: msg.functionCall.name,
             content: "User rejected the command execution."
         });
 
         currentChat = newChat;
         saveCurrentChat();
-        makeRequest();
+        return makeRequest();
     }
 
+    // Returns true when the input was accepted — sent, or run as a command.
+    // False means nothing was consumed and the caller should keep the draft:
+    // empty input, a request already in flight, or a command that conflicts
+    // with it.
     function sendMessage(text, attachments) {
-        if (text.trim() === "" && (!attachments || attachments.length === 0))
-            return;
-        if (processCommand(text))
-            return;
-        isLoading = true;
+        const kind = classifySend(text, attachments, isLoading);
+        if (kind === "empty")
+            return false;
+
+        if (kind === "command") {
+            const outcome = runCommand(text);
+            if (outcome === "handled")
+                return true;
+            if (outcome === "rejected")
+                return false;
+            // Not a command we own — falls through and is sent as plain text.
+            if (isLoading)
+                return false;
+        } else if (kind === "busy") {
+            return false;
+        }
+
         lastError = "";
         let userMsg = {
             role: "user",
@@ -358,12 +524,25 @@ Singleton {
         currentChat = newChat;
         saveCurrentChat();
         makeRequest();
+        return true;
     }
 
+    // Issues the single in-flight request against a snapshot of the current
+    // chat, message index, strategy and model. Returns true when it started.
     function makeRequest() {
-        let apiKey = getApiKey(currentModel);
-        if (!apiKey && currentModel.requires_key) {
-            lastError = "API Key missing for " + currentModel.name + ". Add it in Settings or set " + (currentModel.key_id || "the environment variable") + ".";
+        if (activeRequest)
+            return false;
+
+        let model = currentModel;
+        if (!model) {
+            lastError = "No AI model available.";
+            isLoading = false;
+            return false;
+        }
+
+        let apiKey = getApiKey(model);
+        if (!apiKey && model.requires_key) {
+            lastError = "API Key missing for " + model.name + ". Add it in Settings or set " + (model.key_id || "the environment variable") + ".";
             isLoading = false;
 
             let errChat = Array.from(currentChat);
@@ -372,19 +551,21 @@ Singleton {
                 content: "Error: " + lastError
             });
             currentChat = errChat;
-            return;
+            return false;
         }
+
+        let strategy = getStrategyForProvider(model.provider);
 
         // Determine endpoint — Gemini streaming uses a different endpoint
         let endpoint;
-        let isGemini = currentModel.provider === "gemini";
+        let isGemini = model.provider === "gemini";
         if (isGemini && geminiStrategy._getStreamEndpoint) {
-            endpoint = geminiStrategy._getStreamEndpoint(currentModel, apiKey);
+            endpoint = geminiStrategy._getStreamEndpoint(model, apiKey);
         } else {
-            endpoint = currentStrategy.getEndpoint(currentModel, apiKey);
+            endpoint = strategy.getEndpoint(model, apiKey);
         }
 
-        let headers = currentStrategy.getHeaders(apiKey);
+        let headers = strategy.getHeaders(apiKey);
 
         // Build messages array
         let messages = [];
@@ -413,7 +594,7 @@ Singleton {
         }
 
         // Build body — always use streaming
-        let body = currentStrategy.getStreamBody(messages, currentModel, systemTools);
+        let body = strategy.getStreamBody(messages, model, systemTools);
 
         // Reset streaming buffer
         responseBuffer = "";
@@ -423,25 +604,34 @@ Singleton {
         streamChat.push({
             role: "assistant",
             content: "",
-            model: currentModel ? currentModel.name : "Unknown"
+            model: model.name
         });
         currentChat = streamChat;
 
-        writeTempBody(JSON.stringify(body), headers, endpoint);
+        requestSeq += 1;
+        activeRequest = requestOwner(requestSeq, currentChatId, streamChat.length - 1, strategy, model);
+        isLoading = true;
+
+        writeTempBody(JSON.stringify(body), headers, endpoint, requestSeq);
+        return true;
     }
 
-    function writeTempBody(jsonBody, headers, endpoint) {
+    function writeTempBody(jsonBody, headers, endpoint, seq) {
         requestProcess.command = ["/usr/bin/mkdir", "-p", tmpDir];
         requestProcess.step = "mkdir";
         requestProcess.payload = {
             body: jsonBody,
             headers: headers,
-            endpoint: endpoint
+            endpoint: endpoint,
+            seq: seq
         };
         requestProcess.running = true;
     }
 
     function executeRequest(payload) {
+        if (!isRequestCurrent(activeRequest, payload.seq))
+            return;
+
         let bodyPath = tmpDir + "/body.json";
         bodyFileView.path = bodyPath;
         bodyFileView.setText(payload.body);
@@ -449,29 +639,33 @@ Singleton {
     }
 
     function runCurl(payload) {
-        let bodyPath = tmpDir + "/body.json";
-        let headerArgs = payload.headers.map(h => "-H \"" + h + "\"").join(" ");
+        if (!isRequestCurrent(activeRequest, payload.seq))
+            return;
 
-        // Check for custom curl template
+        let owner = activeRequest;
+        let bodyPath = tmpDir + "/body.json";
+
+        // Check for custom curl template — of the model this request was built
+        // with, not whatever is selected by the time curl actually runs.
         let customCurl = "";
-        if (currentModel && currentModel.customCurlTemplate) {
-            customCurl = currentModel.customCurlTemplate;
-        } else if (currentModel && KeyStore.getCustomCurl(currentModel.provider)) {
-            customCurl = KeyStore.getCustomCurl(currentModel.provider);
+        if (owner.model && owner.model.customCurlTemplate) {
+            customCurl = owner.model.customCurlTemplate;
+        } else if (owner.model && KeyStore.getCustomCurl(owner.model.provider)) {
+            customCurl = KeyStore.getCustomCurl(owner.model.provider);
         }
 
-        let curlCmd;
         if (customCurl) {
             // Replace placeholders in custom curl
-            curlCmd = customCurl
+            const curlCmd = customCurl
                 .replace("{{BODY_PATH}}", bodyPath)
                 .replace("{{ENDPOINT}}", payload.endpoint)
-                .replace("{{API_KEY}}", getApiKey(currentModel));
+                .replace("{{API_KEY}}", getApiKey(owner.model));
+            curlProcess.command = ["/usr/bin/bash", "-c", curlCmd];
         } else {
-            curlCmd = "curl -s --no-buffer -N -X POST \"" + payload.endpoint + "\" " + headerArgs + " -d @" + bodyPath;
+            curlProcess.command = ["curl", "-s", "--no-buffer", "-N", "--connect-timeout", "15", "--max-time", "300", "-X", "POST", payload.endpoint]
+                .concat(payload.headers.flatMap(header => ["-H", header]), ["-d", "@" + bodyPath]);
         }
 
-        curlProcess.command = ["/usr/bin/bash", "-c", curlCmd];
         curlProcess.running = true;
     }
 
@@ -486,27 +680,9 @@ Singleton {
 
         onExited: exitCode => {
             if (exitCode === 0 && step === "mkdir") {
-                executeRequest(payload);
+                root.executeRequest(payload);
             } else if (exitCode !== 0) {
-                root.lastError = "Failed to create temp directory";
-                root.isLoading = false;
-            }
-        }
-    }
-
-    Process {
-        id: writeBodyProcess
-        property var payload: ({})
-        stderr: StdioCollector {
-            id: writeBodyStderr
-        }
-
-        onExited: exitCode => {
-            if (exitCode === 0) {
-                runCurl(payload);
-            } else {
-                root.lastError = "Failed to write request body: " + writeBodyStderr.text;
-                root.isLoading = false;
+                root.failRequest(payload.seq, "Failed to create temp directory");
             }
         }
     }
@@ -517,7 +693,13 @@ Singleton {
         // Use SplitParser for streaming — emits onRead per line
         stdout: SplitParser {
             onRead: data => {
-                let result = root.currentStrategy.parseStreamChunk(data);
+                let owner = root.activeRequest;
+                if (!owner || !owner.strategy)
+                    return;
+
+                // Parse with the strategy this request was built with, not the
+                // one the model selector happens to point at now.
+                let result = owner.strategy.parseStreamChunk(data);
 
                 if (result.error) {
                     root.lastError = result.error;
@@ -526,12 +708,15 @@ Singleton {
 
                 if (result.content) {
                     root.responseBuffer += result.content;
-                    // Update the last message in currentChat with accumulated text
+                    // Write into the message this request owns, not simply the
+                    // last one in whatever chat is current.
+                    let target = root.streamTargetIndex(owner, root.currentChatId, root.currentChat);
+                    if (target < 0)
+                        return;
+
                     let newChat = Array.from(root.currentChat);
-                    if (newChat.length > 0) {
-                        newChat[newChat.length - 1].content = root.responseBuffer;
-                        root.currentChat = newChat;
-                    }
+                    newChat[target].content = root.responseBuffer;
+                    root.currentChat = newChat;
                 }
 
                 // Note: done is handled in onExited
@@ -543,31 +728,31 @@ Singleton {
         }
 
         onExited: exitCode => {
+            let owner = root.activeRequest;
+            let target = root.streamTargetIndex(owner, root.currentChatId, root.currentChat);
+            root.activeRequest = null;
             root.isLoading = false;
 
             if (exitCode === 0) {
-                // Check if we got any content during streaming
-                if (root.responseBuffer === "" && root.currentChat.length > 0) {
+                if (target >= 0) {
                     // No streaming data received — might be non-streaming response or error
-                    // The last message is our placeholder, leave as is
-                    let lastMsg = root.currentChat[root.currentChat.length - 1];
-                    if (!lastMsg.content) {
+                    if (!root.currentChat[target].content) {
                         let newChat = Array.from(root.currentChat);
-                        newChat[newChat.length - 1].content = "No response received from the API.";
+                        newChat[target].content = root.responseBuffer !== "" ? root.responseBuffer : "No response received from the API.";
                         root.currentChat = newChat;
                     }
-                }
 
-                root.saveCurrentChat();
+                    root.saveCurrentChat();
+                }
             } else {
                 root.lastError = "Network Request Failed: " + curlStderr.text;
 
                 // Update the placeholder message with error
-                let errChat = Array.from(root.currentChat);
-                if (errChat.length > 0) {
-                    errChat[errChat.length - 1].content = "Error: " + root.lastError;
+                if (target >= 0) {
+                    let errChat = Array.from(root.currentChat);
+                    errChat[target].content = "Error: " + root.lastError;
+                    root.currentChat = errChat;
                 }
-                root.currentChat = errChat;
             }
 
             root.responseBuffer = "";
@@ -576,7 +761,7 @@ Singleton {
 
     Process {
         id: commandExecutionProc
-        property int targetIndex: -1
+        property var owner: null
 
         stdout: StdioCollector {
             id: cmdStdout
@@ -586,21 +771,31 @@ Singleton {
         }
 
         onExited: exitCode => {
+            let pending = commandExecutionProc.owner;
+            commandExecutionProc.owner = null;
+
+            let target = root.functionCallIndex(pending, root.currentChatId, root.currentChat);
+            if (target < 0) {
+                // The conversation this command belonged to is gone; drop the
+                // output rather than appending it to an unrelated chat.
+                root.isLoading = false;
+                return;
+            }
+
             let output = cmdStdout.text + "\n" + cmdStderr.text;
             if (output.trim() === "")
                 output = "Command executed successfully (no output).";
 
-            let msg = currentChat[targetIndex];
-            let newChat = Array.from(currentChat);
-
+            let newChat = Array.from(root.currentChat);
             newChat.push({
                 role: "function",
-                name: msg.functionCall.name,
+                name: root.currentChat[target].functionCall.name,
                 content: output
             });
 
             root.currentChat = newChat;
             root.saveCurrentChat();
+            // makeRequest() takes over the busy state, or clears it on failure.
             root.makeRequest();
         }
     }
@@ -609,10 +804,16 @@ Singleton {
     // CHAT STORAGE
     // ============================================
 
+    // Both of these replace the conversation wholesale, so they are refused
+    // while a request owns it. Each returns true when it was accepted.
     function createNewChat() {
+        if (isLoading)
+            return false;
+
         currentChat = [];
         currentChatId = Date.now().toString();
         chatModelChanged();
+        return true;
     }
 
     function saveCurrentChat() {
@@ -634,10 +835,14 @@ Singleton {
     }
 
     function loadChat(id) {
+        if (isLoading)
+            return false;
+
         let filename = chatDir + "/" + id + ".json";
         loadChatProcess.targetId = id;
         loadChatProcess.command = ["cat", filename];
         loadChatProcess.running = true;
+        return true;
     }
 
     Process {
@@ -697,6 +902,11 @@ Singleton {
             id: loadChatStdout
         }
         onExited: exitCode => {
+            // A request may have started while `cat` was running; swapping the
+            // conversation under it now would strand its stream.
+            if (root.isLoading)
+                return;
+
             if (exitCode === 0) {
                 try {
                     root.currentChat = JSON.parse(loadChatStdout.text);

@@ -35,8 +35,9 @@ Item {
 
     // Sidebar State
     readonly property bool sidebarActive: GlobalStates.assistantVisible && targetScreen.name === GlobalStates.assistantScreenName
-    readonly property bool sidebarPinned: GlobalStates.assistantPinned
-    readonly property int sidebarWidth: GlobalStates.assistantWidth
+    readonly property bool sidebarMerged: GlobalStates.assistantMergedIntoFrame
+    property int sidebarWidth: GlobalStates.assistantWidth
+    property real sidebarProgress: 0
     readonly property string sidebarPosition: GlobalStates.assistantPosition
 
     readonly property int sidebarMargin: 4
@@ -75,14 +76,8 @@ Item {
     // Only expand if frame is enabled and bar is being contained
     readonly property int barExpansion: (frameEnabled && configContainBar) ? Math.round((barSize + baseThickness) * _barAnimProgress) : 0
 
-    property real _sidebarAnimProgress: sidebarActive ? 1.0 : 0.0
-    Behavior on _sidebarAnimProgress {
-        enabled: Config.animDuration > 0
-        NumberAnimation { duration: Config.animDuration; easing.type: Easing.OutCubic }
-    }
-
     // Sidebar expansion logic (synchronized with sidebar active and pinned)
-    readonly property int sidebarExpansion: (frameEnabled && sidebarPinned) ? Math.round((sidebarWidth + baseThickness) * _sidebarAnimProgress) : 0
+    readonly property int sidebarExpansion: (frameEnabled && sidebarMerged) ? Math.round((sidebarWidth + baseThickness) * sidebarProgress) : 0
 
     // --- Side-Specific Thickness Restoration ---
 

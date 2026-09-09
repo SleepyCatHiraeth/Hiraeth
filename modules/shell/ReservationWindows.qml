@@ -25,7 +25,10 @@ Item {
     property int frameThickness: 6
 
     property bool sidebarEnabled: false
-    property bool sidebarPinned: false
+    // Whether the panel pushes tiled windows aside. Independent of whether it
+    // is merged into the frame, which is purely how it is drawn.
+    property bool sidebarReserveSpace: false
+    property bool sidebarMerged: false
     property int sidebarWidth: 0
     property string sidebarPosition: "right"
 
@@ -126,9 +129,9 @@ Item {
                 zone += barSize + barOuterMargin;
                 if (containBar && frameEnabled) zone += actualFrameSize;
             }
-            if (sidebarEnabled && sidebarPosition === "left" && sidebarPinned) {
+            if (sidebarEnabled && sidebarPosition === "left" && sidebarReserveSpace) {
                 zone += sidebarWidth;
-                zone += frameEnabled ? actualFrameSize : sidebarMargin;
+                zone += frameEnabled && sidebarMerged ? actualFrameSize : sidebarMargin;
             }
             if (dockEnabled && dockPosition === "left" && dockPinned) zone += dockHeight;
             return zone;
@@ -162,9 +165,9 @@ Item {
                 zone += barSize + barOuterMargin;
                 if (containBar && frameEnabled) zone += actualFrameSize;
             }
-            if (sidebarEnabled && sidebarPosition === "right" && sidebarPinned) {
+            if (sidebarEnabled && sidebarPosition === "right" && sidebarReserveSpace) {
                 zone += sidebarWidth;
-                zone += frameEnabled ? actualFrameSize : sidebarMargin;
+                zone += frameEnabled && sidebarMerged ? actualFrameSize : sidebarMargin;
             }
             if (dockEnabled && dockPosition === "right" && dockPinned) zone += dockHeight;
             return zone;

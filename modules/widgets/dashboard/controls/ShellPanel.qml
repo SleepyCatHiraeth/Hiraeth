@@ -1932,12 +1932,127 @@ Item {
                         }
 
                         ToggleRow {
-                            label: "Pinned on Startup"
-                            checked: Config.ai.sidebarPinnedOnStartup ?? false
+                            label: "Merge Into Frame"
+                            checked: Config.ai.sidebarMergeIntoFrame ?? true
                             onToggled: value => {
-                                if (value !== Config.ai.sidebarPinnedOnStartup) {
+                                if (value !== Config.ai.sidebarMergeIntoFrame) {
                                     GlobalStates.markShellChanged();
-                                    Config.ai.sidebarPinnedOnStartup = value;
+                                    Config.ai.sidebarMergeIntoFrame = value;
+                                }
+                            }
+                        }
+
+                        ToggleRow {
+                            label: "Reserve Space for Windows"
+                            checked: Config.ai.sidebarReserveSpace ?? true
+                            onToggled: value => {
+                                if (value !== Config.ai.sidebarReserveSpace) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.sidebarReserveSpace = value;
+                                }
+                            }
+                        }
+
+                        ToggleRow {
+                            label: "Close When Clicking Outside"
+                            checked: Config.ai.sidebarCloseOnClickOutside ?? true
+                            onToggled: value => {
+                                if (value !== Config.ai.sidebarCloseOnClickOutside) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.sidebarCloseOnClickOutside = value;
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: "Notch"
+                            font.family: Config.theme.font
+                            font.pixelSize: Styling.fontSize(-1)
+                            font.weight: Font.Medium
+                            color: Colors.overSurfaceVariant
+                            Layout.topMargin: 8
+                            Layout.bottomMargin: -4
+                        }
+
+                        ToggleRow {
+                            label: "Show Notch"
+                            checked: Config.ai.notchEnabled ?? true
+                            onToggled: value => {
+                                if (value !== Config.ai.notchEnabled) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.notchEnabled = value;
+                                }
+                            }
+                        }
+
+                        NumberInputRow {
+                            label: "Notch Length"
+                            value: Config.ai.notchLength ?? 180
+                            minValue: 64
+                            maxValue: 600
+                            suffix: "px"
+                            onValueEdited: newValue => {
+                                if (newValue !== Config.ai.notchLength) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.notchLength = newValue;
+                                }
+                            }
+                        }
+
+                        ToggleRow {
+                            label: "Keep Notch Hidden"
+                            checked: Config.ai.notchKeepHidden ?? false
+                            onToggled: value => {
+                                if (value !== Config.ai.notchKeepHidden) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.notchKeepHidden = value;
+                                }
+                            }
+                        }
+
+                        NumberInputRow {
+                            label: "Notch Hover Region"
+                            value: Config.ai.notchHoverRegionSize ?? 16
+                            minValue: 4
+                            maxValue: 64
+                            suffix: "px"
+                            onValueEdited: newValue => {
+                                if (newValue !== Config.ai.notchHoverRegionSize) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.notchHoverRegionSize = newValue;
+                                }
+                            }
+                        }
+
+                        ToggleRow {
+                            label: "Open on Hover"
+                            checked: Config.ai.notchHoverToOpen ?? false
+                            onToggled: value => {
+                                if (value !== Config.ai.notchHoverToOpen) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.notchHoverToOpen = value;
+                                }
+                            }
+                        }
+
+                        ToggleRow {
+                            label: "Auto-hide When Windows Are Present"
+                            checked: Config.ai.notchAutoHideWithWindows ?? false
+                            onToggled: value => {
+                                if (value !== Config.ai.notchAutoHideWithWindows) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.notchAutoHideWithWindows = value;
+                                }
+                            }
+                        }
+
+                        ToggleRow {
+                            label: "Show AI Usage"
+                            checked: Config.ai.notchUsageEnabled ?? true
+                            onToggled: value => {
+                                if (value !== Config.ai.notchUsageEnabled) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.notchUsageEnabled = value;
                                 }
                             }
                         }

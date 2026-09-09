@@ -30,7 +30,19 @@ PanelWindow {
 
     // Dynamic keyboard focus: Exclusive when a notch module is open (so text fields work),
     // None otherwise (so compositor receives normal input).
+    // Set for one tick to force `keyboardFocus` to change value. Quickshell only
+    // pushes the property when it actually changes, and there are paths where the
+    // compositor takes keyboard focus away while the binding still evaluates to
+    // Exclusive — releasing the notch's FocusGrab hands focus back to a window,
+    // and closing a window with killactive moves it too. Without a real
+    // transition nothing re-asserts, and the panel keeps a focused text field
+    // that never receives a key.
+    property bool suppressKeyboardFocus: false
+
     WlrLayershell.keyboardFocus: {
+        if (suppressKeyboardFocus) {
+            return WlrKeyboardFocus.None;
+        }
         if (notchContent.screenNotchOpen) {
             return WlrKeyboardFocus.Exclusive;
         }
@@ -38,6 +50,15 @@ PanelWindow {
             return WlrKeyboardFocus.Exclusive;
         }
         return WlrKeyboardFocus.None;
+    }
+
+    function reassertKeyboardFocus() {
+        if (suppressKeyboardFocus)
+            return;
+        suppressKeyboardFocus = true;
+        Qt.callLater(() => {
+            unifiedPanel.suppressKeyboardFocus = false;
+        });
     }
     WlrLayershell.namespace: "ambxst"
     WlrLayershell.layer: WlrLayer.Overlay
@@ -76,6 +97,7 @@ PanelWindow {
     readonly property alias dockFullscreen: dockContent.activeWindowFullscreen
     readonly property int dockHeight: dockContent.dockSize + dockContent.totalMargin
 
+    readonly property alias assistantWidth: assistantSidebar.effectiveWidth
     readonly property alias notchHoverActive: notchContent.hoverActive
     readonly property alias notchOpen: notchContent.screenNotchOpen
     readonly property alias notchReveal: notchContent.reveal
@@ -163,6 +185,15 @@ PanelWindow {
             },
             Region {
                 item: (assistantSidebar.active || assistantSidebar.hitbox.visible) ? assistantSidebar.hitbox : null
+            },
+            Region {
+                item: assistantSidebar.resizeHitbox.visible ? assistantSidebar.resizeHitbox : null
+            },
+            Region {
+                // Wake strip for an AI notch set to keep hidden: the body is
+                // off-screen then, so without this the notch can never be
+                // hovered back into view.
+                item: assistantSidebar.hoverHitbox.visible ? assistantSidebar.hoverHitbox : null
             }
         ]
     }
@@ -192,8 +223,15 @@ PanelWindow {
 
         onClicked: {
             FocusGrabManager.clearTopGrab();
+            // While the assistant holds focus this panel captures every click on
+            // the screen, so an outside click has to be acted on here or nothing
+            // else ever will. Releasing focus alone is the opt-out rather than a
+            // no-op: it hands the pointer and the keyboard straight back to the
+            // window underneath and leaves the panel sitting there.
             if (assistantSidebar.active && assistantSidebar.wantsFocus) {
                 assistantSidebar.wantsFocus = false;
+                if (Config.ai.sidebarCloseOnClickOutside ?? true)
+                    GlobalStates.hideAssistant();
             }
         }
     }
@@ -211,6 +249,8 @@ PanelWindow {
 
         ScreenFrameContent {
             id: frameContent
+            sidebarProgress: assistantSidebar.expansionProgress
+            sidebarWidth: assistantSidebar.effectiveWidth
             anchors.fill: parent
             targetScreen: unifiedPanel.targetScreen
             hasFullscreenWindow: unifiedPanel.hasFullscreenWindow
@@ -250,7 +290,7 @@ PanelWindow {
             // Respect top/bottom bar reservations so the sidebar doesn't overlap them
             anchors.topMargin: {
                 let frameOn = (Config.bar?.frameEnabled ?? false);
-                let frameWrapped = frameOn && GlobalStates.assistantPinned;
+                let frameWrapped = frameOn && GlobalStates.assistantMergedIntoFrame;
                 let margin = (frameOn && !frameWrapped) ? (Config.bar?.frameThickness ?? 6) : 0;
                 if (unifiedPanel.barEnabled && unifiedPanel.barPosition === "top" && unifiedPanel.barPinned) {
                     margin += unifiedPanel.barTargetHeight + unifiedPanel.barOuterMargin + (unifiedPanel.containBar ? Config.bar.frameThickness : 0);
@@ -260,7 +300,7 @@ PanelWindow {
             
             anchors.bottomMargin: {
                 let frameOn = (Config.bar?.frameEnabled ?? false);
-                let frameWrapped = frameOn && GlobalStates.assistantPinned;
+                let frameWrapped = frameOn && GlobalStates.assistantMergedIntoFrame;
                 let margin = (frameOn && !frameWrapped) ? (Config.bar?.frameThickness ?? 6) : 0;
                 if (unifiedPanel.barEnabled && unifiedPanel.barPosition === "bottom" && unifiedPanel.barPinned) {
                     margin += unifiedPanel.barTargetHeight + unifiedPanel.barOuterMargin + (unifiedPanel.containBar ? Config.bar.frameThickness : 0);
@@ -273,7 +313,7 @@ PanelWindow {
             anchors.leftMargin: {
                 let sidebarPos = GlobalStates.assistantPosition;
                 let frameOn = (Config.bar?.frameEnabled ?? false);
-                let frameWrapped = frameOn && GlobalStates.assistantPinned;
+                let frameWrapped = frameOn && GlobalStates.assistantMergedIntoFrame;
                 let margin = 0;
                 if (sidebarPos === "left" && frameOn && !frameWrapped)
                     margin += (Config.bar?.frameThickness ?? 6);
@@ -285,7 +325,7 @@ PanelWindow {
             anchors.rightMargin: {
                 let sidebarPos = GlobalStates.assistantPosition;
                 let frameOn = (Config.bar?.frameEnabled ?? false);
-                let frameWrapped = frameOn && GlobalStates.assistantPinned;
+                let frameWrapped = frameOn && GlobalStates.assistantMergedIntoFrame;
                 let margin = 0;
                 if (sidebarPos === "right" && frameOn && !frameWrapped)
                     margin += (Config.bar?.frameThickness ?? 6);

@@ -68,8 +68,7 @@ ColumnLayout {
                 background: null
 
                 onClicked: {
-                    let p = Qt.createQmlObject('import Quickshell; import Quickshell.Io; Process { command: ["wl-copy", "' + root.code.replace(/"/g, '\\"') + '"] }', parent);
-                    p.running = true;
+                    Quickshell.clipboardText = root.code;
                     // Optional: Show "Copied" feedback
                     copyFeedback.visible = true;
                     copyFeedbackTimer.restart();

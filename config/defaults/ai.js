@@ -5,5 +5,15 @@ var data = {
     "defaultModel": "gemini-2.0-flash",
     "sidebarWidth": 400,
     "sidebarPosition": "right",
-    "sidebarPinnedOnStartup": false
+    "sidebarMergeIntoFrame": true,
+    "sidebarReserveSpace": true,
+    "sidebarCloseOnClickOutside": true,
+    "notchEnabled": true,
+    "notchKeepHidden": false,
+    "notchLength": 180,
+    "notchHoverRegionSize": 16,
+    "notchHoverToOpen": false,
+    "notchAutoHideWithWindows": false,
+    "notchUsageEnabled": true,
+    "notchUsageProviders": []
 }

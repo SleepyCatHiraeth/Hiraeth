@@ -365,13 +365,14 @@ Singleton {
     // Shell config sections and their properties
     readonly property var _shellSections: {
         "bar": ["position", "launcherIcon", "launcherIconTint", "launcherIconFullTint", "launcherIconSize", "enableFirefoxPlayer", "screenList", "frameEnabled", "frameThickness", "pinnedOnStartup", "hoverToReveal", "hoverRegionHeight", "showPinButton", "availableOnFullscreen", "pillStyle", "use12hFormat", "containBar", "keepBarShadow", "keepBarBorder"],
-        "notch": ["enabled", "theme", "position", "hoverRegionHeight", "keepHidden", "autoHideWithWindows", "hoverToDashboard"],
+        "notch": ["enabled", "theme", "position", "hoverRegionHeight", "keepHidden", "autoHideWithWindows", "hoverToDashboard", "noMediaDisplay", "customText"],
         "workspaces": ["shown", "showAppIcons", "alwaysShowNumbers", "showNumbers", "dynamic"],
         "overview": ["rows", "columns", "scale", "workspaceSpacing"],
         "dock": ["enabled", "theme", "position", "height", "iconSize", "spacing", "margin", "hoverRegionHeight", "pinnedOnStartup", "hoverToReveal", "availableOnFullscreen", "showRunningIndicators", "showPinButton", "showOverviewButton", "screenList", "keepHidden"],
         "lockscreen": ["position"],
         "desktop": ["enabled", "iconSize", "spacingVertical", "textColor"],
-        "system": ["idle", "ocr"]
+        "system": ["idle", "ocr", "updateServiceEnabled"],
+        "ai": ["sidebarPosition", "sidebarWidth", "sidebarMergeIntoFrame", "sidebarReserveSpace", "sidebarCloseOnClickOutside", "notchEnabled", "notchLength", "notchKeepHidden", "notchHoverRegionSize", "notchHoverToOpen", "notchAutoHideWithWindows", "notchUsageEnabled"]
     }
 
     // Create a deep copy of the current shell config
@@ -451,15 +452,16 @@ Singleton {
 
     function applyShellChanges() {
         if (shellHasChanges) {
-            Config.saveBar();
-            Config.saveNotch();
-            Config.saveWorkspaces();
-            Config.saveOverview();
-            Config.saveDock();
-            Config.saveLockscreen();
-            Config.saveDesktop();
-            Config.saveSystem();
-            
+            // Derived from _shellSections rather than a second hand-kept list:
+            // the two drifted apart and "ai" was never saved, so every AI
+            // setting was lost on restart. Every section key must have a
+            // matching Config.save<Section>().
+            var sections = Object.keys(_shellSections);
+            for (var i = 0; i < sections.length; i++) {
+                var section = sections[i];
+                Config["save" + section.charAt(0).toUpperCase() + section.slice(1)]();
+            }
+
             shellHasChanges = false;
             shellSnapshot = null;
             Config.pauseAutoSave = false;
@@ -564,25 +566,43 @@ Singleton {
     // ASSISTANT SIDEBAR STATE
     // ═══════════════════════════════════════════════════════════════
     property bool assistantVisible: false
-    property bool assistantPinned: Config.ai.sidebarPinnedOnStartup ?? false
-    property int assistantWidth: Config.ai.sidebarWidth ?? 400
-    property string assistantPosition: Config.ai.sidebarPosition ?? "right"
+    // Merges the panel into the screen frame: transparent surface, no radius,
+    // no outer margin, and the frame grows to wrap it. Separate from whether
+    // the panel reserves space, which is Config.ai.sidebarReserveSpace and has
+    // no runtime toggle.
+    readonly property bool assistantMergedIntoFrame: Config.ai.sidebarMergeIntoFrame ?? true
+    readonly property int assistantWidth: Config.ai.sidebarWidth ?? 400
+    readonly property string assistantPosition: Config.ai.sidebarPosition === "left" ? "left" : "right"
     property string assistantScreenName: ""
 
     signal assistantFocusRequested(bool wasAlreadyOpen)
 
+    readonly property var assistantScreens: Quickshell.screens
+    onAssistantScreensChanged: Qt.callLater(reconcileAssistantScreen)
+
+    function reconcileAssistantScreen() {
+        if (assistantScreens.some(screen => screen.name === assistantScreenName))
+            return;
+        const focused = AxctlService.focusedMonitor;
+        const screen = assistantScreens.find(screen => focused && screen.name === focused.name) || assistantScreens[0];
+        assistantScreenName = screen ? screen.name : "";
+        if (!screen)
+            assistantVisible = false;
+    }
+
     function toggleAssistant() {
-        if (assistantVisible) {
-            assistantFocusRequested(true);
-        } else {
+        if (!assistantVisible) {
+            const focused = AxctlService.focusedMonitor;
+            const screen = assistantScreens.find(screen => focused && screen.name === focused.name) || assistantScreens[0];
+            if (!screen)
+                return;
+            assistantScreenName = screen.name;
             assistantVisible = true;
-            if (AxctlService.focusedMonitor && AxctlService.focusedMonitor.name) {
-                assistantScreenName = AxctlService.focusedMonitor.name;
-            } else if (Quickshell.screens.length > 0) {
-                assistantScreenName = Quickshell.screens[0].name;
-            }
-            assistantFocusRequested(false);
+            return;
         }
+        reconcileAssistantScreen();
+        if (assistantVisible)
+            assistantFocusRequested(true);
     }
 
     function hideAssistant() {
