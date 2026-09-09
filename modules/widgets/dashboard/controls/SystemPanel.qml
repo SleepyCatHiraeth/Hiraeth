@@ -5,7 +5,6 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import qs.modules.theme
 import qs.modules.components
-import qs.modules.globals
 import qs.config
 
 Item {
@@ -619,10 +618,13 @@ Item {
                             label: "Lock Cmd"
                             value: Config.system.idle.general.lock_cmd ?? ""
                             placeholder: "Command to lock screen"
+                            // Idle settings write straight through: this panel has no Apply
+                            // button, so a shell-settings transaction would only leave
+                            // Config.pauseAutoSave stuck true and stall every module's autosave.
                             onValueEdited: newValue => {
                                 if (newValue !== Config.system.idle.general.lock_cmd) {
-                                    GlobalStates.markShellChanged();
                                     Config.system.idle.general.lock_cmd = newValue;
+                                    Config.saveSystem();
                                 }
                             }
                         }
@@ -633,8 +635,8 @@ Item {
                             placeholder: "Command before sleep"
                             onValueEdited: newValue => {
                                 if (newValue !== Config.system.idle.general.before_sleep_cmd) {
-                                    GlobalStates.markShellChanged();
                                     Config.system.idle.general.before_sleep_cmd = newValue;
+                                    Config.saveSystem();
                                 }
                             }
                         }
@@ -645,8 +647,8 @@ Item {
                             placeholder: "Command after sleep"
                             onValueEdited: newValue => {
                                 if (newValue !== Config.system.idle.general.after_sleep_cmd) {
-                                    GlobalStates.markShellChanged();
                                     Config.system.idle.general.after_sleep_cmd = newValue;
+                                    Config.saveSystem();
                                 }
                             }
                         }
@@ -714,7 +716,7 @@ Item {
                                                     list.push(Config.system.idle.listeners[i]);
                                                 list.splice(index, 1);
                                                 Config.system.idle.listeners = list;
-                                                GlobalStates.markShellChanged();
+                                                Config.saveSystem();
                                             }
                                         }
                                     }
@@ -729,7 +731,7 @@ Item {
                                             list.push(Config.system.idle.listeners[i]);
                                         list[index].enabled = val;
                                         Config.system.idle.listeners = list;
-                                        GlobalStates.markShellChanged();
+                                        Config.saveSystem();
                                     }
                                 }
 
@@ -744,7 +746,7 @@ Item {
                                             list.push(Config.system.idle.listeners[i]);
                                         list[index].timeout = val;
                                         Config.system.idle.listeners = list;
-                                        GlobalStates.markShellChanged();
+                                        Config.saveSystem();
                                     }
                                 }
 
@@ -757,7 +759,7 @@ Item {
                                             list.push(Config.system.idle.listeners[i]);
                                         list[index].onTimeout = val;
                                         Config.system.idle.listeners = list;
-                                        GlobalStates.markShellChanged();
+                                        Config.saveSystem();
                                     }
                                 }
 
@@ -770,7 +772,7 @@ Item {
                                             list.push(Config.system.idle.listeners[i]);
                                         list[index].onResume = val;
                                         Config.system.idle.listeners = list;
-                                        GlobalStates.markShellChanged();
+                                        Config.saveSystem();
                                     }
                                 }
                             }
@@ -808,7 +810,7 @@ Item {
                                         "onResume": ""
                                     });
                                     Config.system.idle.listeners = list;
-                                    GlobalStates.markShellChanged();
+                                    Config.saveSystem();
                                 }
                             }
                         }

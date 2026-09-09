@@ -22,6 +22,7 @@ Ambxst is a highly customizable Wayland shell built with Quickshell. It provides
 ├── config/               # Config singleton + JSON defaults (see config/AGENTS.md)
 │   └── defaults/*.js     # Blueprint for each config domain (bar, theme, ai, etc.)
 ├── modules/
+│   ├── ainotch/          # AI assistant side notch (collapsed state of the assistant panel)
 │   ├── bar/              # Panel widgets: clock, systray, workspaces, indicators
 │   ├── components/       # Reusable UI primitives + GLSL shaders (55 files)
 │   ├── corners/          # Rounded screen corners overlay
@@ -67,6 +68,8 @@ Ambxst is a highly customizable Wayland shell built with Quickshell. It provides
 | **Launcher** | `modules/widgets/launcher/LauncherView.qml` | Unified search: apps, clipboard, emoji |
 | **Bar Layout** | `modules/bar/BarContent.qml` | Auto-hide, horizontal/vertical, widget groups |
 | **Notch** | `modules/notch/Notch.qml` | Dynamic island with StackView navigation |
+| **AI Notch** | `modules/ainotch/AiNotch.qml` | Side notch welded to the screen edge; collapsed state of the assistant panel (`modules/sidebar/AssistantSidebar.qml`) |
+| **AI usage** | `modules/services/AiUsage.qml` | Five-hour provider windows for the AI notch; defers to the AI Overview Control plugin's snapshot and only polls its helper when that is stale |
 | **Overview** | `modules/widgets/overview/` | Mission Control workspace view |
 | **Lockscreen** | `modules/lockscreen/LockScreen.qml` | PAM auth + `WlSessionLockSurface` |
 | **Notifications** | `modules/notifications/` | Popup system + delegate + history |

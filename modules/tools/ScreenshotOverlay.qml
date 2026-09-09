@@ -174,6 +174,7 @@ PanelWindow {
                     opacity: dragArea.containsMouse ? 0.8 : 0
                     visible: opacity > 0
                     Behavior on opacity {
+                        enabled: Config.animDuration > 0
                         NumberAnimation {
                             duration: 200
                         }

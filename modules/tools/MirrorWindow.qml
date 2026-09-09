@@ -110,6 +110,7 @@ PanelWindow {
                 // Show only on hover or when buttons are pressed
                 opacity: (dragArea.containsMouse || controlHover.containsMouse) ? 1.0 : 0.0
                 Behavior on opacity {
+                    enabled: Config.animDuration > 0
                     NumberAnimation {
                         duration: 200
                     }

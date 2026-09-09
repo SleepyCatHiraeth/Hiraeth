@@ -664,7 +664,8 @@ Singleton {
                 actionHandlers[a.identifier] = function (_id) {
                     Quickshell.execDetached([
                         "bash", "-c",
-                        "printf '%s' " + JSON.stringify(value) + " | wl-copy --type text/plain"
+                        "printf '%s' \"$0\" | wl-copy --type text/plain",
+                        String(value)
                     ]);
                 };
             }

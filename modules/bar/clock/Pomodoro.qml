@@ -217,7 +217,7 @@ Item {
                             x: Config.system.pomodoro.autoStart ? parent.width - 18 : 2
                             y: 2; width: 16; height: 16; radius: 8
                             color: Colors.background
-                            Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutQuart } }
+                            Behavior on x { enabled: Config.animDuration > 0; NumberAnimation { duration: 200; easing.type: Easing.OutQuart } }
                         }
                     }
                     MouseArea {
@@ -247,7 +247,7 @@ Item {
                             x: Config.system.pomodoro.syncSpotify ? parent.width - 18 : 2
                             y: 2; width: 16; height: 16; radius: 8
                             color: Colors.background
-                            Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutQuart } }
+                            Behavior on x { enabled: Config.animDuration > 0; NumberAnimation { duration: 200; easing.type: Easing.OutQuart } }
                         }
                     }
                     MouseArea {

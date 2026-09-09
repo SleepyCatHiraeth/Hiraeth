@@ -541,12 +541,14 @@ QtObject {
         if (!_initialized) return;
         _operationInProgress = true;
         setAliasProcess.itemId = id;
-        // Escape single quotes in alias by replacing ' with ''
+        // Escape single quotes in alias by replacing ' with '' (SQL string-literal escaping)
         var escapedAlias = alias.replace(/'/g, "''");
         if (alias.trim() === "") {
             setAliasProcess.command = ["sh", "-c", "sqlite3 '" + dbPath + "' '.timeout 5000' 'UPDATE clipboard_items SET alias = NULL WHERE id = " + id + ";'"];
         } else {
-            setAliasProcess.command = ["sh", "-c", "sqlite3 '" + dbPath + "' '.timeout 5000' \"UPDATE clipboard_items SET alias = '" + escapedAlias + "' WHERE id = " + id + ";\""];
+            setAliasProcess.command = ["sh", "-c",
+                "sqlite3 '" + dbPath + "' '.timeout 5000' \"UPDATE clipboard_items SET alias = '$0' WHERE id = " + id + ";\"",
+                escapedAlias];
         }
         setAliasProcess.running = true;
     }
