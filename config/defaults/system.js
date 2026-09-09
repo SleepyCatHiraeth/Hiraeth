@@ -13,8 +13,8 @@ var data = {
             {
                 "enabled": true,
                 "timeout": 150,
-                "onTimeout": "axctl brightness save && axctl brightness set 0.1",
-                "onResume": "axctl brightness restore"
+                "onTimeout": "ambxst brightness 10 -s",
+                "onResume": "ambxst brightness -r"
             },
             {
                 "enabled": true,

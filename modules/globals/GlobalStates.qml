@@ -105,6 +105,7 @@ Singleton {
 
     function setCompositorLayout(layout) {
         if (availableLayouts.includes(layout)) {
+            compositorLayout = layout;
             StateService.set("compositorLayout", layout);
             setLayoutProcess.pendingLayout = layout;
             setLayoutProcess.command = ["axctl", "layout", "set", layout];
@@ -199,6 +200,12 @@ Singleton {
     property bool screenshotToolVisible: false
     // property string screenshotToolMode: "normal" // DEPRECATED
     property string screenshotCaptureMode: "region" // region, window, screen
+    
+    // Global selection state for synchronization
+    property int screenshotSelectionX: 0
+    property int screenshotSelectionY: 0
+    property int screenshotSelectionW: 0
+    property int screenshotSelectionH: 0
 
     // Screen Record Tool state
     property bool screenRecordToolVisible: false

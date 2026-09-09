@@ -1,19 +1,16 @@
 pragma Singleton
 pragma ComponentBehavior: Bound
 
+// From https://github.com/caelestia-dots/shell with modifications.
+// License: GPLv3
+
 import Quickshell
 import Quickshell.Io
 import qs.modules.services
 import QtQuick
 
 /**
- * For managing brightness of monitors. Supports both brightnessctl and
- * ddcutil.
- *
- * All real work — detection, reads, writes, save/restore — runs in
- * axctl (see Axenide/axctl pkg/server/brightness.go). This singleton
- * keeps per-screen state and shells out to `axctl brightness …` via
- * Quickshell.Io.Process.
+ * For managing brightness of monitors. Supports both brightnessctl and ddcutil.
  */
 Singleton {
     id: root
@@ -27,24 +24,23 @@ Singleton {
 
     property bool syncBrightness: StateService.get("syncBrightness", false)
 
+    property var suspendConnections: Connections {
+        target: SuspendManager
+        function onWakingUp() {
+            // Re-initialize monitors on wake with a delay
+            ddcDetectTimer.restart();
+        }
+    }
+
     onSyncBrightnessChanged: {
         if (StateService.initialized) {
             StateService.set("syncBrightness", syncBrightness);
         }
     }
 
-    property bool _restored: false
     Connections {
         target: StateService
-        function onInitializedChanged() {
-            root._restore();
-        }
-    }
-    Component.onCompleted: root._restore()
-
-    function _restore() {
-        if (StateService.initialized && !root._restored) {
-            root._restored = true;
+        function onStateLoaded() {
             root.syncBrightness = StateService.get("syncBrightness", false);
         }
     }
@@ -61,27 +57,40 @@ Singleton {
     }
 
     function increaseBrightness(): void {
-        const focusedMonitor = AxctlService.focusedMonitor;
-        if (!focusedMonitor || !focusedMonitor.name)
-            return;
-        const monitor = monitors.find(m => focusedMonitor.name === m.screen.name);
-        if (monitor && monitor.ready)
+        const focusedName = AxctlService.focusedMonitor.name;
+        const monitor = monitors.find(m => focusedName === m.screen.name);
+        if (monitor)
             monitor.setBrightness(monitor.brightness + 0.05);
     }
 
     function decreaseBrightness(): void {
-        const focusedMonitor = AxctlService.focusedMonitor;
-        if (!focusedMonitor || !focusedMonitor.name)
-            return;
-        const monitor = monitors.find(m => focusedMonitor.name === m.screen.name);
-        if (monitor && monitor.ready)
+        const focusedName = AxctlService.focusedMonitor.name;
+        const monitor = monitors.find(m => focusedName === m.screen.name);
+        if (monitor)
             monitor.setBrightness(monitor.brightness - 0.05);
+    }
+
+    function increaseAll(): void {
+        for (let i = 0; i < monitors.length; i++) {
+            const mon = monitors[i];
+            if (mon && mon.ready)
+                mon.setBrightness(mon.brightness + 0.05);
+        }
+    }
+
+    function decreaseAll(): void {
+        for (let i = 0; i < monitors.length; i++) {
+            const mon = monitors[i];
+            if (mon && mon.ready)
+                mon.setBrightness(mon.brightness - 0.05);
+        }
     }
 
     reloadableId: "brightness"
 
     onMonitorsChanged: {
         ddcMonitors = [];
+        // Debounce detection to avoid multiple processes during wake/screen changes
         ddcDetectTimer.restart();
     }
 
@@ -91,158 +100,73 @@ Singleton {
         repeat: false
         onTriggered: {
             if (!SuspendManager.isSuspending) {
-                listProc.running = true;
+                ddcProc.pending = [];
+                ddcProc.running = true;
             }
         }
     }
 
-    Timer {
-        id: refreshTimer
-        interval: 5000
-        running: false
-        repeat: true
-        onTriggered: {
-            if (monitors.length > 0 && !SuspendManager.isSuspending
-                && !monitors.some(m => m && m.busy)) {
-                listProc.running = true;
-            }
-        }
-    }
-
-    Timer {
-        id: bootTimer
-        interval: 2000
-        running: true
-        repeat: false
-        onTriggered: {
-            for (let i = 0; i < root.monitors.length; ++i) {
-                const m = root.monitors[i];
-                if (m)
-                    m.initialize();
-            }
-            refreshTimer.running = true;
-        }
-    }
-
-    // Subscribe to `Event.BrightnessChanged` so the OSD and sliders
-    // react to brightness changes from anywhere — keybinds, idle hooks,
-    // external `axctl brightness …` calls — not only from this QML.
-    // axctl emits the event with `{monitor, value}`; we route each one
-    // into the matching BrightnessMonitor and let the existing signal
-    // machinery update the OSD.
-    readonly property string axctlSocketPath: {
-        const env = Quickshell.env("AXCTL_SOCKET");
-        return (env && env.length > 0) ? env : "/tmp/axctl-1000.sock";
-    }
-
-    Socket {
-        id: axctlSub
-
-        path: root.axctlSocketPath
-        connected: false
-
-        parser: SplitParser {
-            onRead: data => {
-                if (!data)
-                    return;
-                let msg;
-                try {
-                    msg = JSON.parse(data);
-                } catch (e) {
-                    return;
-                }
-                if (msg.method !== "Event.BrightnessChanged" || !msg.params)
-                    return;
-                const name = msg.params.monitor;
-                const value = msg.params.value;
-                if (typeof name !== "string" || typeof value !== "number")
-                    return;
-                for (let i = 0; i < root.monitors.length; ++i) {
-                    const m = root.monitors[i];
-                    if (m && m.ready && m.monitorName() === name) {
-                        m.applyReportedBrightness(value);
-                        break;
-                    }
-                }
-            }
-        }
-
-        onConnectionStateChanged: {
-            if (axctlSub.connected) {
-                axctlSub.write(JSON.stringify({
-                    id: 1,
-                    method: "System.Subscribe",
-                    params: {}
-                }) + "\n");
-                axctlSub.flush();
-            }
-        }
-
-        onError: error => {
-            console.warn("Brightness: axctl subscription error:", error);
-            axctlSub.connected = false;
-            axctlSubProbe.restart();
-        }
-    }
-
-    Timer {
-        id: axctlSubProbe
-        interval: 5000
-        running: true
-        repeat: true
-        onTriggered: {
-            if (!axctlSub.connected) {
-                axctlSub.connected = true;
-            }
-        }
-    }
-
-    // Refreshes the per-screen DDC bus cache from `axctl brightness
-    // list` and pushes each reported value into its BrightnessMonitor.
     Process {
-        id: listProc
+        id: ddcProc
 
-        command: ["axctl", "brightness", "list"]
+        // Accumulator for the probe in flight; committed in onExited.
+        property var pending: []
+
+        command: ["ddcutil", "detect", "--brief"]
         stdout: SplitParser {
-            splitMarker: ""
+            splitMarker: "\n\n"
             onRead: data => {
-                if (!data || !data.trim())
+                const trimmed = data.trim();
+                if (!trimmed.startsWith("Display "))
                     return;
-                let parsed;
-                try {
-                    parsed = JSON.parse(data);
-                } catch (e) {
+
+                const lines = trimmed.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+                const busLine = lines.find(l => l.startsWith("I2C bus:"));
+                if (!busLine)
                     return;
-                }
-                if (!Array.isArray(parsed))
+
+                const busSplit = busLine.split("/dev/i2c-");
+                const busNum = busSplit.length > 1 ? busSplit[1] : "";
+                if (!busNum)
                     return;
-                const ddc = [];
-                for (let i = 0; i < parsed.length; ++i) {
-                    const entry = parsed[i];
-                    if (entry.kind === "ddcutil") {
-                        ddc.push({
-                            busNum: entry.bus || ""
-                        });
-                    }
+
+                const modelLine = lines.find(l => l.startsWith("Model:"));
+                const monitorLine = lines.find(l => l.startsWith("Monitor:"));
+                const manufacturerLine = lines.find(l => l.startsWith("Mfg id:"));
+
+                let model = "";
+                if (modelLine) {
+                    model = modelLine.split(":").slice(1).join(":").trim();
+                } else if (monitorLine) {
+                    model = monitorLine.split(":").slice(1).join(":").trim();
                 }
-                // DDC discovery can transiently omit an awake monitor. Keep
-                // the last complete mapping instead of remapping screens.
-                if (ddc.length >= root.ddcMonitors.length) {
-                    root.ddcMonitors = ddc;
-                    root.ddcMonitorsChanged();
+
+                if (manufacturerLine && model) {
+                    const manufacturer = manufacturerLine.split(":").slice(1).join(":").trim();
+                    if (manufacturer && !model.startsWith(manufacturer))
+                        model = `${manufacturer} ${model}`;
                 }
-                for (let j = 0; j < root.monitors.length; ++j) {
-                    const mon = root.monitors[j];
-                    if (mon && mon.ready) {
-                        const name = mon.isDdc ? ("ddc-" + mon.busNum) : "backlight";
-                        const entry = parsed.find(e => e.name === name);
-                        if (entry && entry.brightness !== undefined) {
-                            mon.applyReportedBrightness(entry.brightness);
-                        }
-                    }
-                }
+
+                ddcProc.pending.push({
+                    model,
+                    busNum
+                });
             }
         }
+        // A probe that comes back with fewer displays than the last complete
+        // one is usually a monitor that was briefly asleep, not a monitor
+        // that went away. Committing it would drop that screen's busNum and
+        // re-initialize it without DDC. Keep the longer mapping instead.
+        onExited: {
+            if (ddcProc.pending.length >= root.ddcMonitors.length) {
+                root.ddcMonitors = ddcProc.pending;
+                root.ddcMonitorsChanged();
+            }
+        }
+    }
+
+    Process {
+        id: setProc
     }
 
     component BrightnessMonitor: QtObject {
@@ -262,6 +186,13 @@ Singleton {
                     usedBuses.push(mon.ddcEntry.busNum);
             }
 
+            const screenModel = screen && screen.model ? screen.model.toLowerCase() : "";
+            if (screenModel) {
+                const modelMatch = root.ddcMonitors.find(entry => entry.model && entry.model.toLowerCase() === screenModel && !usedBuses.includes(entry.busNum));
+                if (modelMatch)
+                    return modelMatch;
+            }
+
             for (let i = 0; i < root.ddcMonitors.length; ++i) {
                 const entry = root.ddcMonitors[i];
                 if (entry && entry.busNum && !usedBuses.includes(entry.busNum))
@@ -272,23 +203,43 @@ Singleton {
         }
         readonly property bool isDdc: !useBrightnessctl && !!ddcEntry
         readonly property string busNum: isDdc ? ddcEntry.busNum : ""
-        property real brightness: 0
+        property int rawMaxBrightness: 100
+        property real brightness
         property bool ready: false
 
-        property real pendingValue: brightness
-        property bool hasPendingWrite: false
-        property real lastWrittenValue: -1
-        property real ignoreReportsUntil: 0
-        readonly property bool busy: setTimer.running || writeProc.running || hasPendingWrite
+        // Echo-skip state: record user-originated writes so silentRefresh()
+        // (triggered by `ambxst brightness -r`) can ignore a hardware read
+        // that races with an in-flight debounced write, instead of clobbering
+        // the QML state with a stale mid-ramp value.
+        property real lastUserWriteValue: 0
+        // real, not int: Date.now() is ~1.8e12 and overflows a 32-bit QML int,
+        // which would make the echo-skip elapsed check below meaningless.
+        property real lastUserWriteAt: 0
+
+        // Concurrency guard for silentRefresh — a second pull while one is
+        // already in flight reassigns initProc.command and would cancel the
+        // first read, leaving the QML state stuck on the previous value.
+        property bool silentRefreshInFlight: false
+
+        // Dispatches the initProc stdout callback: "init" updates readiness
+        // (used at startup and on bus-number changes), "refresh" skips the
+        // readiness flip and applies echo-skip logic.
+        property string readContext: "init"
+
+        // Safety net: clear silentRefreshInFlight after 5s in case the
+        // kernel never produces a response (DDC bus hung). The onExited
+        // handler clears it earlier under normal conditions.
+        property var refreshTimeout: Timer {
+            interval: 5000
+            repeat: false
+            onTriggered: monitor.silentRefreshInFlight = false
+        }
+        onSilentRefreshInFlightChanged: refreshTimeout.running = monitor.silentRefreshInFlight
 
         onBrightnessChanged: {
             if (monitor.ready) {
                 root.brightnessChanged(monitor.brightness, monitor.screen);
             }
-        }
-
-        function monitorName(): string {
-            return monitor.isDdc ? ("ddc-" + monitor.busNum) : "backlight";
         }
 
         function initialize() {
@@ -297,74 +248,149 @@ Singleton {
                 return;
             if (isDdc && !busNum)
                 return;
-            monitor.ready = true;
-            root.brightnessChanged(monitor.brightness, monitor.screen);
+            monitor.readContext = "init";
+            initProc.command = isDdc ? ["ddcutil", "-b", busNum, "getvcp", "10"] : ["sh", "-c", `echo "a b c $(brightnessctl g) $(brightnessctl m)"`];
+            initProc.running = true;
         }
 
-        // Called by the listProc result handler when a fresh value
-        // arrives.
-        function applyReportedBrightness(value) {
-            if (value === undefined)
+        // silentRefresh re-reads the monitor's brightness without
+        // flipping `ready` (so an active slider drag or keybind hold is
+        // not interrupted) and applies echo-skip logic to avoid stomping
+        // on an in-flight debounced write.
+        function silentRefresh() {
+            if (!useBrightnessctl && !isDdc)
                 return;
-            // While a write settles, ignore stale values and accept only
-            // confirmation of the newest target (within DDC quantization).
-            if (Date.now() < monitor.ignoreReportsUntil) {
-                if (Math.abs(value - monitor.lastWrittenValue) >= 0.02)
-                    return;
-                monitor.ignoreReportsUntil = 0;
+            if (isDdc && !busNum)
+                return;
+            if (monitor.silentRefreshInFlight)
+                return;
+            monitor.silentRefreshInFlight = true;
+            monitor.readContext = "refresh";
+            initProc.command = isDdc ? ["ddcutil", "-b", busNum, "getvcp", "10"] : ["sh", "-c", `echo "a b c $(brightnessctl g) $(brightnessctl m)"`];
+            initProc.running = true;
+        }
+
+        readonly property Process initProc: Process {
+            onExited: exitCode => {
+                if (monitor.readContext === "refresh" && exitCode !== 0)
+                    monitor.silentRefreshInFlight = false;
             }
-            if (Math.abs(value - monitor.brightness) < 0.001)
-                return;
-            monitor.brightness = value;
+            stdout: SplitParser {
+                onRead: data => {
+                    const trimmed = data.trim();
+                    // Try verbose format: "current value = X, max value = Y"
+                    const verboseMatch = trimmed.match(/current\s+value\s*=\s*(\d+).*max\s+value\s*=\s*(\d+)/);
+                    let currentRaw = NaN;
+                    let maxRaw = NaN;
+                    if (verboseMatch) {
+                        currentRaw = parseInt(verboseMatch[1]);
+                        maxRaw = parseInt(verboseMatch[2]);
+                    } else {
+                        // Fallback: token-based (brief format / brightnessctl)
+                        const tokens = trimmed.split(/\s+/);
+                        if (tokens.length < 2)
+                            return;
+                        currentRaw = parseInt(tokens[tokens.length - 2]);
+                        maxRaw = parseInt(tokens[tokens.length - 1]);
+                    }
+                    if (isNaN(currentRaw) || isNaN(maxRaw) || maxRaw <= 0)
+                        return;
+                    monitor.rawMaxBrightness = maxRaw;
+                    const newVal = currentRaw / maxRaw;
+
+                    if (monitor.readContext === "refresh") {
+                        // Echo-skip: ignore hardware reads that match a
+                        // user write in flight (e.g. user just dropped a
+                        // slider to 0.45 and the debouncer hasn't fired
+                        // yet — hardware still reports 0.55 from the
+                        // previous value).
+                        const since = Date.now() - monitor.lastUserWriteAt;
+                        const drift = Math.abs(newVal - monitor.lastUserWriteValue);
+                        if (since < 1500 && drift < 0.05) {
+                            monitor.silentRefreshInFlight = false;
+                            return;
+                        }
+                        monitor.brightness = newVal;
+                        monitor.silentRefreshInFlight = false;
+                        root.brightnessChanged(monitor.brightness, monitor.screen);
+                        return;
+                    }
+
+                    monitor.brightness = newVal;
+                    monitor.ready = true;
+                    root.brightnessChanged(monitor.brightness, monitor.screen);
+                }
+            }
         }
 
+        // Rate-limited write: writing ddcutil for every keypress during a
+        // sustained hold would saturate the DDC bus (every ddcutil setvcp
+        // takes ~100ms+). Instead we write on the leading edge of activity
+        // (snappy single-press feedback) and then fire periodic trailing
+        // writes every 200ms while activity continues, so the actual
+        // monitor brightness tracks the QML state smoothly during a held
+        // bind instead of waiting until release and jumping in one big
+        // DDC transaction (which is what produced the "drops to min, then
+        // snaps up" perception during sustained keypress).
         property var setTimer: Timer {
             id: setTimer
-            interval: monitor.isDdc ? 300 : 0
+            interval: 200
+            repeat: true
             onTriggered: {
-                monitor.startPendingWrite();
+                if (setProc.running) return;
+                syncBrightness();
+            }
+        }
+        // Stops the periodic trailing writes 200ms after the last activity
+        // so we don't keep writing to the hardware every 200ms forever
+        // after a single press.
+        property var stopTimer: Timer {
+            interval: 200
+            repeat: false
+            onTriggered: {
+                // The periodic timer fires on its own schedule, so the last
+                // setBrightness() call can land between two ticks and never
+                // be written. Flush it before stopping, or the hardware keeps
+                // whatever mid-ramp value the previous tick wrote.
+                if (monitor.lastUserWriteValue !== monitor.brightness)
+                    monitor.syncBrightness();
+                monitor.setTimer.stop();
             }
         }
 
-        property Process writeProc: Process {
-            onExited: exitCode => {
-                if (exitCode !== 0) {
-                    console.warn("axctl brightness set failed", exitCode, monitor.monitorName(), monitor.lastWrittenValue);
-                    monitor.ignoreReportsUntil = 0;
-                }
-                if (monitor.hasPendingWrite && !setTimer.running)
-                    monitor.startPendingWrite();
-            }
-        }
-
-        function startPendingWrite() {
-            if (!monitor.hasPendingWrite || writeProc.running)
+        function syncBrightness() {
+            if (isDdc && !busNum)
                 return;
-            if (monitor.isDdc && !monitor.busNum) {
-                return;
-            }
-            const value = monitor.pendingValue;
-            monitor.hasPendingWrite = false;
-            monitor.lastWrittenValue = value;
-            monitor.ignoreReportsUntil = Date.now() + 2000;
-            writeProc.command = ["axctl", "brightness", "set", monitor.monitorName(), String(value)];
-            writeProc.running = true;
+            monitor.lastUserWriteAt = Date.now();
+            monitor.lastUserWriteValue = monitor.brightness;
+            const rounded = Math.round(monitor.brightness * monitor.rawMaxBrightness);
+            setProc.command = isDdc ? ["ddcutil", "-b", busNum, "setvcp", "10", rounded] : ["brightnessctl", "--class", "backlight", "s", rounded, "--quiet"];
+            setProc.startDetached();
         }
 
         function setBrightness(value: real): void {
             value = Math.max(0.01, Math.min(1, value));
             monitor.brightness = value;
-            monitor.pendingValue = value;
-            monitor.hasPendingWrite = true;
-            monitor.lastWrittenValue = value;
-            monitor.ignoreReportsUntil = Date.now() + 2000;
-            setTimer.restart();
+            monitor.lastUserWriteAt = Date.now();
+            monitor.lastUserWriteValue = value;
+            if (!monitor.setTimer.running) {
+                // Leading edge: first call after a pause writes immediately
+                // for snappy single-press feedback, then arms the periodic
+                // trailing timer.
+                if (!setProc.running) syncBrightness();
+                monitor.setTimer.start();
+            }
+            // Re-arm the watchdog that stops the trailing timer 200ms after
+            // the last activity — keeps it alive while presses keep coming.
+            monitor.stopTimer.restart();
+        }
+
+        Component.onCompleted: {
+            initialize();
         }
 
         onBusNumChanged: {
             initialize();
-            if (monitor.hasPendingWrite)
-                monitor.startPendingWrite();
         }
     }
 
@@ -372,5 +398,75 @@ Singleton {
         id: monitorComp
 
         BrightnessMonitor {}
+    }
+
+    IpcHandler {
+        target: "brightness"
+
+        function increment() {
+            onPressed: root.increaseBrightness();
+        }
+
+        function decrement() {
+            onPressed: root.decreaseBrightness();
+        }
+
+        function set(value: real, monitorName: string) {
+            if (!monitorName || monitorName === "") {
+                // Set all monitors
+                for (let i = 0; i < root.monitors.length; ++i) {
+                    const mon = root.monitors[i];
+                    if (mon && mon.ready) {
+                        mon.setBrightness(value);
+                    }
+                }
+            } else {
+                // Set specific monitor
+                const monitor = root.monitors.find(m => m.screen.name === monitorName);
+                if (monitor && monitor.ready) {
+                    monitor.setBrightness(value);
+                } else {
+                    console.warn("Monitor not found or not ready:", monitorName);
+                }
+            }
+        }
+
+        function adjust(delta: real, monitorName: string) {
+            // Mirrors ControlSliderRow.onValueChanged: read the current
+            // QML value, apply the step, clamp, and pass the ABSOLUTE target
+            // to setBrightness — the same call signature the slider uses.
+            // IPC doesn't know which bar the user is on, so bind keys affect
+            // every ready monitor (parallels how global media keys affect
+            // the default sink via wpctl).
+            const targets = (monitorName && monitorName !== "")
+                ? [root.monitors.find(m => m.screen.name === monitorName)].filter(x => x)
+                : root.monitors;
+            for (let i = 0; i < targets.length; ++i) {
+                const mon = targets[i];
+                if (!mon || !mon.ready) continue;
+                const target = Math.max(0.01, Math.min(1, mon.brightness + delta));
+                mon.setBrightness(target);
+            }
+        }
+
+        // pull re-reads each monitor's actual brightness without flipping
+        // `ready` so an active slider drag or held brightness key isn't
+        // interrupted. Used after `ambxst brightness -r` so the OSD picks
+        // up the restored values.
+        function pull(monitorName: string) {
+            if (monitorName && monitorName !== "") {
+                const mon = root.monitors.find(m => m.screen.name === monitorName);
+                if (mon) {
+                    mon.silentRefresh();
+                } else {
+                    console.warn("Monitor not found for pull:", monitorName);
+                }
+                return;
+            }
+            for (let i = 0; i < root.monitors.length; ++i) {
+                const mon = root.monitors[i];
+                if (mon) mon.silentRefresh();
+            }
+        }
     }
 }

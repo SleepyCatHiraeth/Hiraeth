@@ -44,7 +44,7 @@ An <i><b>Ax</b>tremely</i> customizable shell.
 <h2><sub><img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Package.png" alt="Package" width="32" height="32" /></sub> Installation</h2>
 
 ```bash
-curl -L get.axeni.de/ambxst | sh
+curl -fsSL get.axeni.de/ambxst | sh
 ```
 
 This will install Ambxst and its dependencies. You will have the `ambxst` command available in your terminal, which you can use to start the shell.
@@ -169,7 +169,8 @@ Nope! Besides the Ambxst import block in your `hyprland.conf` or `hyprland.lua`,
 - [x] Multi-monitor support
 - [x] Customizable keybindings
 - [x] Plugin and extension system
-- [ ] Compatibility with other Wayland compositors
+- [x] [Mod manager with native Settings integration](docs/mods/README.md)
+- [x] Compatibility with other Wayland compositors
 
 ---
 

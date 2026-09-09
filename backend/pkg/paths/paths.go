@@ -43,6 +43,14 @@ func (p *Paths) SocketPath() string {
 	return filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "ambxst.sock")
 }
 
+// QsPidFile stores the PID of the supervised Quickshell child. External
+// CLI invocations (e.g. `ambxst brightness ...`) read this file to dispatch
+// `qs ipc` calls back into the running shell — without it they would have
+// to fall back to scanning processes via pgrep, which is racy.
+func (p *Paths) QsPidFile() string {
+	return filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "ambxst-qs.pid")
+}
+
 func (p *Paths) AxctlToml() string {
 	return filepath.Join(p.DataDir, "axctl.toml")
 }
@@ -95,6 +103,30 @@ func (p *Paths) KeybindsFile() string {
 // (/usr/local/bin) to find shell sources and scripts.
 func (p *Paths) ShellPathFile() string {
 	return filepath.Join(p.DataDir, "shell_repo")
+}
+
+func (p *Paths) ModsDir() string {
+	return filepath.Join(p.DataDir, "mods")
+}
+
+func (p *Paths) ModPackagesDir() string {
+	return filepath.Join(p.ModsDir(), "packages")
+}
+
+func (p *Paths) ModGenerationsDir() string {
+	return filepath.Join(p.ModsDir(), "generations")
+}
+
+func (p *Paths) ModPendingActivationFile() string {
+	return filepath.Join(p.ModsDir(), "pending-activation.json")
+}
+
+func (p *Paths) ModStateFile() string {
+	return filepath.Join(p.ConfigDir, "mods.json")
+}
+
+func (p *Paths) ModSettingsDir() string {
+	return filepath.Join(p.ConfigDir, "mods")
 }
 
 // ShellSourceDir returns the absolute path to the Ambxst shell source

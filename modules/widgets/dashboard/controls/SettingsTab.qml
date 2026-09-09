@@ -70,18 +70,19 @@ Rectangle {
         property int currentPanelIndex: 0
         property var aggregatedItems: []
         property bool isIndexing: false
+        readonly property var panels: contentArea.panelComponents.filter(panel => panel.section !== 12)
 
         // Helper to load panels one by one
         Loader {
             id: indexerLoader
             active: settingsIndexer.isIndexing
             asynchronous: true
-            source: settingsIndexer.isIndexing && settingsIndexer.currentPanelIndex < contentArea.panelComponents.length ? contentArea.panelComponents[settingsIndexer.currentPanelIndex].component : ""
+            source: settingsIndexer.isIndexing && settingsIndexer.currentPanelIndex < settingsIndexer.panels.length ? settingsIndexer.panels[settingsIndexer.currentPanelIndex].component : ""
 
             onStatusChanged: {
                 if (status === Loader.Ready && item) {
                     // Scrape
-                    const sectionId = contentArea.panelComponents[settingsIndexer.currentPanelIndex].section;
+                    const sectionId = settingsIndexer.panels[settingsIndexer.currentPanelIndex].section;
                     const newItems = SettingsCrawler.crawl(item, sectionId);
                     settingsIndexer.aggregatedItems = settingsIndexer.aggregatedItems.concat(newItems);
 
@@ -95,7 +96,7 @@ Rectangle {
         }
 
         onCurrentPanelIndexChanged: {
-            if (currentPanelIndex >= contentArea.panelComponents.length) {
+            if (currentPanelIndex >= settingsIndexer.panels.length) {
                 // Done
                 if (isIndexing) {
                     isIndexing = false;
@@ -252,6 +253,12 @@ Rectangle {
             icon: Icons.compositor,
             label: "Compositor",
             section: 8,
+            isIcon: true
+        },
+        {
+            icon: Icons.puzzlePiece,
+            label: "Mods",
+            section: 12,
             isIcon: true
         },
         {
@@ -550,7 +557,7 @@ Rectangle {
             clip: true
 
             property int previousSection: 0
-            readonly property int maxContentWidth: 480
+            readonly property int maxContentWidth: root.currentSection === 12 ? 760 : 480
 
             // Track section changes for animation direction
             onVisibleChanged: {
@@ -615,6 +622,14 @@ Rectangle {
                 {
                     component: "SoundsPanel.qml",
                     section: 11
+                },
+                {
+                    // Local sections 10 and 11 predate upstream's Mods panel,
+                    // which ships as section 10. Mods is renumbered to 12 here;
+                    // every upstream `section: 10` reference for Mods must be
+                    // renumbered with it.
+                    component: "ModsPanel.qml",
+                    section: 12
                 }
             ]
 

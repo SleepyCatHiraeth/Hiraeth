@@ -12,11 +12,19 @@ QtObject {
 
     // Main Sections:
     // 0: Network, 1: Bluetooth, 2: Mixer, 3: AI, 4: Effects, 5: Theme,
-    // 6: Binds, 7: System, 8: Compositor, 9: Ambxst, 10: Plugins, 11: System Sounds
+    // 6: Binds, 7: System, 8: Compositor, 9: Ambxst, 10: Plugins,
+    // 11: System Sounds, 12: Mods
+    // Upstream ships Mods as section 10; it is renumbered to 12 locally
+    // because 10 and 11 were already taken. Keep SettingsTab.qml in sync.
     
     property var dynamicItems: []
 
     readonly property var staticItems: [
+        // --- Mods ---
+        { label: "Mods", keywords: "extensions plugins modifications packages", section: 12, subSection: "", subLabel: "", icon: Icons.puzzlePiece, isIcon: true },
+        { label: "Install mod", keywords: "add local directory archive git repository source", section: 12, subSection: "", subLabel: "Mods", icon: Icons.puzzlePiece, isIcon: true },
+        { label: "Rollback generation", keywords: "restore recover previous failed", section: 12, subSection: "", subLabel: "Mods", icon: Icons.arrowCounterClockwise, isIcon: true },
+
         // --- Network ---
         { label: "Network", keywords: "internet wifi connection ethernet ip", section: 0, subSection: "", subLabel: "", icon: Icons.wifiHigh, isIcon: true },
         
