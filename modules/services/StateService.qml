@@ -48,7 +48,13 @@ Singleton {
             console.warn("StateService: Attempted to set state before initialization");
             return;
         }
-        root.state[key] = value;
+        // Reassign rather than mutate in place. `state` is a `property var`, and QML
+        // emits no change signal for an in-place key write, so every binding that reads
+        // state through a helper -- PluginService.get(), and therefore every plugin's
+        // settings -- stayed frozen at its startup value until a full shell reload.
+        // PluginService.runtimeData already uses this reassign idiom, which is exactly
+        // why runtime values were reactive while settings silently were not.
+        root.state = Object.assign({}, root.state, {[key]: value});
         BackendService.call("config.stateSet", {key: key, value: value});
     }
 

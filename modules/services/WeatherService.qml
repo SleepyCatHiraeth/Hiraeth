@@ -1,6 +1,7 @@
 pragma Singleton
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import qs.config
 import qs.modules.globals
 
@@ -496,17 +497,37 @@ Singleton {
 
         console.log("WeatherService: Fetching weather for '" + location + "'");
 
-        BackendService.call("weather.get", {location: location}, (result, error) => {
-            // Ignore stale responses from superseded requests
-            if (token !== root.requestToken) return;
-            if (error) {
-                console.warn("WeatherService:", error);
-                root.dataAvailable = false;
-                root.handleError();
+        // Weather can spend over a minute retrying network requests. Give it
+        // its own IPC connection so it cannot block state/plugin initialization.
+        if (weatherProcess.running) return;
+        weatherProcess.token = token;
+        weatherProcess.command = ["ambxst", "ipc", "call", "weather.get", JSON.stringify({location: location})];
+        weatherProcess.running = true;
+    }
+
+    function finishWeather(token, exitCode, output) {
+        if (SuspendManager.isSuspending) return;
+        if (token !== root.requestToken) {
+            Qt.callLater(() => root.updateWeather());
+            return;
+        }
+        if (exitCode === 0) {
+            try {
+                root.handleResponse(JSON.parse(output));
                 return;
+            } catch (error) {
+                console.warn("WeatherService: Invalid weather response");
             }
-            root.handleResponse(result);
-        });
+        }
+        root.dataAvailable = false;
+        root.handleError();
+    }
+
+    Process {
+        id: weatherProcess
+        property int token: 0
+        stdout: StdioCollector { id: weatherOutput }
+        onExited: (exitCode, exitStatus) => root.finishWeather(token, exitCode, weatherOutput.text)
     }
 
     Timer {
