@@ -13,6 +13,7 @@ var data = {
         "bootUp": { "sound": "", "muted": false },
         "deviceConnect": { "sound": "", "muted": false },
         "deviceDisconnect": { "sound": "", "muted": false },
+        "batteryLow": { "sound": "", "muted": false },
         "shutdown": { "sound": "", "muted": false }
     }
 }

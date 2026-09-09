@@ -22,7 +22,8 @@ Item {
         { key: "wrongPassword", label: "Wrong Password", icon: Icons.lock, category: "Session" },
         { key: "shutdown", label: "Shutdown / Reboot", icon: Icons.shutdown, category: "Session" },
         { key: "deviceConnect", label: "Device Connect", icon: Icons.plug, category: "Devices" },
-        { key: "deviceDisconnect", label: "Device Disconnect", icon: Icons.bluetoothOff, category: "Devices" }
+        { key: "deviceDisconnect", label: "Device Disconnect", icon: Icons.bluetoothOff, category: "Devices" },
+        { key: "batteryLow", label: "Battery Low", icon: Icons.batteryLow, category: "Devices" }
     ]
 
     function updateEvent(key, property, value) {

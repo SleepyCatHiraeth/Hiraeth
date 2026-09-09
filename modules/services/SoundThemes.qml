@@ -29,6 +29,7 @@ Singleton {
             "bootUp": "polite-warning-tone.wav",
             "deviceConnect": "polite-warning-tone.wav",
             "deviceDisconnect": "polite-warning-tone.wav",
+            "batteryLow": "polite-warning-tone.wav",
             "shutdown": "polite-warning-tone.wav"
         }
     })
@@ -47,6 +48,7 @@ Singleton {
             "bootUp": "bootUp.wav",
             "deviceConnect": "deviceConnect.wav",
             "deviceDisconnect": "deviceDisconnect.wav",
+            "batteryLow": "batteryLow.wav",
             "shutdown": "shutdown.wav"
         }
     })

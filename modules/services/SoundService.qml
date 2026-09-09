@@ -112,8 +112,18 @@ Singleton {
     Connections {
         target: Notifications
         function onNotify(notif) {
-            const eventKey = notif?.urgency === "critical" ? "critical"
-                : notif?.urgency === "low" ? "low" : "notification";
+            // urgency arrives in two different representations. Callers that pass
+            // a literal string give "critical"/"low"; callers that pass the enum
+            // (Battery.qml sends NotificationUrgency.Critical) and the external
+            // notification-server path (Notifications.qml's
+            // `notification.urgency.toString()`) both end up as "0"/"1"/"2",
+            // because the notif component declares `property string urgency` and
+            // QML coerces the quint8 enum to its number. Matching only the words
+            // meant every enum-passing caller silently fell through to the
+            // generic notification sound. Enum: Low=0, Normal=1, Critical=2.
+            const urgency = String(notif?.urgency);
+            const eventKey = (urgency === "critical" || urgency === "2") ? "critical"
+                : (urgency === "low" || urgency === "0") ? "low" : "notification";
             root.play(eventKey);
         }
     }
