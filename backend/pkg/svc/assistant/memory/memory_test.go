@@ -491,3 +491,64 @@ func TestFilePermissions(t *testing.T) {
 		}
 	}
 }
+
+func TestCorrectionProducesAnEmbeddableItem(t *testing.T) {
+	// Correct() creates a NEW row, so any vector belonging to the old one must
+	// not be inherited -- the new content needs its own. This pins the shape the
+	// service relies on when it embeds a correction.
+	s := openTest(t)
+	old := active("The user's name is Marcos.", CatProfile)
+	if err := s.Put(old); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutEmbedding(old.ID, "m", []float32{1, 0}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := s.Correct(old.ID, "The user's name is Hiraeth.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.ID == old.ID {
+		t.Fatal("correction reused the old id; history would be lost")
+	}
+	missing, err := s.MissingEmbeddings("m", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, m := range missing {
+		if m.ID == next.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("corrected item should report as needing an embedding")
+	}
+}
+
+func TestEmptyListsMarshalAsArrays(t *testing.T) {
+	// A nil slice becomes JSON null, and a client reading items[0] on null gets
+	// a type error rather than an empty list. Empty must stay an array.
+	s := openTest(t)
+	got, err := s.List("", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Error("List returned nil; must be an empty slice")
+	}
+	missing, err := s.MissingEmbeddings("m", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing == nil {
+		t.Error("MissingEmbeddings returned nil; must be an empty slice")
+	}
+	res, err := s.Retrieve(Query{Text: "nothing here"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res == nil {
+		t.Error("Retrieve returned nil; must be an empty slice")
+	}
+}

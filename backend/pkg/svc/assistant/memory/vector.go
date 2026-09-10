@@ -110,7 +110,7 @@ func (s *Store) MissingEmbeddings(model string, limit int) ([]*Item, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []*Item
+	out := []*Item{}
 	for rows.Next() {
 		it, err := scanItem(rows)
 		if err != nil {

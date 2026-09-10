@@ -74,7 +74,7 @@ func (s *Store) Retrieve(q Query) ([]Result, error) {
 	}
 	rows.Close()
 	if len(pool) == 0 {
-		return nil, nil
+		return []Result{}, nil
 	}
 
 	// Lexical scores from FTS5, keyed by memory id.

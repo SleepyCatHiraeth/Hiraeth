@@ -13,7 +13,7 @@ QtObject {
     // Main Sections:
     // 0: Network, 1: Bluetooth, 2: Mixer, 3: AI, 4: Effects, 5: Theme,
     // 6: Binds, 7: System, 8: Compositor, 9: Ambxst, 10: Plugins,
-    // 11: System Sounds, 12: Mods
+    // 11: System Sounds, 12: Mods, 13: Turret Assistant
     // Upstream ships Mods as section 10; it is renumbered to 12 locally
     // because 10 and 11 were already taken. Keep SettingsTab.qml in sync.
     
@@ -223,6 +223,11 @@ QtObject {
 
         // --- System Sounds ---
         { label: "System Sounds", keywords: "audio notification sound cue alert volume mute theme portal turret", section: 11, subSection: "", subLabel: "", icon: Icons.speakerHigh, isIcon: true },
+        // --- Turret Assistant ---
+        { label: "Turret Assistant", keywords: "voice assistant turret speech microphone stt tts local ai kokoro whisper", section: 13, subSection: "", subLabel: "", icon: Icons.robot, isIcon: true },
+        { label: "Speaking Voice", keywords: "voice tts kokoro piper speak rate speed", section: 13, subSection: "", subLabel: "Turret Assistant", icon: Icons.speakerHigh, isIcon: true },
+        { label: "Microphone", keywords: "mic input capture device speech recognition whisper", section: 13, subSection: "", subLabel: "Turret Assistant", icon: Icons.mic, isIcon: true },
+        { label: "Assistant Memory", keywords: "memory remember forget recall facts preferences privacy", section: 13, subSection: "", subLabel: "Turret Assistant", icon: Icons.robot, isIcon: true },
         { label: "Sound Theme", keywords: "default portal turret theme cues", section: 11, subSection: "", subLabel: "System Sounds", icon: Icons.speakerHigh, isIcon: true },
         { label: "Notification Sound", keywords: "notification critical low alert cue path test mute", section: 11, subSection: "", subLabel: "System Sounds", icon: Icons.bell, isIcon: true },
         { label: "Volume", keywords: "sound loud quiet level percentage", section: 11, subSection: "", subLabel: "System Sounds", icon: Icons.speakerHigh, isIcon: true }

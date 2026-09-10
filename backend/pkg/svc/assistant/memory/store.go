@@ -561,7 +561,9 @@ func (s *Store) List(status, category string, limit int) ([]*Item, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []*Item
+	// Non-nil so an empty result marshals as [] rather than null: a client
+	// reading `items[0]` on a JSON null gets a type error, not an empty list.
+	out := []*Item{}
 	for rows.Next() {
 		it, err := scanItem(rows)
 		if err != nil {

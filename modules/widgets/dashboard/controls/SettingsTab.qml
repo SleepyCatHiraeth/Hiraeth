@@ -18,7 +18,7 @@ Rectangle {
     implicitHeight: 300
     // 0: Network, 1: Bluetooth, 2: Mixer, 3: AI, 4: Effects, 5: Theme, 6: Binds, 7: System, 8: Compositor, 9: Shell
 
-    property int currentSection: 0
+    property int currentSection: 13
     property int selectedIndex: GlobalStates.settingsCurrentTab
     property string searchQuery: ""
 
@@ -277,6 +277,12 @@ Rectangle {
             icon: Icons.speakerHigh,
             label: "System Sounds",
             section: 11,
+            isIcon: true
+        },
+        {
+            icon: Icons.robot,
+            label: "Turret Assistant",
+            section: 13,
             isIcon: true
         }
     ]
@@ -630,6 +636,14 @@ Rectangle {
                     // renumbered with it.
                     component: "ModsPanel.qml",
                     section: 12
+                },
+                {
+                    // NOTE: the panel Loader indexes this array by
+                    // `currentSection` directly, so an entry's POSITION must
+                    // equal its `section` number. Adding a panel anywhere but
+                    // the end silently loads the wrong panel.
+                    component: "TurretPanel.qml",
+                    section: 13
                 }
             ]
 

@@ -23,6 +23,8 @@ Singleton {
             return Styling.srItem("overprimary");
         case "speaking":
             return Colors.primary;
+        case "starting":
+            return Colors.warning;
         case "error":
             return Colors.criticalText;
         case "cancelled":
@@ -42,6 +44,8 @@ Singleton {
             return Icons.robot;
         case "speaking":
             return Icons.speakerHigh;
+        case "starting":
+            return Icons.power;
         case "error":
             return Icons.alert;
         default:
@@ -59,6 +63,8 @@ Singleton {
             return transcript !== "" ? transcript : "Thinking";
         case "speaking":
             return response !== "" ? response : "Speaking";
+        case "starting":
+            return "Starting model server";
         case "cancelled":
             return "Cancelled";
         case "error":
@@ -72,6 +78,7 @@ Singleton {
     // a static indicator means "waiting for you".
     function animated(state) {
         return state === "listening" || state === "transcribing"
-            || state === "thinking" || state === "speaking";
+            || state === "thinking" || state === "speaking"
+            || state === "starting";
     }
 }

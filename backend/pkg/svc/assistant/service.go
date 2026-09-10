@@ -29,6 +29,7 @@ const (
 	StateTranscribing = "transcribing"
 	StateThinking     = "thinking"
 	StateSpeaking     = "speaking"
+	StateStarting     = "starting"
 	StateCancelled    = "cancelled"
 	StateError        = "error"
 )
@@ -109,6 +110,8 @@ type Service struct {
 
 	mem             *memory.Store
 	pendingMemories int
+	health          health
+	embedErr        string
 
 	subsMu sync.Mutex
 	subs   []*ipc.Subscriber
@@ -137,6 +140,7 @@ func (s *Service) Register(srv *ipc.Server) {
 			"set":    s.setConfig,
 			"voices": s.listVoices,
 			"say":    s.say,
+			"health": s.healthMethod,
 
 			"memory.list":    s.memoryList,
 			"memory.pending": s.memoryPending,
@@ -149,6 +153,7 @@ func (s *Service) Register(srv *ipc.Server) {
 		},
 		Subscribe: s.subscribe,
 	})
+	s.startHealthLoop()
 }
 
 func (s *Service) subscribe(sub *ipc.Subscriber) {
@@ -186,7 +191,24 @@ func (s *Service) snapshot() map[string]any {
 		"seq":              s.seq,
 		"memory_enabled":   s.cfg.MemoryEnabled,
 		"pending_memories": s.pendingMemories,
+		"llm_reachable":    s.healthReachableLocked(),
+		"llm_error":        s.healthErrLocked(),
+		"embed_error":      s.embedErr,
 	}
+}
+
+// These read health under its own lock, never the service lock, so snapshot()
+// cannot deadlock against a concurrent probe.
+func (s *Service) healthReachableLocked() bool {
+	s.health.mu.Lock()
+	defer s.health.mu.Unlock()
+	return s.health.reachable
+}
+
+func (s *Service) healthErrLocked() string {
+	s.health.mu.Lock()
+	defer s.health.mu.Unlock()
+	return s.health.lastErr
 }
 
 func (s *Service) setState(state string, mutate func()) {
@@ -328,6 +350,32 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 	sp.say(p.Text)
 	sp.finish()
 	return map[string]any{"spoke": p.Text}, nil
+}
+
+// healthMethod reports model-server reachability and repairs it on request, so
+// a settings panel can offer a "start the server" button rather than leaving
+// the user to discover `lms server start` on their own.
+func (s *Service) healthMethod(params json.RawMessage) (any, error) {
+	var p struct {
+		Repair bool `json:"repair"`
+	}
+	_ = json.Unmarshal(params, &p)
+
+	if p.Repair {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		s.ensureServer(ctx)
+		s.setState(StateIdle, nil)
+	} else {
+		s.refreshHealth(true)
+	}
+	ok, lastErr := s.healthSnapshot()
+	return map[string]any{
+		"reachable": ok,
+		"error":     lastErr,
+		"lms":       lmsPath(),
+		"endpoint":  s.cfg.Endpoint,
+	}, nil
 }
 
 // getConfig returns the live settings.

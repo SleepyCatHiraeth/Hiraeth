@@ -205,7 +205,11 @@ func (s *Service) memoryPending(_ json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"items": append(cands, quar...)}, nil
+	items := append(cands, quar...)
+	if items == nil {
+		items = []*memory.Item{}
+	}
+	return map[string]any{"items": items}, nil
 }
 
 func (s *Service) memoryConfirm(params json.RawMessage) (any, error) {
@@ -225,14 +229,9 @@ func (s *Service) memoryConfirm(params json.RawMessage) (any, error) {
 	// Embed on confirmation rather than on capture, so vectors are only ever
 	// computed for memories the user actually kept.
 	if it, err := st.Get(p.ID); err == nil {
-		s.mu.Lock()
-		cfg := s.cfg
-		s.mu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if vec, err := memory.Embed(ctx, cfg.Endpoint, cfg.EmbedModel, it.Content); err == nil {
-			_ = st.PutEmbedding(it.ID, cfg.EmbedModel, vec)
-		}
+		s.embedOrRecord(ctx, st, it.ID, it.Content)
 	}
 	s.refreshPending()
 	return map[string]any{"confirmed": p.ID}, nil
@@ -257,6 +256,12 @@ func (s *Service) memoryCorrect(params json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A correction is a new row with new content, so it needs its own vector.
+	// Without this the corrected memory is keyword-only and invisible to
+	// semantic search, which is the opposite of what correcting it was for.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	s.embedOrRecord(ctx, st, it.ID, it.Content)
 	s.broadcast()
 	return it, nil
 }
@@ -358,4 +363,35 @@ func (s *Service) memoryImport(params json.RawMessage) (any, error) {
 	s.refreshPending()
 	return map[string]any{"imported": added, "refused": refused,
 		"note": "imported items are quarantined until reviewed"}, nil
+}
+
+// embedOrRecord computes and stores a vector, recording any failure in state.
+//
+// Embedding used to fail silently: a stopped model server produced a memory
+// with no vector, invisible to semantic search, indistinguishable from success.
+// A degradation the user cannot see is worse than one they can.
+func (s *Service) embedOrRecord(ctx context.Context, st *memory.Store, id, content string) {
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+
+	vec, err := memory.Embed(ctx, cfg.Endpoint, cfg.EmbedModel, content)
+	if err != nil {
+		s.mu.Lock()
+		s.embedErr = "embedding unavailable, memory is keyword-only: " + err.Error()
+		s.seq++
+		s.mu.Unlock()
+		s.broadcast()
+		return
+	}
+	if err := st.PutEmbedding(id, cfg.EmbedModel, vec); err != nil {
+		return
+	}
+	s.mu.Lock()
+	cleared := s.embedErr != ""
+	s.embedErr = ""
+	s.mu.Unlock()
+	if cleared {
+		s.broadcast()
+	}
 }

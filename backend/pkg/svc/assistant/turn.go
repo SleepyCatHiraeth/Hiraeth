@@ -172,6 +172,20 @@ func (t *turn) run() {
 	}
 	s.setState(StateThinking, func() { s.transcript = text })
 
+	// A stopped model server is the most likely reason a turn fails, and it is
+	// repairable. Try once, and if it stays down say so plainly instead of
+	// producing a generic provider error.
+	if !s.ensureServer(t.ctx) {
+		_, why := s.healthSnapshot()
+		if why == "" {
+			why = "the local model server is not running"
+		}
+		t.finish(StateError, func() {
+			s.lastErr = "model server unreachable: " + why + " (try: lms server start)"
+		})
+		return
+	}
+
 	// Retrieval is best-effort and never blocks the answer. An empty string
 	// means the model simply gets no stored context this turn.
 	memCtx, _ := s.recall(t.ctx, text)

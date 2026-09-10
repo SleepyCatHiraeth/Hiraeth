@@ -33,6 +33,13 @@ Singleton {
 
     // Memories awaiting the user's decision. Surfaced in the notch so a save
     // never happens silently and never needs hunting for in a settings page.
+    // Model-server reachability. A stopped server is the most common reason the
+    // assistant fails, and it is repairable, so it gets its own visible state
+    // rather than surfacing as a generic error at turn time.
+    property bool llmReachable: true
+    property string llmError: ""
+    property string embedError: ""
+
     property int pendingMemories: 0
     property bool memoryEnabled: false
     property var reviewQueue: []
@@ -75,6 +82,9 @@ Singleton {
         root.response = data.response || "";
         root.lastError = data.error || "";
         root.memoryEnabled = data.memory_enabled === true;
+        root.llmReachable = data.llm_reachable !== false;
+        root.llmError = data.llm_error || "";
+        root.embedError = data.embed_error || "";
         const pending = data.pending_memories || 0;
         if (pending !== root.pendingMemories) {
             root.pendingMemories = pending;
@@ -99,8 +109,12 @@ Singleton {
         BackendService.call("assistant.memory.confirm", {id: id}, () => root.refreshReviewQueue());
     }
 
-    function forgetMemory(id) {
-        BackendService.call("assistant.memory.forget", {id: id}, () => root.refreshReviewQueue());
+    function forgetMemory(id, callback) {
+        BackendService.call("assistant.memory.forget", {id: id}, (result, error) => {
+            root.refreshReviewQueue();
+            if (callback)
+                callback(result, error);
+        });
     }
 
     function forgetAllMemories(callback) {
@@ -111,8 +125,40 @@ Singleton {
         BackendService.call("assistant.memory.list", {}, callback);
     }
 
+    function checkHealth(callback) {
+        BackendService.call("assistant.health", {}, callback);
+    }
+
+    function repairServer(callback) {
+        BackendService.call("assistant.health", {repair: true}, callback);
+    }
+
     function memoryStats(callback) {
         BackendService.call("assistant.memory.stats", {}, callback);
+    }
+
+    function getConfig(callback) {
+        BackendService.call("assistant.config", {}, callback);
+    }
+
+    function setConfig(patch, callback) {
+        BackendService.call("assistant.set", patch, callback);
+    }
+
+    function listVoices(callback) {
+        BackendService.call("assistant.voices", {}, callback);
+    }
+
+    function checkDeps(callback) {
+        BackendService.call("assistant.check", {}, callback);
+    }
+
+    function testVoice(text) {
+        BackendService.call("assistant.say", {text: text});
+    }
+
+    function correctMemory(id, content, callback) {
+        BackendService.call("assistant.memory.correct", {id: id, content: content}, callback);
     }
 
     Component.onCompleted: {
