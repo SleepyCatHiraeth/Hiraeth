@@ -37,23 +37,23 @@ Item {
 
     function reload() {
         TurretService.getConfig(result => {
-            if (!root.alive || !result)
+            if (!root || !root.alive || !result)
                 return;
             root.cfg = result;
             root.loaded = true;
         });
         TurretService.listVoices(result => {
-            if (root.alive)
+            if (root && root.alive)
                 root.voices = result || [];
         });
         TurretService.checkDeps(result => {
-            if (!root.alive || !result)
+            if (!root || !root.alive || !result)
                 return;
             root.sources = result.sources || [];
             root.sinks = result.sinks || [];
         });
         TurretService.memoryStats(result => {
-            if (root.alive)
+            if (root && root.alive)
                 root.stats = result || ({});
         });
     }
@@ -62,7 +62,7 @@ Item {
         let patch = {};
         patch[key] = value;
         TurretService.setConfig(patch, result => {
-            if (!root.alive)
+            if (!root || !root.alive)
                 return;
             if (result)
                 root.cfg = result;
@@ -121,7 +121,7 @@ Item {
                 Button {
                     visible: !TurretService.llmReachable
                     text: "Start server"
-                    onClicked: TurretService.repairServer(() => { if (root.alive) root.reload(); })
+                    onClicked: TurretService.repairServer(() => { if (root && root.alive) root.reload(); })
                 }
 
                 // Explicit release of the ~650 MB the daemon holds plus any
@@ -129,7 +129,7 @@ Item {
                 Button {
                     visible: TurretService.llmReachable
                     text: "Stop & free memory"
-                    onClicked: TurretService.stopServer(() => { if (root.alive) root.reload(); })
+                    onClicked: TurretService.stopServer(() => { if (root && root.alive) root.reload(); })
                 }
             }
 
@@ -172,7 +172,7 @@ Item {
                         // Engine and voice must change together: a Kokoro voice
                         // name means nothing to Piper, and the sample rates differ.
                         TurretService.setConfig({tts_engine: v.engine, tts_voice: v.voice},
-                                                result => { if (root.alive && result) root.cfg = result; });
+                                                result => { if (root && root.alive && result) root.cfg = result; });
                     }
                 }
 

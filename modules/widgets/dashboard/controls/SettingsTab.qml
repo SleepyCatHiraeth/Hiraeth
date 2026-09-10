@@ -18,7 +18,7 @@ Rectangle {
     implicitHeight: 300
     // 0: Network, 1: Bluetooth, 2: Mixer, 3: AI, 4: Effects, 5: Theme, 6: Binds, 7: System, 8: Compositor, 9: Shell
 
-    property int currentSection: 13
+    property int currentSection: 0
     property int selectedIndex: GlobalStates.settingsCurrentTab
     property string searchQuery: ""
 
