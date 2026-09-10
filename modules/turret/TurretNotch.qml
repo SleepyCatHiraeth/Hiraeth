@@ -29,7 +29,7 @@ Item {
     required property var screen
 
     readonly property bool onActiveScreen: screen && GlobalStates.turretScreenName === screen.name
-    readonly property bool active: GlobalStates.turretVisible && onActiveScreen
+    readonly property bool active: TurretService.enabled && GlobalStates.turretVisible && onActiveScreen
 
     readonly property string state: TurretService.state
     readonly property color accent: TurretStateStyle.accent(state)

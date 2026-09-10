@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -103,6 +104,13 @@ func (s *Service) ensureServer(ctx context.Context) bool {
 
 	s.setState(StateStarting, nil)
 
+	// The daemon may be down as well as the server; `daemon up` is a no-op when
+	// it is already running, so this is unconditional rather than conditional
+	// on a status check that could race.
+	up := exec.CommandContext(ctx, lms, "daemon", "up")
+	up.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	_ = up.Run()
+
 	cmd := exec.CommandContext(ctx, lms, "server", "start")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Run(); err != nil {
@@ -152,11 +160,52 @@ func lmsPath() string {
 // because this is a local HTTP GET against a server that is either up or not.
 func (s *Service) startHealthLoop() {
 	go func() {
-		s.refreshHealth(true)
 		t := time.NewTicker(30 * time.Second)
 		defer t.Stop()
-		for range t.C {
-			s.refreshHealth(true)
+		for {
+			s.mu.Lock()
+			enabled := s.cfg.Enabled
+			s.mu.Unlock()
+			// Nothing is probed while the assistant is off. The loop stays
+			// parked rather than exiting, so turning it on needs no restart.
+			if enabled {
+				s.refreshHealth(true)
+			}
+			<-t.C
 		}
 	}()
+}
+
+// stopServer shuts the model server down and unloads whatever it is holding.
+//
+// The daemon idles at a few hundred MB of RAM and keeps any loaded model
+// resident until its TTL expires, which matters on a machine that also plays
+// games. Turning the assistant off should be able to actually give that back,
+// so this is offered explicitly rather than left to the TTL.
+func (s *Service) stopServer(ctx context.Context) error {
+	lms := lmsPath()
+	if lms == "" {
+		return fmt.Errorf("lms not found")
+	}
+	// Unload first so VRAM is released even if the server lingers.
+	unload := exec.CommandContext(ctx, lms, "unload", "--all")
+	unload.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	_ = unload.Run()
+
+	stop := exec.CommandContext(ctx, lms, "server", "stop")
+	stop.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := stop.Run(); err != nil {
+		return err
+	}
+
+	// Stopping the server leaves the daemon resident at a few hundred MB, which
+	// is most of what "turn it off" is meant to reclaim. `ensureServer` brings
+	// both back, so taking the daemon down too costs nothing but a slower first
+	// turn.
+	down := exec.CommandContext(ctx, lms, "daemon", "down")
+	down.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	_ = down.Run()
+
+	s.refreshHealth(true)
+	return nil
 }

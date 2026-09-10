@@ -37,6 +37,11 @@ const (
 // Config carries the resolved locations of the local stack. Nothing here is a
 // network address except Endpoint, which is validated as loopback before use.
 type Config struct {
+	// Master switch. Off by default and off after a reboot: with this false
+	// nothing polls, no database is opened, no process is started, and a turn
+	// is refused. The assistant costs exactly nothing until it is turned on.
+	Enabled bool `json:"enabled"`
+
 	StackDir  string  `json:"stack_dir"`
 	Endpoint  string  `json:"endpoint"`
 	Model     string  `json:"model"`
@@ -72,6 +77,7 @@ func defaultConfig() Config {
 	home, _ := os.UserHomeDir()
 	stack := filepath.Join(home, "Project", "Tools", "turret-stack")
 	return Config{
+		Enabled:  false,
 		StackDir: stack,
 		// Loopback only. checkEndpoint refuses anything else, so a config edit
 		// cannot quietly turn this into a cloud assistant.
@@ -189,6 +195,7 @@ func (s *Service) snapshot() map[string]any {
 		"response":         s.response,
 		"error":            s.lastErr,
 		"seq":              s.seq,
+		"enabled":          s.cfg.Enabled,
 		"memory_enabled":   s.cfg.MemoryEnabled,
 		"pending_memories": s.pendingMemories,
 		"llm_reachable":    s.healthReachableLocked(),
@@ -238,7 +245,12 @@ func (s *Service) toggle(_ json.RawMessage) (any, error) {
 	s.mu.Lock()
 	active := s.turn
 	state := s.state
+	enabled := s.cfg.Enabled
 	s.mu.Unlock()
+
+	if !enabled && active == nil {
+		return nil, fmt.Errorf("the turret assistant is off; turn it on in Settings")
+	}
 
 	switch {
 	case active != nil && state == StateListening:
@@ -358,10 +370,17 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 func (s *Service) healthMethod(params json.RawMessage) (any, error) {
 	var p struct {
 		Repair bool `json:"repair"`
+		Stop   bool `json:"stop"`
 	}
 	_ = json.Unmarshal(params, &p)
 
-	if p.Repair {
+	if p.Stop {
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		if err := s.stopServer(ctx); err != nil {
+			return nil, err
+		}
+	} else if p.Repair {
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 		s.ensureServer(ctx)
@@ -423,10 +442,26 @@ func (s *Service) setConfig(params json.RawMessage) (any, error) {
 	s.mu.Lock()
 	s.cfg = next
 	s.mu.Unlock()
-	// Enabling memory must surface anything already waiting, not just what
-	// arrives afterwards.
-	if next.MemoryEnabled {
-		s.refreshPending()
+	// Turning the assistant off must actually stop things, not just refuse new
+	// work: close the memory database and let the health loop idle.
+	if !next.Enabled {
+		s.mu.Lock()
+		mem := s.mem
+		s.mem = nil
+		s.pendingMemories = 0
+		s.mu.Unlock()
+		if mem != nil {
+			_ = mem.Close()
+		}
+	} else {
+		// Probe immediately rather than waiting up to a full tick, or the panel
+		// reports "server not running" for 30s after being switched on.
+		go s.refreshHealth(true)
+		if next.MemoryEnabled {
+			// Enabling must surface anything already waiting, not just what
+			// arrives afterwards.
+			s.refreshPending()
+		}
 	}
 	s.broadcast()
 	return next, nil

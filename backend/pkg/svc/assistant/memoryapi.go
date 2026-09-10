@@ -27,7 +27,7 @@ func (s *Service) memoryDir() string {
 // when memory is disabled -- every caller must handle that.
 func (s *Service) store() *memory.Store {
 	s.mu.Lock()
-	enabled := s.cfg.MemoryEnabled
+	enabled := s.cfg.Enabled && s.cfg.MemoryEnabled
 	existing := s.mem
 	s.mu.Unlock()
 

@@ -41,6 +41,9 @@ Singleton {
     property string embedError: ""
 
     property int pendingMemories: 0
+    // Master switch. When false nothing polls, no database is open, no process
+    // runs, and the notch stays hidden.
+    property bool enabled: false
     property bool memoryEnabled: false
     property var reviewQueue: []
 
@@ -52,6 +55,10 @@ Singleton {
     // decide whether this press starts listening, stops listening, or
     // interrupts a reply in progress.
     function activate() {
+        if (!root.enabled) {
+            root.failed("The turret assistant is off. Turn it on in Settings.");
+            return;
+        }
         if (!GlobalStates.turretVisible)
             GlobalStates.toggleTurret();
         BackendService.call("assistant.toggle", {}, (result, error) => {
@@ -81,6 +88,7 @@ Singleton {
         root.transcript = data.transcript || "";
         root.response = data.response || "";
         root.lastError = data.error || "";
+        root.enabled = data.enabled === true;
         root.memoryEnabled = data.memory_enabled === true;
         root.llmReachable = data.llm_reachable !== false;
         root.llmError = data.llm_error || "";
@@ -131,6 +139,10 @@ Singleton {
 
     function repairServer(callback) {
         BackendService.call("assistant.health", {repair: true}, callback);
+    }
+
+    function stopServer(callback) {
+        BackendService.call("assistant.health", {stop: true}, callback);
     }
 
     function memoryStats(callback) {

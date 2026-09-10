@@ -92,11 +92,24 @@ Item {
 
             PanelTitlebar {
                 title: "Turret Assistant"
+                showToggle: true
+                toggleChecked: TurretService.enabled
+                onToggleChanged: checked => root.apply("enabled", checked)
+            }
+
+            TurretSettingCard {
+                Layout.fillWidth: true
+                visible: !TurretService.enabled
+                title: "Off"
+                subtitle: "Nothing runs while this is off: no polling, no database, no models, no VRAM. It stays off after a reboot until you turn it back on."
+                icon: Icons.power
+                accent: Colors.overSurfaceVariant
             }
 
             // ---- Health ------------------------------------------------
             TurretSettingCard {
                 Layout.fillWidth: true
+                visible: TurretService.enabled
                 title: TurretService.llmReachable ? "Model server running" : "Model server not running"
                 subtitle: TurretService.llmReachable
                           ? "Local, on " + (root.cfg.endpoint ?? "")
@@ -110,22 +123,32 @@ Item {
                     text: "Start server"
                     onClicked: TurretService.repairServer(() => { if (root.alive) root.reload(); })
                 }
+
+                // Explicit release of the ~650 MB the daemon holds plus any
+                // resident model, rather than waiting for the idle TTL.
+                Button {
+                    visible: TurretService.llmReachable
+                    text: "Stop & free memory"
+                    onClicked: TurretService.stopServer(() => { if (root.alive) root.reload(); })
+                }
             }
 
             // A local assistant that quietly became a remote one would be the
             // worst possible failure, so the guarantee is stated, not implied.
             TurretSettingCard {
                 Layout.fillWidth: true
+                visible: TurretService.enabled
                 title: "Local only"
                 subtitle: "The model endpoint is rejected unless it is loopback. Nothing is sent off this machine."
                 icon: Icons.lock
                 accent: Colors.primary
             }
 
-            TurretSectionLabel { text: "Voice" }
+            TurretSectionLabel { text: "Voice"; visible: TurretService.enabled }
 
             TurretSettingCard {
                 Layout.fillWidth: true
+                visible: TurretService.enabled
                 title: "Speaking voice"
                 subtitle: (root.cfg.tts_engine ?? "") + " · " + (root.cfg.tts_voice ?? "")
                 icon: Icons.speakerHigh
@@ -162,6 +185,7 @@ Item {
 
             TurretSettingCard {
                 Layout.fillWidth: true
+                visible: TurretService.enabled
                 title: "Speaking rate"
                 subtitle: (speedSlider.minSpeed + speedSlider.value * (speedSlider.maxSpeed - speedSlider.minSpeed)).toFixed(2) + "x"
                 icon: Icons.waveform
@@ -187,10 +211,11 @@ Item {
                 }
             }
 
-            TurretSectionLabel { text: "Speech recognition" }
+            TurretSectionLabel { text: "Speech recognition"; visible: TurretService.enabled }
 
             TurretSettingCard {
                 Layout.fillWidth: true
+                visible: TurretService.enabled
                 title: "Microphone"
                 subtitle: root.cfg.capture_target === "" ? "Auto-detected" : (root.cfg.capture_target ?? "")
                 icon: Icons.mic
@@ -215,6 +240,7 @@ Item {
 
             TurretSettingCard {
                 Layout.fillWidth: true
+                visible: TurretService.enabled
                 title: "Speaker"
                 subtitle: root.cfg.playback_target === "" ? "System default" : (root.cfg.playback_target ?? "")
                 icon: Icons.speakerHigh
@@ -239,6 +265,7 @@ Item {
 
             TurretSettingCard {
                 Layout.fillWidth: true
+                visible: TurretService.enabled
                 title: "Known words"
                 subtitle: "Names the transcriber should expect. Without these it guesses unfamiliar words phonetically."
                 icon: Icons.notepad
@@ -252,10 +279,11 @@ Item {
                 }
             }
 
-            TurretSectionLabel { text: "Memory" }
+            TurretSectionLabel { text: "Memory"; visible: TurretService.enabled }
 
             TurretSettingCard {
                 Layout.fillWidth: true
+                visible: TurretService.enabled
                 title: "Remember things"
                 subtitle: TurretService.memoryEnabled
                           ? "Durable memories always ask before they are kept."
@@ -270,7 +298,7 @@ Item {
 
             TurretSettingCard {
                 Layout.fillWidth: true
-                visible: TurretService.memoryEnabled
+                visible: TurretService.enabled && TurretService.memoryEnabled
                 title: "Stored"
                 subtitle: {
                     const by = root.stats.by_status || ({});
