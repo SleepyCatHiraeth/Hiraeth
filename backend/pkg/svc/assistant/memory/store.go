@@ -211,6 +211,14 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// SQLite creates the file with the process umask, which lands at 0644 here.
+	// The contents are encrypted and the parent is 0700, so this is
+	// defence in depth rather than a hole -- but it is free, and the clipboard
+	// store already sets the same mode.
+	if err := os.Chmod(dbPath, 0o600); err != nil {
+		db.Close()
+		return nil, err
+	}
 
 	s := &Store{db: db, dir: dir}
 	if _, err := s.PurgeExpired(); err != nil {

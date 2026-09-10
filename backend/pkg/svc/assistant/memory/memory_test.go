@@ -473,3 +473,21 @@ func TestQuarantinedIsReviewableButNotAutomatic(t *testing.T) {
 		t.Errorf("trust after confirmation = %q", got[0].Item.TrustLevel)
 	}
 }
+
+func TestFilePermissions(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, name := range []string{"memory.db", "memory.key"} {
+		fi, err := os.Stat(dir + "/" + name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if perm := fi.Mode().Perm(); perm != 0o600 {
+			t.Errorf("%s mode = %o, want 600", name, perm)
+		}
+	}
+}
