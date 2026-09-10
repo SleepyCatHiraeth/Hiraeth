@@ -48,6 +48,7 @@ QtObject {
             case "dashboard": toggleDashboardTab(0); break;
             case "wallpapers": toggleDashboardTab(1); break;
             case "assistant": toggleAssistant(); break;
+            case "turret": TurretService.activate(); break;
             case "dashboard-widgets": toggleDashboardTab(0); break;
             case "dashboard-wallpapers": toggleDashboardTab(1); break;
             case "dashboard-kanban": toggleDashboardTab(2); break;

@@ -213,7 +213,7 @@ Singleton {
 
         const ambxstMap = adapter.ambxst || {};
         const ambxst = {};
-        for (const k of ["launcher", "dashboard", "assistant", "clipboard", "emoji", "notes", "tmux", "wallpapers"]) {
+        for (const k of ["launcher", "dashboard", "assistant", "turret", "clipboard", "emoji", "notes", "tmux", "wallpapers"]) {
             if (ambxstMap[k])
                 ambxst[k] = {
                     modifiers: ambxstMap[k].modifiers || [],

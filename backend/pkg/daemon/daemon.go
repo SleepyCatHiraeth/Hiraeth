@@ -16,6 +16,7 @@ import (
 	"ambxst/backend/pkg/mods"
 	"ambxst/backend/pkg/paths"
 	"ambxst/backend/pkg/svc"
+	assistantsvc "ambxst/backend/pkg/svc/assistant"
 	"ambxst/backend/pkg/svc/caffeine"
 	"ambxst/backend/pkg/svc/clipboard"
 	"ambxst/backend/pkg/svc/compositor"
@@ -157,6 +158,12 @@ func New() (*Daemon, error) {
 
 	ocrSvc := ocrsvc.NewService()
 	ocrSvc.Register(d.srv)
+
+	// assistant — the turret voice assistant. Owns the microphone, the local
+	// model client and every worker process, so QML never holds a child's
+	// lifetime and never sees an endpoint it could point off-machine.
+	assistantSvc := assistantsvc.NewService()
+	assistantSvc.Register(d.srv)
 
 	// notify — exposes notify.send so CLIs (colorpicker, screen, …) can
 	// route their notifications through the running shell instead of

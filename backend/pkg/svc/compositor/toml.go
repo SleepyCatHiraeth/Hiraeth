@@ -176,7 +176,7 @@ func writeKeybinds(b *strings.Builder, in Input) {
 
 	// core ambxst binds
 	for _, name := range []string{
-		"launcher", "dashboard", "assistant", "clipboard", "emoji",
+		"launcher", "dashboard", "assistant", "turret", "clipboard", "emoji",
 		"notes", "tmux", "wallpapers",
 	} {
 		if bind, ok := kb.Ambxst[name]; ok {

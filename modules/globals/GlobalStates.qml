@@ -616,5 +616,51 @@ Singleton {
         assistantVisible = false;
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // TURRET ASSISTANT STATE
+    // ═══════════════════════════════════════════════════════════════
+    // Deliberately separate from the assistant sidebar above: the turret
+    // assistant is its own top-edge notch, not a mode of that panel.
+    property bool turretVisible: false
+    property string turretScreenName: ""
+
+    // Lifecycle state name, mirroring the backend assistant service. Only the
+    // states the UI can currently reach are produced today; the rest exist so
+    // the notch has one place to switch on as the service lands.
+    property string turretState: "idle"
+
+    readonly property var turretScreens: Quickshell.screens
+    onTurretScreensChanged: Qt.callLater(reconcileTurretScreen)
+
+    // Same reconciliation contract as the assistant sidebar: if the screen the
+    // notch was placed on disappears, move to the focused one, and only hide
+    // when there is no screen at all.
+    function reconcileTurretScreen() {
+        if (turretScreens.some(screen => screen.name === turretScreenName))
+            return;
+        const focused = AxctlService.focusedMonitor;
+        const screen = turretScreens.find(screen => focused && screen.name === focused.name) || turretScreens[0];
+        turretScreenName = screen ? screen.name : "";
+        if (!screen)
+            turretVisible = false;
+    }
+
+    function toggleTurret() {
+        if (turretVisible) {
+            turretVisible = false;
+            return;
+        }
+        const focused = AxctlService.focusedMonitor;
+        const screen = turretScreens.find(screen => focused && screen.name === focused.name) || turretScreens[0];
+        if (!screen)
+            return;
+        turretScreenName = screen.name;
+        turretVisible = true;
+    }
+
+    function hideTurret() {
+        turretVisible = false;
+    }
+
     property int settingsCurrentTab: 0
 }

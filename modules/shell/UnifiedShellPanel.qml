@@ -12,6 +12,7 @@ import qs.modules.globals
 import qs.modules.components
 import qs.config
 import qs.modules.sidebar
+import qs.modules.turret
 
 PanelWindow {
     id: unifiedPanel
@@ -280,6 +281,12 @@ PanelWindow {
             anchors.fill: parent
             screen: unifiedPanel.targetScreen
             z: 4
+        }
+
+        TurretNotch {
+            id: turretNotch
+            screen: unifiedPanel.targetScreen
+            z: 5
         }
 
         AssistantSidebar {

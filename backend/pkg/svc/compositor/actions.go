@@ -44,6 +44,7 @@ var catalog = []ActionSpec{
 	{ID: "ambxst.launcher", Label: "Open Launcher", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run launcher", Flags: "r"},
 	{ID: "ambxst.dashboard", Label: "Open Dashboard", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run dashboard"},
 	{ID: "ambxst.assistant", Label: "Open Assistant", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run assistant"},
+	{ID: "ambxst.turret", Label: "Open Turret Assistant", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run turret"},
 	{ID: "ambxst.clipboard", Label: "Open Clipboard", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run clipboard"},
 	{ID: "ambxst.emoji", Label: "Open Emoji", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run emoji"},
 	{ID: "ambxst.notes", Label: "Open Notes", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run notes"},
