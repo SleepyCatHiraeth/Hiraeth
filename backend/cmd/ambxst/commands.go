@@ -43,11 +43,11 @@ func runUpdate() {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: update failed: %v\n", err)
-		restartAmbxst()
+		restartAmbxst(false, true)
 		return
 	}
 	rebuildModsAfterUpdate()
-	restartAmbxst()
+	restartAmbxst(false, true)
 }
 
 // The shell source has just changed, so an existing generation was composed

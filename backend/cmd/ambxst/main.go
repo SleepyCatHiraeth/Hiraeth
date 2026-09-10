@@ -72,7 +72,7 @@ func main() {
 	case "lock":
 		mustCall("ui.run", map[string]any{"command": "lockscreen"})
 	case "reload":
-		restartAmbxst()
+		restartAmbxst(hasFlag(args[1:], "--force", "-f"), hasFlag(args[1:], "--wait"))
 	case "quit":
 		quitAmbxst()
 	case "screen":
@@ -310,7 +310,40 @@ func execCommand(name string, args ...string) {
 // restartAmbxst triggers a full restart by asking the running instance to
 // shut down via IPC, waiting for it to actually die, and re-execing
 // ourselves in the background.
-func restartAmbxst() {
+// hasFlag reports whether any of the given aliases appears in args.
+func hasFlag(args []string, aliases ...string) bool {
+	for _, a := range args {
+		for _, want := range aliases {
+			if a == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func restartAmbxst(force, wait bool) {
+	// Refuse to restart into a locked session. See lockguard.go for why this
+	// strands the user rather than merely inconveniencing them.
+	if !force && sessionLocked() {
+		if wait {
+			fmt.Fprintln(os.Stderr, "ambxst: session is locked, waiting for unlock…")
+			if !waitForUnlock(10 * time.Minute) {
+				fmt.Fprintln(os.Stderr, "ambxst: still locked after 10m, not restarting")
+				os.Exit(1)
+			}
+		} else {
+			fmt.Fprintln(os.Stderr,
+				"ambxst: refusing to reload while the session is locked.\n"+
+					"Restarting the shell now would destroy the lockscreen surface while the\n"+
+					"compositor keeps the session locked, leaving no way to type a password\n"+
+					"except switching to a TTY.\n\n"+
+					"Unlock first, or use --wait to reload once it unlocks.\n"+
+					"Use --force only if you accept being locked out.")
+			os.Exit(1)
+		}
+	}
+
 	if isAlive() {
 		_, _ = newClient().Call("system.shutdown", nil)
 		waitForDeath(5 * time.Second)

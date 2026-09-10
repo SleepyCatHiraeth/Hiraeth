@@ -62,10 +62,10 @@ func hasBinary(name string) bool {
 // when running the binary in isolation outside the shell.
 func notifyShell(summary, body, urgency string) {
 	params := map[string]any{
-		"summary":  summary,
-		"body":     body,
-		"appName":  "Ambxst",
-		"urgency":  urgency,
+		"summary": summary,
+		"body":    body,
+		"appName": "Ambxst",
+		"urgency": urgency,
 	}
 	if _, err := newClient().Call("notify.send", params); err != nil {
 		_ = notify.SendFallback(summary, body, urgency)

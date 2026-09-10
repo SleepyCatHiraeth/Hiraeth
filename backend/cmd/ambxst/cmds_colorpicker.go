@@ -56,13 +56,13 @@ func runColorPicker() int {
 		{"identifier": "hsv", "text": "Copy HSV", "clipboard": hsvColor},
 	}
 	params := map[string]any{
-		"summary":  "Color Picked",
-		"body":     fmt.Sprintf("%s copied to clipboard", hexColor),
-		"appName":  "ColorPicker",
-		"appIcon":  icon,
-		"image":    icon,
-		"urgency":  "normal",
-		"actions":  action,
+		"summary":    "Color Picked",
+		"body":       fmt.Sprintf("%s copied to clipboard", hexColor),
+		"appName":    "ColorPicker",
+		"appIcon":    icon,
+		"image":      icon,
+		"urgency":    "normal",
+		"actions":    action,
 		"replaceKey": "colorpicker",
 	}
 	if _, err := newClient().Call("notify.send", params); err != nil {
