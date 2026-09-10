@@ -35,14 +35,17 @@ const (
 // Config carries the resolved locations of the local stack. Nothing here is a
 // network address except Endpoint, which is validated as loopback before use.
 type Config struct {
-	StackDir   string `json:"stack_dir"`
-	Endpoint   string `json:"endpoint"`
-	Model      string `json:"model"`
-	Voice      string `json:"voice"`
-	STTModel   string `json:"stt_model"`
-	STTThreads int    `json:"stt_threads"`
-	MaxTokens  int    `json:"max_tokens"`
-	Volume     string `json:"volume"`
+	StackDir   string  `json:"stack_dir"`
+	Endpoint   string  `json:"endpoint"`
+	Model      string  `json:"model"`
+	Voice      string  `json:"voice"`
+	TTSEngine  string  `json:"tts_engine"`
+	TTSVoice   string  `json:"tts_voice"`
+	Speed      float64 `json:"speed"`
+	STTModel   string  `json:"stt_model"`
+	STTThreads int     `json:"stt_threads"`
+	MaxTokens  int     `json:"max_tokens"`
+	Volume     string  `json:"volume"`
 	// Empty means "auto-detect"; see pickCaptureTarget for why the PipeWire
 	// default is not trusted.
 	CaptureTarget string `json:"capture_target"`
@@ -59,8 +62,13 @@ func defaultConfig() Config {
 		StackDir: stack,
 		// Loopback only. checkEndpoint refuses anything else, so a config edit
 		// cannot quietly turn this into a cloud assistant.
-		Endpoint:   "http://127.0.0.1:1234/v1",
-		Model:      "qwen/qwen3-14b",
+		Endpoint: "http://127.0.0.1:1234/v1",
+		Model:    "qwen/qwen3-14b",
+		// Chosen by the user on 2026-09-10 after listening to eight candidates.
+		// am_onyx is the other pick and is one setting away.
+		TTSEngine:  "kokoro",
+		TTSVoice:   "af_heart",
+		Speed:      1.0,
 		Voice:      filepath.Join(stack, "models", "piper", "en_US-lessac-medium.onnx"),
 		STTModel:   "small.en",
 		STTThreads: 8,
@@ -86,7 +94,14 @@ type Service struct {
 }
 
 func NewService() *Service {
-	return &Service{cfg: defaultConfig(), state: StateIdle}
+	cfg, err := loadConfig()
+	s := &Service{cfg: cfg, state: StateIdle}
+	if err != nil {
+		// Surfaced rather than swallowed: the user gets defaults this session
+		// and their file is left untouched for inspection.
+		s.lastErr = "assistant config unreadable, using defaults: " + err.Error()
+	}
+	return s
 }
 
 func (s *Service) Register(srv *ipc.Server) {
@@ -97,6 +112,10 @@ func (s *Service) Register(srv *ipc.Server) {
 			"cancel": s.cancel,
 			"state":  s.stateMethod,
 			"check":  s.check,
+			"config": s.getConfig,
+			"set":    s.setConfig,
+			"voices": s.listVoices,
+			"say":    s.say,
 		},
 		Subscribe: s.subscribe,
 	})
@@ -213,7 +232,7 @@ func (s *Service) check(_ json.RawMessage) (any, error) {
 		"venv":  venv,
 		"stt":   filepath.Join(s.cfg.StackDir, "stt.py"),
 		"tts":   filepath.Join(s.cfg.StackDir, "tts.py"),
-		"voice": s.cfg.Voice,
+		"voice": s.voiceModelPath(),
 	} {
 		_, err := os.Stat(path)
 		res[label] = err == nil
@@ -242,6 +261,90 @@ func (s *Service) check(_ json.RawMessage) (any, error) {
 		res["llm_error"] = err.Error()
 	}
 	return res, nil
+}
+
+// say speaks a line through the configured engine, using the same code path a
+// real turn uses. This is what a Settings "Test voice" button drives, and it is
+// the only way to verify speech output without a microphone.
+func (s *Service) say(params json.RawMessage) (any, error) {
+	var p struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	if p.Text == "" {
+		p.Text = "Turret assistant voice test."
+	}
+
+	s.mu.Lock()
+	if s.turn != nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("busy")
+	}
+	s.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	t := &turn{svc: s, ctx: ctx, cancel: cancel}
+
+	sp, err := t.startSpeaker()
+	if err != nil {
+		return nil, err
+	}
+	defer sp.close()
+	sp.say(p.Text)
+	sp.finish()
+	return map[string]any{"spoke": p.Text}, nil
+}
+
+// getConfig returns the live settings.
+func (s *Service) getConfig(_ json.RawMessage) (any, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cfg, nil
+}
+
+// listVoices reports the selectable voices, so a settings UI does not have to
+// hardcode a list that would drift from what is on disk.
+func (s *Service) listVoices(_ json.RawMessage) (any, error) {
+	return KnownVoices, nil
+}
+
+// setConfig applies a partial update and persists it. Refused mid-turn, because
+// changing the voice or endpoint under a running pipeline would apply to half of
+// it. The endpoint is re-validated here so local-only cannot be disabled by
+// writing to the config file through this path.
+func (s *Service) setConfig(params json.RawMessage) (any, error) {
+	s.mu.Lock()
+	if s.turn != nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("busy: finish or cancel the current turn first")
+	}
+	next := s.cfg
+	s.mu.Unlock()
+
+	if err := json.Unmarshal(params, &next); err != nil {
+		return nil, err
+	}
+	if err := checkEndpoint(next.Endpoint); err != nil {
+		return nil, err
+	}
+	if next.TTSEngine != "kokoro" && next.TTSEngine != "piper" {
+		return nil, fmt.Errorf("unknown tts engine %q", next.TTSEngine)
+	}
+	if next.Speed <= 0 {
+		next.Speed = 1.0
+	}
+	if err := saveConfig(next); err != nil {
+		return nil, err
+	}
+
+	s.mu.Lock()
+	s.cfg = next
+	s.mu.Unlock()
+	s.broadcast()
+	return next, nil
 }
 
 func lookPathOK(bin string) bool {

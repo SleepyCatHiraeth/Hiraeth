@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -251,10 +252,21 @@ type speaker struct {
 
 func (t *turn) startSpeaker() (*speaker, error) {
 	cfg := t.svc.cfg
+	ttsArgs := []string{
+		filepath.Join(cfg.StackDir, "tts.py"),
+		"--engine", cfg.TTSEngine,
+		"--model", t.svc.voiceModelPath(),
+	}
+	if cfg.TTSEngine == "kokoro" {
+		ttsArgs = append(ttsArgs,
+			"--voices-bin", filepath.Join(cfg.StackDir, "models", "kokoro", "voices-v1.0.bin"),
+			"--voice", cfg.TTSVoice,
+			"--speed", strconv.FormatFloat(cfg.Speed, 'f', 2, 64),
+		)
+	}
 	tts := exec.CommandContext(t.ctx,
 		filepath.Join(cfg.StackDir, ".venv", "bin", "python"),
-		filepath.Join(cfg.StackDir, "tts.py"),
-		"--model", cfg.Voice,
+		ttsArgs...,
 	)
 	tts.Dir = cfg.StackDir
 	tts.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -270,7 +282,10 @@ func (t *turn) startSpeaker() (*speaker, error) {
 
 	// --raw is required: without it pw-play tries to parse a container header
 	// and rejects the stream outright.
-	playArgs := []string{"--raw", "--format=s16", "--rate=22050", "--channels=1",
+	// Rate follows the engine: Kokoro emits 24 kHz, Piper 22.05 kHz. A mismatch
+	// here does not error, it just plays back at the wrong pitch.
+	playArgs := []string{"--raw", "--format=s16",
+		"--rate=" + sampleRateFor(cfg.TTSEngine), "--channels=1",
 		"--volume=" + cfg.Volume}
 	if cfg.PlaybackTarget != "" {
 		playArgs = append(playArgs, "--target="+cfg.PlaybackTarget)

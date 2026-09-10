@@ -2,6 +2,8 @@ package assistant
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -86,5 +88,64 @@ func TestRMSDistinguishesSilenceFromAudio(t *testing.T) {
 	}
 	if rmsOf(nil) != 0 {
 		t.Error("empty input must be 0")
+	}
+}
+
+func TestSampleRateFollowsEngine(t *testing.T) {
+	// A wrong rate here plays back at the wrong pitch instead of erroring,
+	// so it is worth pinning.
+	if got := sampleRateFor("kokoro"); got != "24000" {
+		t.Errorf("kokoro rate = %s, want 24000", got)
+	}
+	if got := sampleRateFor("piper"); got != "22050" {
+		t.Errorf("piper rate = %s, want 22050", got)
+	}
+}
+
+func TestConfigRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg := defaultConfig()
+	if cfg.TTSEngine != "kokoro" || cfg.TTSVoice != "af_heart" {
+		t.Fatalf("unexpected defaults: %s/%s", cfg.TTSEngine, cfg.TTSVoice)
+	}
+	cfg.TTSVoice = "am_onyx"
+	if err := saveConfig(cfg); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := loadConfig()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got.TTSVoice != "am_onyx" {
+		t.Errorf("voice did not persist, got %q", got.TTSVoice)
+	}
+
+	// A partial file must not produce a broken stack.
+	if err := os.WriteFile(filepath.Join(dir, "ambxst", "assistant.json"),
+		[]byte(`{"tts_voice":"af_heart"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = loadConfig()
+	if err != nil {
+		t.Fatalf("load partial: %v", err)
+	}
+	if got.STTThreads == 0 || got.Endpoint == "" || got.TTSEngine == "" {
+		t.Errorf("partial config left holes: %+v", got)
+	}
+
+	// A corrupt file must fall back to defaults and report the error rather
+	// than silently overwriting the user's file.
+	if err := os.WriteFile(filepath.Join(dir, "ambxst", "assistant.json"),
+		[]byte(`{not json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = loadConfig()
+	if err == nil {
+		t.Error("corrupt config should report an error")
+	}
+	if got.TTSVoice != "af_heart" {
+		t.Errorf("corrupt config should yield defaults, got %q", got.TTSVoice)
 	}
 }
