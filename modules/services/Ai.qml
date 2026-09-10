@@ -298,7 +298,18 @@ Singleton {
         saveCurrentChat();
     }
 
-    property var systemTools: [
+    // `run_shell_command` hands one model-produced string full user authority:
+    // an approved call runs as ["bash", "-c", args.command]. It is therefore
+    // OFF unless explicitly enabled, and `Config.ai.tool` -- which already
+    // existed, defaulted to "none", and was never read -- is the switch.
+    //
+    // With no tools advertised the model is never offered the capability at
+    // all, which is stronger than relying on the approval dialog to catch every
+    // case. The turret assistant deliberately does not use this path.
+    readonly property bool toolsEnabled: (Config.ai.tool ?? "none") !== "none"
+    readonly property var systemTools: toolsEnabled ? shellTools : []
+
+    readonly property var shellTools: [
         {
             name: "run_shell_command",
             description: "Execute a shell command on the user's system (Linux). Use this to list files, control the system, or run utilities. Output will be returned.",
@@ -446,6 +457,12 @@ Singleton {
             return false;
         if (msg.functionCall.name !== "run_shell_command")
             return false;
+        // Defence in depth: a proposal made while tools were enabled must not
+        // remain executable after they are turned off.
+        if (!toolsEnabled) {
+            pushSystemMessage("Command execution is disabled. Enable it in Settings → AI if you want this.");
+            return false;
+        }
 
         let newChat = Array.from(currentChat);
         newChat[index].functionPending = false;
@@ -938,47 +955,42 @@ Singleton {
         let geminiKey = KeyStore.getKey("gemini");
         if (geminiKey) {
             pendingFetches++;
-            fetchProcessGemini.command = ["bash", "-c", "curl -s 'https://generativelanguage.googleapis.com/v1beta/models?key=" + geminiKey + "'"];
-            fetchProcessGemini.running = true;
+            startKeyedFetch(fetchProcessGemini, "https://generativelanguage.googleapis.com/v1beta/models", ["x-goog-api-key: " + geminiKey]);
         }
 
         // OpenAI
         let openaiKey = KeyStore.getKey("openai");
         if (openaiKey) {
             pendingFetches++;
-            fetchProcessOpenAI.command = ["bash", "-c", "curl -s https://api.openai.com/v1/models -H 'Authorization: Bearer " + openaiKey + "'"];
-            fetchProcessOpenAI.running = true;
+            startKeyedFetch(fetchProcessOpenAI, "https://api.openai.com/v1/models", ["Authorization: Bearer " + openaiKey]);
         }
 
         // Anthropic
         let anthropicKey = KeyStore.getKey("anthropic");
         if (anthropicKey) {
             pendingFetches++;
-            fetchProcessAnthropic.command = ["bash", "-c", "curl -s https://api.anthropic.com/v1/models -H 'x-api-key: " + anthropicKey + "' -H 'anthropic-version: 2023-06-01'"];
-            fetchProcessAnthropic.running = true;
+            startKeyedFetch(fetchProcessAnthropic, "https://api.anthropic.com/v1/models", ["x-api-key: " + anthropicKey, "anthropic-version: 2023-06-01"]);
         }
 
         // Mistral
         let mistralKey = KeyStore.getKey("mistral");
         if (mistralKey) {
             pendingFetches++;
-            fetchProcessMistral.command = ["bash", "-c", "curl -s https://api.mistral.ai/v1/models -H 'Authorization: Bearer " + mistralKey + "'"];
-            fetchProcessMistral.running = true;
+            startKeyedFetch(fetchProcessMistral, "https://api.mistral.ai/v1/models", ["Authorization: Bearer " + mistralKey]);
         }
 
         // Groq
         let groqKey = KeyStore.getKey("groq");
         if (groqKey) {
             pendingFetches++;
-            fetchProcessGroq.command = ["bash", "-c", "curl -s https://api.groq.com/openai/v1/models -H 'Authorization: Bearer " + groqKey + "'"];
-            fetchProcessGroq.running = true;
+            startKeyedFetch(fetchProcessGroq, "https://api.groq.com/openai/v1/models", ["Authorization: Bearer " + groqKey]);
         }
 
         // Ollama (local)
         let ollamaEnabled = KeyStore.hasKey("ollama");
         if (ollamaEnabled) {
             pendingFetches++;
-            fetchProcessOllama.command = ["bash", "-c", "curl -s http://127.0.0.1:11434/api/tags"];
+            fetchProcessOllama.command = ["curl", "-sS", "--connect-timeout", "5", "--max-time", "15", "http://127.0.0.1:11434/api/tags"];
             fetchProcessOllama.running = true;
         }
 
@@ -986,7 +998,7 @@ Singleton {
         let minimaxKey = KeyStore.getKey("minimax");
         if (minimaxKey) {
             pendingFetches++;
-            fetchProcessMiniMax.command = ["bash", "-c", "echo 'done'"];
+            fetchProcessMiniMax.command = ["true"];
             fetchProcessMiniMax.running = true;
         }
 
@@ -997,6 +1009,16 @@ Singleton {
 
     Process {
         id: fetchProcessGemini
+        // curl -K - reads its options from stdin; closing stdin is what
+        // tells it the config is complete and the request may proceed.
+        property string pendingCurlConfig: ""
+        onStarted: {
+            if (pendingCurlConfig !== "") {
+                write(pendingCurlConfig);
+                pendingCurlConfig = "";
+            }
+            stdinEnabled = false;
+        }
         stdout: StdioCollector {
             id: fetchGeminiOut
         }
@@ -1035,6 +1057,16 @@ Singleton {
 
     Process {
         id: fetchProcessOpenAI
+        // curl -K - reads its options from stdin; closing stdin is what
+        // tells it the config is complete and the request may proceed.
+        property string pendingCurlConfig: ""
+        onStarted: {
+            if (pendingCurlConfig !== "") {
+                write(pendingCurlConfig);
+                pendingCurlConfig = "";
+            }
+            stdinEnabled = false;
+        }
         stdout: StdioCollector {
             id: fetchOpenAIOut
         }
@@ -1081,6 +1113,16 @@ Singleton {
 
     Process {
         id: fetchProcessMistral
+        // curl -K - reads its options from stdin; closing stdin is what
+        // tells it the config is complete and the request may proceed.
+        property string pendingCurlConfig: ""
+        onStarted: {
+            if (pendingCurlConfig !== "") {
+                write(pendingCurlConfig);
+                pendingCurlConfig = "";
+            }
+            stdinEnabled = false;
+        }
         stdout: StdioCollector {
             id: fetchMistralOut
         }
@@ -1117,6 +1159,16 @@ Singleton {
 
     Process {
         id: fetchProcessGroq
+        // curl -K - reads its options from stdin; closing stdin is what
+        // tells it the config is complete and the request may proceed.
+        property string pendingCurlConfig: ""
+        onStarted: {
+            if (pendingCurlConfig !== "") {
+                write(pendingCurlConfig);
+                pendingCurlConfig = "";
+            }
+            stdinEnabled = false;
+        }
         stdout: StdioCollector {
             id: fetchGroqOut
         }
@@ -1153,6 +1205,16 @@ Singleton {
 
     Process {
         id: fetchProcessAnthropic
+        // curl -K - reads its options from stdin; closing stdin is what
+        // tells it the config is complete and the request may proceed.
+        property string pendingCurlConfig: ""
+        onStarted: {
+            if (pendingCurlConfig !== "") {
+                write(pendingCurlConfig);
+                pendingCurlConfig = "";
+            }
+            stdinEnabled = false;
+        }
         stdout: StdioCollector {
             id: fetchAnthropicOut
         }
@@ -1259,6 +1321,28 @@ Singleton {
         }
     }
 
+
+
+    // Model discovery used to build `["bash", "-c", "curl ... " + apiKey]` for
+    // every provider. Two problems in one line, six times over: an API key is
+    // user-entered text going through a shell, so a key containing $(...) or a
+    // quote is command execution; and the key lands in argv, readable from
+    // /proc by any process of this user.
+    //
+    // curl's `-K -` reads its options from stdin, so the URL and the auth
+    // header never touch argv or a shell. The key exists only in this process's
+    // memory and the pipe.
+    function startKeyedFetch(proc, url, headers) {
+        proc.command = ["curl", "-sS", "--connect-timeout", "10", "--max-time", "30", "-K", "-"];
+        proc.stdinEnabled = true;
+        proc.pendingCurlConfig = (() => {
+            let cfg = 'url = "' + url + '"\n';
+            for (let i = 0; i < headers.length; i++)
+                cfg += 'header = "' + headers[i].replace(/"/g, '\\"') + '"\n';
+            return cfg;
+        })();
+        proc.running = true;
+    }
 
     function checkFetchCompletion() {
         pendingFetches--;
