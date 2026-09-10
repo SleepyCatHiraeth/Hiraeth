@@ -101,6 +101,9 @@ QtObject {
         { label: "Wallpapers Prefix", keywords: "ww background launcher", section: 7, subSection: "prefixes", subLabel: "System > Prefixes", icon: Icons.keyboard, isIcon: true },
         { label: "Notes Prefix", keywords: "nn note launcher", section: 7, subSection: "prefixes", subLabel: "System > Prefixes", icon: Icons.keyboard, isIcon: true },
         
+        // System > Clipboard
+        { label: "Move to /tmp", keywords: "clipboard history tmpfs volatile reboot wipe encrypted", section: 7, subSection: "clipboard", subLabel: "System > Clipboard", icon: Icons.clipboard, isIcon: true },
+        
         // System > Weather
         { label: "Weather Location", keywords: "city country place gps", section: 7, subSection: "weather", subLabel: "System > Weather", icon: Icons.mapPin, isIcon: true },
         { label: "Temperature Unit", keywords: "celsius fahrenheit scale", section: 7, subSection: "weather", subLabel: "System > Weather", icon: Icons.thermometer, isIcon: true },

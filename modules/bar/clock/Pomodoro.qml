@@ -263,15 +263,19 @@ Item {
     component TimerInput: TextField {
         id: tIn
         property int value: 0
+        // Drives the alarm blink. A binding that reads Date.now() never
+        // re-evaluates, so the colour has to follow a real property that
+        // the timer below toggles.
+        property bool blinkPhase: false
         signal valueUpdated(int newValue)
         
         text: value.toString().padStart(2, '0')
-        onActiveFocusChanged: if (!activeFocus) text = value.toString().padStart(2, '0')
+        onActiveFocusChanged: if (!activeFocus) resync()
         
         font.family: Config.theme.monoFont
         font.pixelSize: Styling.fontSize(8)
         font.weight: Font.Bold
-        color: root.alarmActive ? (Math.floor(Date.now() / 500) % 2 === 0 ? Styling.srItem("overprimary") : Colors.overBackground) : Colors.overBackground
+        color: root.alarmActive ? (tIn.blinkPhase ? Styling.srItem("overprimary") : Colors.overBackground) : Colors.overBackground
         
         background: Item {}
         padding: 0; leftPadding: 0; rightPadding: 0
@@ -290,7 +294,15 @@ Item {
         onEditingFinished: {
             let v = parseInt(text) || 0;
             tIn.valueUpdated(v);
-            text = v.toString().padStart(2, '0');
+            resync();
+        }
+        
+        // Typing into a TextField replaces the declared text binding with a
+        // literal, after which the field stops following PomodoroService.
+        // Reinstalling the binding is what keeps the two inputs in sync with
+        // the shared timer once editing ends.
+        function resync() {
+            text = Qt.binding(() => tIn.value.toString().padStart(2, '0'));
         }
         
         Layout.preferredWidth: 60
@@ -299,7 +311,7 @@ Item {
             interval: 500
             running: root.alarmActive
             repeat: true
-            onTriggered: tIn.update()
+            onTriggered: tIn.blinkPhase = !tIn.blinkPhase
         }
     }
 

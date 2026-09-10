@@ -1058,6 +1058,11 @@ Singleton {
                 property bool autoStart: false
                 property bool syncSpotify: false
             }
+            property JsonObject clipboard: JsonObject {
+                // Unpinned history lives in tmpfs (wiped on reboot); pinned
+                // items always stay in the local share.
+                property bool tmpfs: false
+            }
         }
     }
 
@@ -2524,7 +2529,7 @@ Singleton {
                     "actions": [
                         {
                             "dispatcher": "exec",
-                            "argument": "sh -c 'echo brightness-up > /tmp/ambxst_ipc.pipe'",
+                            "argument": "sh -c 'echo brightness-up > \"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/ambxst_ipc.pipe\"'",
                             "flags": "le",
                             "layouts": []
                         }
@@ -2542,7 +2547,7 @@ Singleton {
                     "actions": [
                         {
                             "dispatcher": "exec",
-                            "argument": "sh -c 'echo brightness-down > /tmp/ambxst_ipc.pipe'",
+                            "argument": "sh -c 'echo brightness-down > \"${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/ambxst_ipc.pipe\"'",
                             "flags": "le",
                             "layouts": []
                         }

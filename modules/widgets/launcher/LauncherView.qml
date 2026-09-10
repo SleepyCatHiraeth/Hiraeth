@@ -1224,10 +1224,13 @@ Rectangle {
                         globalOpenProcess.command = ["xdg-open", filePath];
                         globalOpenProcess.running = true;
                     }
-                } else if (item.isImage && item.binaryPath) {
-                    console.log("DEBUG: Opening image with binaryPath:", item.binaryPath);
-                    globalOpenProcess.command = ["xdg-open", item.binaryPath];
-                    globalOpenProcess.running = true;
+                } else if (item.isImage) {
+                    // Images are encrypted blobs now; binaryPath is always
+                    // empty, so the daemon has to materialize a file first.
+                    ClipboardService.requestImagePath(item.id, imagePath => {
+                        globalOpenProcess.command = ["xdg-open", imagePath];
+                        globalOpenProcess.running = true;
+                    });
                 } else if (isUrl(content)) {
                     console.log("DEBUG: Opening URL:", content.trim());
                     globalOpenProcess.command = ["xdg-open", content.trim()];
