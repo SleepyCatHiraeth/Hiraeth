@@ -36,17 +36,21 @@ const (
 // Config carries the resolved locations of the local stack. Nothing here is a
 // network address except Endpoint, which is validated as loopback before use.
 type Config struct {
-	StackDir   string  `json:"stack_dir"`
-	Endpoint   string  `json:"endpoint"`
-	Model      string  `json:"model"`
-	Voice      string  `json:"voice"`
-	TTSEngine  string  `json:"tts_engine"`
-	TTSVoice   string  `json:"tts_voice"`
-	Speed      float64 `json:"speed"`
-	STTModel   string  `json:"stt_model"`
-	STTThreads int     `json:"stt_threads"`
-	MaxTokens  int     `json:"max_tokens"`
-	Volume     string  `json:"volume"`
+	StackDir  string  `json:"stack_dir"`
+	Endpoint  string  `json:"endpoint"`
+	Model     string  `json:"model"`
+	Voice     string  `json:"voice"`
+	TTSEngine string  `json:"tts_engine"`
+	TTSVoice  string  `json:"tts_voice"`
+	Speed     float64 `json:"speed"`
+	STTModel  string  `json:"stt_model"`
+	// Domain words Whisper should expect. Without this it guesses unfamiliar
+	// proper nouns phonetically: "Hiraeth" came back as "Marcos" and "Hiraiz"
+	// on separate real attempts. Measured fix, no latency cost.
+	STTVocab   string `json:"stt_vocab"`
+	STTThreads int    `json:"stt_threads"`
+	MaxTokens  int    `json:"max_tokens"`
+	Volume     string `json:"volume"`
 	// Empty means "auto-detect"; see pickCaptureTarget for why the PipeWire
 	// default is not trusted.
 	CaptureTarget string `json:"capture_target"`
@@ -79,6 +83,7 @@ func defaultConfig() Config {
 		Speed:      1.0,
 		Voice:      filepath.Join(stack, "models", "piper", "en_US-lessac-medium.onnx"),
 		STTModel:   "small.en",
+		STTVocab:   "Hiraeth,AMBXST,Hyprland,Quickshell,CachyOS,turret,notch,SideNotch,Kokoro,Piper",
 		STTThreads: 8,
 		MaxTokens:  300,
 		Volume:     "0.6",

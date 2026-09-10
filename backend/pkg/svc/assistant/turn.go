@@ -204,6 +204,7 @@ func (t *turn) transcribe() (string, error) {
 		t.wavPath,
 		"--model", cfg.STTModel,
 		"--threads", fmt.Sprint(cfg.STTThreads),
+		"--vocab", cfg.STTVocab,
 	)
 	cmd.Dir = cfg.StackDir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

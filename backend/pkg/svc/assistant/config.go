@@ -61,6 +61,9 @@ func loadConfig() (Config, error) {
 	if cfg.STTModel == "" {
 		cfg.STTModel = def.STTModel
 	}
+	if cfg.STTVocab == "" {
+		cfg.STTVocab = def.STTVocab
+	}
 	if cfg.STTThreads <= 0 {
 		cfg.STTThreads = def.STTThreads
 	}
