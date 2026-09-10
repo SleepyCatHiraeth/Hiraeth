@@ -291,16 +291,16 @@ Item {
             }
         }
         
-        onEditingFinished: {
-            let v = parseInt(text) || 0;
-            tIn.valueUpdated(v);
-            resync();
-        }
+        // Only onTextEdited reports a value, and it ignores non-numeric input.
+        // Committing parseInt("") || 0 here would let an emptied field persist a
+        // zero-length work session into system.json via PomodoroService.setTime.
+        onEditingFinished: resync()
         
-        // Typing into a TextField replaces the declared text binding with a
-        // literal, after which the field stops following PomodoroService.
-        // Reinstalling the binding is what keeps the two inputs in sync with
-        // the shared timer once editing ends.
+        // Assigning a plain string to text destroys the declared binding for
+        // good, which is what used to leave these fields frozen after the first
+        // edit. Assigning a Qt.binding instead keeps the property bound, and
+        // forces one immediate re-evaluation — needed because clearing the
+        // field reports no value, so nothing else would redraw it.
         function resync() {
             text = Qt.binding(() => tIn.value.toString().padStart(2, '0'));
         }
