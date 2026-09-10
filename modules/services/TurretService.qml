@@ -31,6 +31,12 @@ Singleton {
     readonly property bool busy: state !== "idle" && state !== "error" && state !== "cancelled"
     readonly property bool capturing: state === "listening"
 
+    // Memories awaiting the user's decision. Surfaced in the notch so a save
+    // never happens silently and never needs hunting for in a settings page.
+    property int pendingMemories: 0
+    property bool memoryEnabled: false
+    property var reviewQueue: []
+
     property int subHandle: -1
 
     signal failed(string message)
@@ -68,6 +74,45 @@ Singleton {
         root.transcript = data.transcript || "";
         root.response = data.response || "";
         root.lastError = data.error || "";
+        root.memoryEnabled = data.memory_enabled === true;
+        const pending = data.pending_memories || 0;
+        if (pending !== root.pendingMemories) {
+            root.pendingMemories = pending;
+            if (pending > 0)
+                root.refreshReviewQueue();
+            else
+                root.reviewQueue = [];
+        }
+    }
+
+    function refreshReviewQueue() {
+        BackendService.call("assistant.memory.pending", {}, (result, error) => {
+            if (error || !result) {
+                root.reviewQueue = [];
+                return;
+            }
+            root.reviewQueue = result.items || [];
+        });
+    }
+
+    function confirmMemory(id) {
+        BackendService.call("assistant.memory.confirm", {id: id}, () => root.refreshReviewQueue());
+    }
+
+    function forgetMemory(id) {
+        BackendService.call("assistant.memory.forget", {id: id}, () => root.refreshReviewQueue());
+    }
+
+    function forgetAllMemories(callback) {
+        BackendService.call("assistant.memory.forget", {all: true}, callback);
+    }
+
+    function listMemories(callback) {
+        BackendService.call("assistant.memory.list", {}, callback);
+    }
+
+    function memoryStats(callback) {
+        BackendService.call("assistant.memory.stats", {}, callback);
     }
 
     Component.onCompleted: {

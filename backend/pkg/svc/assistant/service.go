@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"ambxst/backend/pkg/ipc"
+	"ambxst/backend/pkg/svc/assistant/memory"
 )
 
 // State names mirror the documented assistant state machine. Stage 1 reaches
@@ -49,6 +50,13 @@ type Config struct {
 	// Empty means "auto-detect"; see pickCaptureTarget for why the PipeWire
 	// default is not trusted.
 	CaptureTarget string `json:"capture_target"`
+
+	// Memory is opt-in: at defaults the assistant writes nothing durable.
+	MemoryEnabled       bool            `json:"memory_enabled"`
+	MemoryCategories    map[string]bool `json:"memory_categories"`
+	MemoryLimit         int             `json:"memory_limit"`
+	MemoryMinConfidence float64         `json:"memory_min_confidence"`
+	EmbedModel          string          `json:"embed_model"`
 	// Empty means "use the PipeWire default sink". Unlike capture, no guess is
 	// made here: which output the user can actually hear is not inferable, and
 	// guessing wrong sends speech to a device they are not listening to.
@@ -74,6 +82,11 @@ func defaultConfig() Config {
 		STTThreads: 8,
 		MaxTokens:  300,
 		Volume:     "0.6",
+
+		MemoryEnabled:       false,
+		MemoryLimit:         6,
+		MemoryMinConfidence: 0.5,
+		EmbedModel:          "text-embedding-nomic-embed-text-v1.5",
 	}
 }
 
@@ -88,6 +101,9 @@ type Service struct {
 	lastErr    string
 	seq        uint64
 	turn       *turn // non-nil while a turn is active
+
+	mem             *memory.Store
+	pendingMemories int
 
 	subsMu sync.Mutex
 	subs   []*ipc.Subscriber
@@ -116,6 +132,15 @@ func (s *Service) Register(srv *ipc.Server) {
 			"set":    s.setConfig,
 			"voices": s.listVoices,
 			"say":    s.say,
+
+			"memory.list":    s.memoryList,
+			"memory.pending": s.memoryPending,
+			"memory.confirm": s.memoryConfirm,
+			"memory.correct": s.memoryCorrect,
+			"memory.forget":  s.memoryForget,
+			"memory.stats":   s.memoryStats,
+			"memory.export":  s.memoryExport,
+			"memory.import":  s.memoryImport,
 		},
 		Subscribe: s.subscribe,
 	})
@@ -149,11 +174,13 @@ func (s *Service) snapshot() map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return map[string]any{
-		"state":      s.state,
-		"transcript": s.transcript,
-		"response":   s.response,
-		"error":      s.lastErr,
-		"seq":        s.seq,
+		"state":            s.state,
+		"transcript":       s.transcript,
+		"response":         s.response,
+		"error":            s.lastErr,
+		"seq":              s.seq,
+		"memory_enabled":   s.cfg.MemoryEnabled,
+		"pending_memories": s.pendingMemories,
 	}
 }
 
@@ -343,6 +370,11 @@ func (s *Service) setConfig(params json.RawMessage) (any, error) {
 	s.mu.Lock()
 	s.cfg = next
 	s.mu.Unlock()
+	// Enabling memory must surface anything already waiting, not just what
+	// arrives afterwards.
+	if next.MemoryEnabled {
+		s.refreshPending()
+	}
 	s.broadcast()
 	return next, nil
 }

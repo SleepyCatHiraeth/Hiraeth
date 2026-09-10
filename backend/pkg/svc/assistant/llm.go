@@ -80,17 +80,14 @@ type chatDelta struct {
 // every reasoning token is emitted as reasoning_content and cannot be spoken.
 // LM Studio does not honour chat_template_kwargs.enable_thinking, so the
 // in-prompt switch is the only mechanism that works here.
-func streamChat(ctx context.Context, cfg Config, prompt string, onSentence func(string)) error {
+func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, onSentence func(string)) error {
 	if err := checkEndpoint(cfg.Endpoint); err != nil {
 		return err
 	}
 
 	body, err := json.Marshal(map[string]any{
-		"model": cfg.Model,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": prompt + " /no_think"},
-		},
+		"model":       cfg.Model,
+		"messages":    buildMessages(systemPrompt, memCtx, prompt),
 		"max_tokens":  cfg.MaxTokens,
 		"temperature": 0.7,
 		"stream":      true,
@@ -214,4 +211,20 @@ func endsWithAbbrev(s string) bool {
 		}
 	}
 	return false
+}
+
+// buildMessages assembles the prompt.
+//
+// Retrieved memories go in their OWN system message, after the real system
+// prompt and before the user's words, wrapped by FormatContext in language that
+// names them as reference data. They are never concatenated into the system
+// prompt itself: keeping them in a separate, labelled message is what stops a
+// stored sentence from reading as policy.
+func buildMessages(sys, memCtx, prompt string) []map[string]string {
+	msgs := []map[string]string{{"role": "system", "content": sys}}
+	if strings.TrimSpace(memCtx) != "" {
+		msgs = append(msgs, map[string]string{"role": "system", "content": memCtx})
+	}
+	msgs = append(msgs, map[string]string{"role": "user", "content": prompt + " /no_think"})
+	return msgs
 }

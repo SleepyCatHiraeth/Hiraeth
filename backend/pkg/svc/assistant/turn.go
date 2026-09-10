@@ -172,7 +172,11 @@ func (t *turn) run() {
 	}
 	s.setState(StateThinking, func() { s.transcript = text })
 
-	if err := t.answer(text); err != nil {
+	// Retrieval is best-effort and never blocks the answer. An empty string
+	// means the model simply gets no stored context this turn.
+	memCtx, _ := s.recall(t.ctx, text)
+
+	if err := t.answer(text, memCtx); err != nil {
 		if t.aborted() {
 			t.finish(StateCancelled, nil)
 			return
@@ -181,6 +185,15 @@ func (t *turn) run() {
 		return
 	}
 	t.finish(StateIdle, nil)
+
+	// Capture runs after the turn is finished and the user has their answer, so
+	// extraction latency is never on the critical path of a conversation.
+	s.mu.Lock()
+	reply := s.response
+	s.mu.Unlock()
+	if reply != "" {
+		go s.capture(text, reply)
+	}
 }
 
 func (t *turn) transcribe() (string, error) {
@@ -207,7 +220,7 @@ func (t *turn) transcribe() (string, error) {
 
 // answer streams the model's reply and speaks it sentence by sentence, so
 // playback begins while the rest is still being generated.
-func (t *turn) answer(prompt string) error {
+func (t *turn) answer(prompt, memCtx string) error {
 	s := t.svc
 
 	speaker, err := t.startSpeaker()
@@ -219,7 +232,7 @@ func (t *turn) answer(prompt string) error {
 	spoke := false
 	var full strings.Builder
 
-	err = streamChat(t.ctx, s.cfg, prompt, func(sentence string) {
+	err = streamChat(t.ctx, s.cfg, prompt, memCtx, func(sentence string) {
 		if !spoke {
 			spoke = true
 			s.setState(StateSpeaking, nil)
