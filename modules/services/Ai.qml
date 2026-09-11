@@ -692,9 +692,26 @@ Singleton {
             });
             curlProcess.command = ["/usr/bin/bash", "-c", curlCmd];
         } else {
+            // Headers go through `curl -K -`, never argv.
+            //
+            // They carry the API key -- `Authorization: Bearer ...`, or a
+            // provider-specific key header -- and argv is readable from
+            // /proc/<pid>/cmdline by any process this user owns. Model
+            // discovery was moved onto this exact pattern on 2026-09-10 and the
+            // request path, which runs far more often, was left behind.
+            //
+            // curl reads its options from stdin and treats EOF as "the config
+            // is complete", which is why onStarted closes it.
             curlProcess.environment = ({});
-            curlProcess.command = ["curl", "-s", "--no-buffer", "-N", "--connect-timeout", "15", "--max-time", "300", "-X", "POST", payload.endpoint]
-                .concat(payload.headers.flatMap(header => ["-H", header]), ["-d", "@" + bodyPath]);
+            const quoted = (v) => '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+            let cfg = "url = " + quoted(payload.endpoint) + "\n"
+                + "request = POST\n"
+                + "data = " + quoted("@" + bodyPath) + "\n";
+            for (const header of payload.headers)
+                cfg += "header = " + quoted(header) + "\n";
+            curlProcess.pendingCurlConfig = cfg;
+            curlProcess.command = ["curl", "-s", "--no-buffer", "-N",
+                "--connect-timeout", "15", "--max-time", "300", "-K", "-"];
         }
 
         curlProcess.running = true;
@@ -720,6 +737,19 @@ Singleton {
 
     Process {
         id: curlProcess
+
+        // curl -K - reads its options from stdin; closing stdin is what tells
+        // it the config is complete and the request may proceed. Empty for the
+        // custom-template branch, which builds its own command line.
+        property string pendingCurlConfig: ""
+        stdinEnabled: true
+        onStarted: {
+            if (pendingCurlConfig !== "") {
+                write(pendingCurlConfig);
+                pendingCurlConfig = "";
+            }
+            stdinEnabled = false;
+        }
 
         // Use SplitParser for streaming — emits onRead per line
         stdout: SplitParser {
