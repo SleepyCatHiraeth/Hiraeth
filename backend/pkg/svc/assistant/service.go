@@ -508,7 +508,10 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 			}
 		}()
 
-		t := &turn{svc: s, ctx: ctx, cancel: func() {}}
+		s.mu.Lock()
+		cfg := s.cfg
+		s.mu.Unlock()
+		t := &turn{svc: s, ctx: ctx, cancel: func() {}, cfg: cfg}
 		sp, err := t.startSpeaker()
 		if err != nil {
 			logWorker("voice-test", 0, err, "")
@@ -625,7 +628,9 @@ func (s *Service) listVoices(_ json.RawMessage) (any, error) {
 // writing to the config file through this path.
 func (s *Service) setConfig(params json.RawMessage) (any, error) {
 	s.mu.Lock()
-	if s.turn != nil {
+	// `speaking` counts as busy too. It did not, so a settings change could
+	// land in the middle of a voice test, which reads the same fields.
+	if s.turn != nil || s.speaking {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("busy: finish or cancel the current turn first")
 	}

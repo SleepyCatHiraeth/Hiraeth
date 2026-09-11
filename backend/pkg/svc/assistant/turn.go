@@ -32,6 +32,15 @@ type turn struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
+	// A snapshot taken under the service lock when the turn is claimed.
+	//
+	// The pipeline read s.cfg directly at four points, unsynchronised, while
+	// another IPC connection could be writing it. That is a data race in the
+	// strict sense, and a behavioural one too: a settings change landing
+	// mid-turn could transcribe with one stack directory and synthesise with
+	// another. A turn now runs entirely on the settings it started with.
+	cfg Config
+
 	mu       sync.Mutex
 	rec      *exec.Cmd
 	wavPath  string
@@ -40,11 +49,17 @@ type turn struct {
 }
 
 func (s *Service) startTurn() error {
-	venv := filepath.Join(s.cfg.StackDir, ".venv", "bin", "python")
+	// One snapshot for the whole of startup, and the same one the turn keeps.
+	// Reading s.cfg field by field, unlocked, raced every settings change.
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+
+	venv := filepath.Join(cfg.StackDir, ".venv", "bin", "python")
 	if _, err := os.Stat(venv); err != nil {
 		return fmt.Errorf("%w: %s missing", errNoStack, venv)
 	}
-	if err := checkEndpoint(s.cfg.Endpoint); err != nil {
+	if err := checkEndpoint(cfg.Endpoint); err != nil {
 		return err
 	}
 
@@ -74,7 +89,7 @@ func (s *Service) startTurn() error {
 	// disk and resampling. Device selection runs a subprocess, so it happens
 	// before the slot is claimed and while no lock is held.
 	args := []string{"--channels=1", "--rate=16000", "--format=s16"}
-	if target := pickCaptureTarget(ctx, s.cfg.CaptureTarget); target != "" {
+	if target := pickCaptureTarget(ctx, cfg.CaptureTarget); target != "" {
 		args = append(args, "--target="+target)
 	}
 	args = append(args, t.wavPath)
@@ -91,6 +106,7 @@ func (s *Service) startTurn() error {
 		cancel()
 		return fmt.Errorf("busy")
 	}
+	t.cfg = cfg
 	s.turn = t
 	s.transcript = ""
 	s.response = ""
@@ -299,7 +315,7 @@ func (t *turn) transcribe() (string, error) {
 	}
 	logEventEvery("stt-warm", time.Minute, "warm transcriber unavailable (%v), falling back", err)
 
-	cfg := t.svc.cfg
+	cfg := t.cfg
 	cmd := exec.CommandContext(t.ctx,
 		filepath.Join(cfg.StackDir, ".venv", "bin", "python"),
 		filepath.Join(cfg.StackDir, "stt.py"),
@@ -342,7 +358,7 @@ func (t *turn) answer(prompt, memCtx string) error {
 	var sayErr error
 	var full strings.Builder
 
-	err = streamChat(t.ctx, s.cfg, prompt, memCtx, s.convo.messages(), func(sentence string) {
+	err = streamChat(t.ctx, t.cfg, prompt, memCtx, s.convo.messages(), func(sentence string) {
 		if !spoke {
 			spoke = true
 			s.setState(StateSpeaking, nil)
@@ -406,7 +422,7 @@ func (s *speaker) diagnostic() string {
 }
 
 func (t *turn) startSpeaker() (*speaker, error) {
-	cfg := t.svc.cfg
+	cfg := t.cfg
 	ttsArgs := []string{
 		filepath.Join(cfg.StackDir, "tts.py"),
 		"--engine", cfg.TTSEngine,

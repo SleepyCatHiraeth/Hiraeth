@@ -408,3 +408,44 @@ func TestReleaseWaitsForMemoryHandlers(t *testing.T) {
 		t.Error("release must close the store once nothing is using it")
 	}
 }
+
+// A settings change landing mid-turn used to be both a data race and a
+// behavioural one: the pipeline read s.cfg at four points, so a turn could
+// transcribe with one stack directory and synthesise with another.
+func TestTurnRunsOnASnapshotOfItsSettings(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	s := &Service{state: StateIdle, stopHealth: make(chan struct{})}
+	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
+	s.cfg.StackDir = fakeStack(t, "#!/bin/sh\nsleep 5\n")
+
+	// Stand in for a running turn without needing a microphone.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	active := &turn{svc: s, ctx: ctx, cancel: cancel, cfg: s.cfg}
+	s.mu.Lock()
+	s.turn = active
+	s.mu.Unlock()
+
+	// A settings write is refused outright while an operation is in flight...
+	if _, err := s.setConfig([]byte(`{"tts_voice":"am_onyx"}`)); err == nil {
+		t.Error("settings must not change while a turn is in flight")
+	}
+
+	// ...and the turn's own copy is untouched regardless.
+	if active.cfg.TTSVoice != "af_heart" {
+		t.Errorf("the turn's settings changed under it: %q", active.cfg.TTSVoice)
+	}
+}
+
+// The same rule covers the voice test, which reads the same fields.
+func TestSettingsRefusedWhileSpeaking(t *testing.T) {
+	s := &Service{state: StateSpeaking, speaking: true}
+	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
+	if _, err := s.setConfig([]byte(`{"speed":1.4}`)); err == nil {
+		t.Error("settings must not change during a voice test")
+	}
+}
