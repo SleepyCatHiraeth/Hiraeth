@@ -38,11 +38,16 @@ func checkEndpoint(endpoint string) error {
 	return checkURL(endpoint)
 }
 
-func probeLLM(endpoint string) error {
+// probeLLM checks the model server, under the caller's context.
+//
+// It used to build its own context from Background, so neither a cancelled turn
+// nor the five-minute turn budget reached it: a turn could be over and this
+// would still be waiting out its own timeout.
+func probeLLM(ctx context.Context, endpoint string) error {
 	if err := checkEndpoint(endpoint); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/models", nil)
 	if err != nil {

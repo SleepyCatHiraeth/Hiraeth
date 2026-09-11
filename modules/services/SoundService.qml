@@ -25,7 +25,14 @@ Singleton {
     // resolved — retried once that check completes, instead of silently
     // falling back to the Default theme for whichever event fired first
     // during startup/login.
-    property string pendingEventKey: ""
+    // Events deferred until the Portal theme's availability check resolves.
+    //
+    // This was a single slot, so a later event overwrote an earlier one: a
+    // `turretThinking` arriving before discovery finished would discard the
+    // queued `turretListening`, which is the cue that says the microphone is
+    // open. A list keeps them in order, and it is bounded because these are
+    // startup events, not a stream.
+    property var pendingEventKeys: []
 
     function playBootUpOnce() {
         // Also requires playerLoader.item, not just shellReady: shellReady
@@ -71,7 +78,8 @@ Singleton {
         // An absolute-path override bypasses theme resolution entirely, so
         // it never needs to wait on SoundThemes' async availability check.
         if (!override && Config.sound.theme === "portal-turret" && !SoundThemes.availabilityChecked) {
-            pendingEventKey = eventKey;
+            if (!pendingEventKeys.includes(eventKey) && pendingEventKeys.length < 8)
+                pendingEventKeys = pendingEventKeys.concat([eventKey]);
             return;
         }
 
@@ -121,11 +129,12 @@ Singleton {
     Connections {
         target: SoundThemes
         function onAvailabilityCheckedChanged() {
-            if (SoundThemes.availabilityChecked && root.pendingEventKey) {
-                const key = root.pendingEventKey;
-                root.pendingEventKey = "";
+            if (!SoundThemes.availabilityChecked || root.pendingEventKeys.length === 0)
+                return;
+            const keys = root.pendingEventKeys;
+            root.pendingEventKeys = [];
+            for (const key of keys)
                 root.play(key);
-            }
         }
     }
 

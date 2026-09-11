@@ -277,7 +277,7 @@ func (t *turn) run() {
 	// Retrieval is best-effort and never blocks the answer. An empty string
 	// means the model simply gets no stored context this turn.
 	recallStart := time.Now()
-	memCtx, _ := s.recall(t.ctx, text)
+	memCtx, _ := s.recall(t.ctx, t.cfg, text)
 	logWorker("recall", time.Since(recallStart), nil, "")
 
 	if err := t.answer(text, memCtx); err != nil {
@@ -315,7 +315,7 @@ func (t *turn) run() {
 	if reply != "" && enabled {
 		// Registered on this stack, not inside the goroutine: a disable landing
 		// between the two would otherwise see nothing to wait for.
-		s.goBackground(90*time.Second, func(context.Context) { s.capture(text, reply) })
+		s.goBackground(90*time.Second, func(context.Context) { s.capture(t.cfg, text, reply) })
 	}
 }
 
@@ -324,7 +324,7 @@ func (t *turn) transcribe() (string, error) {
 	// start. A one-shot run is kept as the fallback, because a transcriber that
 	// will not stay up must not mean an assistant that cannot hear.
 	started := time.Now()
-	text, err := t.svc.transcribeWarm(t.ctx, t.wavPath)
+	text, err := t.svc.transcribeWarm(t.ctx, t.cfg, t.wavPath)
 	if err == nil {
 		logWorker("stt", time.Since(started), nil, "")
 		return strings.TrimSpace(text), nil
@@ -450,7 +450,7 @@ func (t *turn) startSpeaker() (*speaker, error) {
 	ttsArgs := []string{
 		filepath.Join(cfg.StackDir, "tts.py"),
 		"--engine", cfg.TTSEngine,
-		"--model", t.svc.voiceModelPath(),
+		"--model", voiceModelPath(cfg),
 	}
 	if cfg.TTSEngine == "kokoro" {
 		ttsArgs = append(ttsArgs,

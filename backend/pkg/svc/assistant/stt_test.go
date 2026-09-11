@@ -41,7 +41,7 @@ done
 `)
 	defer s.stt.stop()
 
-	got, err := s.transcribeWarm(context.Background(), "/tmp/first.wav")
+	got, err := s.transcribeWarm(context.Background(), s.cfg, "/tmp/first.wav")
 	if err != nil {
 		t.Fatalf("transcribe: %v", err)
 	}
@@ -50,7 +50,7 @@ done
 	}
 
 	// The decisive part: the second turn must not receive the first turn's text.
-	got2, err := s.transcribeWarm(context.Background(), "/tmp/second.wav")
+	got2, err := s.transcribeWarm(context.Background(), s.cfg, "/tmp/second.wav")
 	if err != nil {
 		t.Fatalf("second transcribe: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestWarmWorkerStartupHonoursTheCallersDeadline(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	if _, err := s.transcribeWarm(ctx, "/tmp/a.wav"); err == nil {
+	if _, err := s.transcribeWarm(ctx, s.cfg, "/tmp/a.wav"); err == nil {
 		t.Fatal("a worker that never becomes ready must fail")
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
@@ -86,7 +86,7 @@ func TestReleaseStopsTheWarmWorker(t *testing.T) {
 echo '{"ready": true}'
 while read -r line; do echo '{"text": "x"}'; done
 `)
-	if _, err := s.transcribeWarm(context.Background(), "/tmp/a.wav"); err != nil {
+	if _, err := s.transcribeWarm(context.Background(), s.cfg, "/tmp/a.wav"); err != nil {
 		t.Fatalf("transcribe: %v", err)
 	}
 	s.stt.mu.Lock()

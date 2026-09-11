@@ -158,6 +158,10 @@ type Service struct {
 	// closed once, by Close, to end the health loop. Without it the loop could
 	// park on healthWake forever and outlive the service that owns it.
 	stopHealth chan struct{}
+	// closed by the loop itself when it leaves, so Close can wait for it rather
+	// than merely signal it. Signalling and returning let a probe still be in
+	// flight, mutating health state after shutdown had begun.
+	healthDone chan struct{}
 
 	subsMu sync.Mutex
 	subs   []*ipc.Subscriber
@@ -428,7 +432,7 @@ func (s *Service) check(_ json.RawMessage) (any, error) {
 	}()
 	go func() {
 		defer wg.Done()
-		err := probeLLM(s.cfg.Endpoint)
+		err := probeLLM(ctx, s.cfg.Endpoint)
 		mu.Lock()
 		llmErr = err
 		mu.Unlock()

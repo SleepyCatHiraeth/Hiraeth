@@ -504,7 +504,7 @@ func TestDisabledCategoriesAreNotStored(t *testing.T) {
 	s.cfg.MemoryCategories = map[string]bool{"user_profile": false}
 	defer s.release()
 
-	s.capture("I am a test.", "Noted.")
+	s.capture(s.cfg, "I am a test.", "Noted.")
 
 	st, rel := s.useStore()
 	if st == nil {

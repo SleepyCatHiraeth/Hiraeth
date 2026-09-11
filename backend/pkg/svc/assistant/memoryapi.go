@@ -128,15 +128,12 @@ func (s *Service) enabledCategories() map[string]bool {
 // recall fetches context for a prompt. Failures degrade to no memory rather
 // than failing the turn: an assistant that cannot remember is still useful, one
 // that refuses to answer is not.
-func (s *Service) recall(ctx context.Context, prompt string) (string, []memory.Result) {
+func (s *Service) recall(ctx context.Context, cfg Config, prompt string) (string, []memory.Result) {
 	st, release := s.useStore()
 	defer release()
 	if st == nil {
 		return "", nil
 	}
-	s.mu.Lock()
-	cfg := s.cfg
-	s.mu.Unlock()
 
 	q := memory.Query{
 		Text:          prompt,
@@ -161,15 +158,12 @@ func (s *Service) recall(ctx context.Context, prompt string) (string, []memory.R
 // capture runs after a turn, proposing memories. Everything durable lands as a
 // candidate awaiting confirmation; only expiring categories may activate
 // themselves, and secrets never reach the database at all.
-func (s *Service) capture(userText, replyText string) {
+func (s *Service) capture(cfg Config, userText, replyText string) {
 	st, release := s.useStore()
 	defer release()
 	if st == nil {
 		return
 	}
-	s.mu.Lock()
-	cfg := s.cfg
-	s.mu.Unlock()
 
 	// Tied to the service's background context so shutdown and disable can
 	// cancel it. Previously this used context.Background(), so extraction kept

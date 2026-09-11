@@ -92,8 +92,15 @@ Singleton {
         if (!data)
             return;
         const incoming = data.seq === undefined ? root.seq + 1 : data.seq;
-        if (incoming < root.seq)
+        // Strictly newer. Equal sequence numbers were accepted, so a resent
+        // snapshot could be treated as a fresh transition.
+        if (incoming <= root.seq && root._seenFirstSnapshot)
             return;
+        // Events can be dropped when a subscriber queue fills (see
+        // pkg/ipc/server.go), and the backend's sequence number is what reveals
+        // it. A gap means the state we last saw is NOT the predecessor of this
+        // one, so any cue derived from that pair would be invented.
+        const contiguous = incoming === root.seq + 1;
         root.seq = incoming;
         const previousState = root.state;
         root.state = data.state || "idle";
@@ -116,7 +123,7 @@ Singleton {
                 root.reviewQueue = [];
         }
 
-        if (root._seenFirstSnapshot)
+        if (root._seenFirstSnapshot && contiguous)
             _announce(previousState, hadPending, pending);
         root._seenFirstSnapshot = true;
     }

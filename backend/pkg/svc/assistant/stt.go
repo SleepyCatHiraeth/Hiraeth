@@ -44,12 +44,12 @@ type sttWorker struct {
 // -- stops the worker and returns an error, so the caller can fall back to a
 // one-shot run. A half-consumed worker is never reused: the next turn would
 // read this turn's answer.
-func (s *Service) transcribeWarm(ctx context.Context, wav string) (string, error) {
+func (s *Service) transcribeWarm(ctx context.Context, cfg Config, wav string) (string, error) {
 	w := &s.stt
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if err := w.ensure(ctx, s.cfg); err != nil {
+	if err := w.ensure(ctx, cfg); err != nil {
 		return "", err
 	}
 

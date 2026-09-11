@@ -355,7 +355,7 @@ func TestLocalhostEndpointActuallyConnects(t *testing.T) {
 	if err := checkURL(endpoint); err != nil {
 		t.Fatalf("localhost must be accepted: %v", err)
 	}
-	if err := probeLLM(endpoint); err != nil {
+	if err := probeLLM(context.Background(), endpoint); err != nil {
 		t.Errorf("a localhost endpoint must be reachable, got %v", err)
 	}
 }

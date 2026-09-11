@@ -167,9 +167,19 @@ func (s *Service) release() {
 func (s *Service) Close() error {
 	s.closeOnce.Do(func() {
 		// Stop the health loop before releasing, so nothing it drives can
-		// restart a worker behind the teardown.
+		// restart a worker behind the teardown, and WAIT for it to leave.
+		// Signalling alone returned while a probe could still be in flight and
+		// about to write health state after shutdown had started.
 		if s.stopHealth != nil {
 			close(s.stopHealth)
+		}
+		if s.healthDone != nil {
+			select {
+			case <-s.healthDone:
+			case <-time.After(5 * time.Second):
+				// A wedged probe must not hold up shutdown; its own client
+				// timeout is shorter than this.
+			}
 		}
 		s.release()
 

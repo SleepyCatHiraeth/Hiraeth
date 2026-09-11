@@ -138,9 +138,24 @@ func sampleRateFor(engine string) string {
 
 // voiceModelPath resolves the --model argument for the configured engine.
 // Kokoro takes one shared model plus a voice name; Piper takes a per-voice file.
-func (s *Service) voiceModelPath() string {
-	if s.cfg.TTSEngine == "piper" {
-		return filepath.Join(s.cfg.StackDir, "models", "piper", s.cfg.TTSVoice+".onnx")
+// voiceModelPath resolves the voice file for a GIVEN configuration.
+//
+// It used to read s.cfg directly, so a turn holding a snapshot would still
+// synthesise with whatever the settings said at that instant -- transcribing
+// under one stack directory and speaking under another. Taking the config as an
+// argument makes that mixture impossible rather than merely discouraged.
+func voiceModelPath(cfg Config) string {
+	if cfg.TTSEngine == "piper" {
+		return filepath.Join(cfg.StackDir, "models", "piper", cfg.TTSVoice+".onnx")
 	}
-	return filepath.Join(s.cfg.StackDir, "models", "kokoro", "kokoro-v1.0.onnx")
+	return filepath.Join(cfg.StackDir, "models", "kokoro", "kokoro-v1.0.onnx")
+}
+
+// voiceModelPath for the live configuration, for callers outside a turn (the
+// dependency check and the settings panel).
+func (s *Service) voiceModelPath() string {
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+	return voiceModelPath(cfg)
 }

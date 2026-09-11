@@ -45,6 +45,12 @@ func (s *Service) healthSnapshot() (bool, string) {
 // refreshHealth probes the model server, caching the result briefly so a burst
 // of calls does not become a burst of HTTP requests.
 func (s *Service) refreshHealth(force bool) bool {
+	return s.refreshHealthCtx(context.Background(), force)
+}
+
+// refreshHealthCtx is refreshHealth under a caller's context, so a turn's
+// deadline reaches the probe.
+func (s *Service) refreshHealthCtx(ctx context.Context, force bool) bool {
 	s.health.mu.Lock()
 	if !force && time.Since(s.health.checkedAt) < 5*time.Second {
 		ok := s.health.reachable
@@ -57,7 +63,7 @@ func (s *Service) refreshHealth(force bool) bool {
 	endpoint := s.cfg.Endpoint
 	s.mu.Unlock()
 
-	err := probeLLM(endpoint)
+	err := probeLLM(ctx, endpoint)
 
 	s.health.mu.Lock()
 	was := s.health.reachable
@@ -98,7 +104,7 @@ func (s *Service) ensureServer(ctx context.Context) bool {
 		return false
 	}
 
-	if s.refreshHealth(true) {
+	if s.refreshHealthCtx(ctx, true) {
 		// Reachable, but the models may still be absent or JIT-loaded: a server
 		// the user started themselves has loaded nothing in particular.
 		s.mu.Lock()
@@ -156,7 +162,7 @@ func (s *Service) ensureServer(ctx context.Context) bool {
 			return false
 		case <-time.After(500 * time.Millisecond):
 		}
-		if s.refreshHealth(true) {
+		if s.refreshHealthCtx(ctx, true) {
 			s.mu.Lock()
 			cfg := s.cfg
 			s.mu.Unlock()
@@ -276,8 +282,10 @@ var healthLoopsRunning int32
 
 func (s *Service) startHealthLoop() {
 	atomic.AddInt32(&healthLoopsRunning, 1)
+	s.healthDone = make(chan struct{})
 	go func() {
 		defer atomic.AddInt32(&healthLoopsRunning, -1)
+		defer close(s.healthDone)
 		idle := time.NewTimer(time.Hour)
 		defer idle.Stop()
 		for {
