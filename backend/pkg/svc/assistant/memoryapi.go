@@ -259,10 +259,19 @@ func (s *Service) memoryConfirm(params json.RawMessage) (any, error) {
 	}
 	// Embed on confirmation rather than on capture, so vectors are only ever
 	// computed for memories the user actually kept.
+	//
+	// In the background: this is an HTTP request to the model server with a
+	// 30-second timeout, and it used to run inside the handler. Pressing
+	// "Keep" on the review card could therefore freeze every shell module for
+	// half a minute whenever the server was slow or down -- the same defect
+	// fixed in `say` and `health`, hiding one layer further in.
 	if it, err := st.Get(p.ID); err == nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		s.embedOrRecord(ctx, st, it.ID, it.Content)
+		id, content := it.ID, it.Content
+		go func() {
+			ctx, done := s.backgroundContext(30 * time.Second)
+			defer done()
+			s.embedOrRecord(ctx, st, id, content)
+		}()
 	}
 	s.refreshPending()
 	return map[string]any{"confirmed": p.ID}, nil

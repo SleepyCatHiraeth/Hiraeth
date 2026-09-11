@@ -379,14 +379,60 @@ func (s *Service) check(_ json.RawMessage) (any, error) {
 	for _, bin := range []string{"pw-record", "pw-play", "pw-dump"} {
 		res[bin] = lookPathOK(bin)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	// Device enumeration and the model-server probe are the slow parts, and
+	// they used to run one after another: two `pw-dump` invocations plus an
+	// HTTP request, each with its own timeout, all inside the handler that
+	// every other shell module is queued behind. They run together now, under
+	// one short deadline, so the worst case is the slowest of them rather than
+	// the sum.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	res["capture_target"] = pickCaptureTarget(ctx, s.cfg.CaptureTarget)
-	if srcs, err := listSources(ctx); err == nil {
-		res["sources"] = srcs
+
+	var (
+		mu      sync.Mutex
+		wg      sync.WaitGroup
+		target  string
+		sources []audioSource
+		sinks   []audioNode
+		llmErr  error
+	)
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		t := pickCaptureTarget(ctx, s.cfg.CaptureTarget)
+		mu.Lock()
+		target = t
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		src, err := listSources(ctx)
+		snk, err2 := listSinks(ctx)
+		mu.Lock()
+		if err == nil {
+			sources = src
+		}
+		if err2 == nil {
+			sinks = snk
+		}
+		mu.Unlock()
+	}()
+	go func() {
+		defer wg.Done()
+		err := probeLLM(s.cfg.Endpoint)
+		mu.Lock()
+		llmErr = err
+		mu.Unlock()
+	}()
+	wg.Wait()
+
+	res["capture_target"] = target
+	if sources != nil {
+		res["sources"] = sources
 	}
 	res["playback_target"] = s.cfg.PlaybackTarget
-	if sinks, err := listSinks(ctx); err == nil {
+	if sinks != nil {
 		res["sinks"] = sinks
 	}
 	if err := checkEndpoint(s.cfg.Endpoint); err != nil {
@@ -395,9 +441,6 @@ func (s *Service) check(_ json.RawMessage) (any, error) {
 	} else {
 		res["endpoint"] = true
 	}
-	// One probe, not two: this ran the request twice, doubling the stall that
-	// every other shell module waits through on the shared request socket.
-	llmErr := probeLLM(s.cfg.Endpoint)
 	res["llm_reachable"] = llmErr == nil
 	if llmErr != nil {
 		res["llm_error"] = llmErr.Error()
