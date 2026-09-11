@@ -200,3 +200,41 @@ func TestEnabledCategoriesMergesOntoDefaults(t *testing.T) {
 		t.Errorf("got %d categories, want the full set of %d", len(cats), len(defaultCategories()))
 	}
 }
+
+// Pressing the activation key during a voice test used to start a turn anyway,
+// putting a second synthesiser on the same sink. Nothing checked `speaking`.
+func TestStartTurnRefusedWhileSpeaking(t *testing.T) {
+	s := &Service{state: StateIdle, speaking: true}
+	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
+	s.cfg.StackDir = t.TempDir()
+
+	if err := s.startTurn(); err == nil {
+		t.Fatal("a turn must be refused while a voice test is speaking")
+	}
+	s.mu.Lock()
+	active := s.turn
+	s.mu.Unlock()
+	if active != nil {
+		t.Error("a refused turn must not be installed")
+	}
+}
+
+// A turn that fails to start must release the slot, or the assistant is busy
+// forever with nothing running.
+func TestStartTurnReleasesTheSlotWhenItFails(t *testing.T) {
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
+	s.cfg.StackDir = t.TempDir() // no .venv here: startTurn fails its pre-flight
+
+	if err := s.startTurn(); err == nil {
+		t.Fatal("expected the missing stack to fail the turn")
+	}
+	s.mu.Lock()
+	active := s.turn
+	s.mu.Unlock()
+	if active != nil {
+		t.Error("the slot must be free after a failed start")
+	}
+}

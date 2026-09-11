@@ -71,26 +71,50 @@ func (s *Service) startTurn() error {
 	}
 
 	// 16 kHz mono is what Whisper wants; recording anything richer just costs
-	// disk and resampling.
+	// disk and resampling. Device selection runs a subprocess, so it happens
+	// before the slot is claimed and while no lock is held.
 	args := []string{"--channels=1", "--rate=16000", "--format=s16"}
 	if target := pickCaptureTarget(ctx, s.cfg.CaptureTarget); target != "" {
 		args = append(args, "--target="+target)
 	}
 	args = append(args, t.wavPath)
-	rec := exec.CommandContext(ctx, "pw-record", args...)
-	rec.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if err := rec.Start(); err != nil {
-		cancel()
-		return fmt.Errorf("microphone: %w", err)
-	}
-	t.rec = rec
 
+	// Claim the single-operation slot before starting anything.
+	//
+	// Two defects here. `toggle` read `s.turn` and then called this, so two
+	// presses close together could both pass the check and start two
+	// recorders. And nothing checked `speaking` at all, so pressing the key
+	// during a voice test opened a second synthesiser on the same sink.
 	s.mu.Lock()
+	if s.turn != nil || s.speaking {
+		s.mu.Unlock()
+		cancel()
+		return fmt.Errorf("busy")
+	}
 	s.turn = t
 	s.transcript = ""
 	s.response = ""
 	s.lastErr = ""
+	s.lastErrKind = ""
 	s.mu.Unlock()
+
+	rec := exec.CommandContext(ctx, "pw-record", args...)
+	rec.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := rec.Start(); err != nil {
+		// Release the slot: a turn that never started must not leave the
+		// assistant permanently busy.
+		s.mu.Lock()
+		if s.turn == t {
+			s.turn = nil
+		}
+		s.mu.Unlock()
+		cancel()
+		return fmt.Errorf("microphone: %w", err)
+	}
+	t.mu.Lock()
+	t.rec = rec
+	t.mu.Unlock()
+
 	s.setState(StateListening, nil)
 
 	go t.run()

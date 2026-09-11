@@ -62,10 +62,16 @@ func (s *Service) transcribeWarm(ctx context.Context, wav string) (string, error
 		text string
 		err  error
 	}
+	// Read through a local, not through w.out. On the timeout path below,
+	// stopLocked sets w.out to nil while this goroutine is still scanning: a
+	// cancelled turn would have dereferenced nil and taken the whole daemon
+	// down with it. The buffered channel is what lets the goroutine finish and
+	// exit after nobody is listening.
+	out := w.out
 	done := make(chan result, 1)
 	go func() {
-		if !w.out.Scan() {
-			err := w.out.Err()
+		if !out.Scan() {
+			err := out.Err()
 			if err == nil {
 				err = fmt.Errorf("transcriber exited")
 			}
@@ -76,7 +82,7 @@ func (s *Service) transcribeWarm(ctx context.Context, wav string) (string, error
 			Text  string `json:"text"`
 			Error string `json:"error"`
 		}
-		if err := json.Unmarshal(w.out.Bytes(), &msg); err != nil {
+		if err := json.Unmarshal(out.Bytes(), &msg); err != nil {
 			done <- result{err: fmt.Errorf("transcriber returned malformed output")}
 			return
 		}
@@ -150,8 +156,9 @@ func (w *sttWorker) ensure(cfg Config) error {
 	// Wait for the ready line. Model load is the whole point of this worker, so
 	// the first turn still pays for it -- but only the first.
 	ready := make(chan error, 1)
+	scanner := w.out // local, for the same reason as in transcribeWarm
 	go func() {
-		if !w.out.Scan() {
+		if !scanner.Scan() {
 			ready <- fmt.Errorf("transcriber failed to start: %s", oneLine(stderr.String()))
 			return
 		}
@@ -183,7 +190,12 @@ func (w *sttWorker) stopLocked() {
 	}
 	if w.cmd.Process != nil {
 		_ = syscall.Kill(-w.cmd.Process.Pid, syscall.SIGKILL)
-		_ = w.cmd.Wait()
+		// Reaped on its own goroutine: os/exec closes the stdout pipe inside
+		// Wait, and calling it while a reader is still draining that pipe is
+		// exactly the race os/exec documents. The process is already killed, so
+		// the reader ends in microseconds and Wait returns straight after.
+		cmd := w.cmd
+		go func() { _ = cmd.Wait() }()
 	}
 	w.cmd, w.in, w.out, w.stderr = nil, nil, nil, nil
 }

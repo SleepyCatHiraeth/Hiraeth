@@ -82,6 +82,12 @@ Singleton {
         BackendService.call("assistant.check", {}, callback);
     }
 
+    // False until the first snapshot has been applied. The first event a
+    // subscriber receives is the CURRENT state, not a transition to it, so
+    // announcing it would chirp on every shell start that happened to catch a
+    // pending memory or a turn in progress.
+    property bool _seenFirstSnapshot: false
+
     function _apply(data) {
         if (!data)
             return;
@@ -110,7 +116,9 @@ Singleton {
                 root.reviewQueue = [];
         }
 
-        _announce(previousState, hadPending, pending);
+        if (root._seenFirstSnapshot)
+            _announce(previousState, hadPending, pending);
+        root._seenFirstSnapshot = true;
     }
 
     // Sound follows state transitions, not states: a cue means "this just
