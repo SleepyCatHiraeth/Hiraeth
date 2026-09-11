@@ -176,12 +176,12 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	hexKey, err := loadOrCreateKey(filepath.Join(dir, "memory.key"))
+	dbPath := filepath.Join(dir, "memory.db")
+	hexKey, err := loadOrCreateKey(filepath.Join(dir, "memory.key"), dbPath)
 	if err != nil {
 		return nil, err
 	}
 
-	dbPath := filepath.Join(dir, "memory.db")
 	u := url.URL{
 		Scheme: "file",
 		Path:   dbPath,
@@ -221,7 +221,7 @@ func Open(dir string) (*Store, error) {
 	}
 
 	s := &Store{db: db, dir: dir}
-	if _, err := s.PurgeExpired(); err != nil {
+	if _, err := s.purgeExpiredLocked(); err != nil {
 		// Never fatal: a failed purge must not stop the assistant from starting.
 		s.audit("purge_failed", "", err.Error())
 	}
@@ -239,18 +239,49 @@ func (s *Store) Close() error {
 	return err
 }
 
-func loadOrCreateKey(path string) (string, error) {
-	if data, err := os.ReadFile(path); err == nil {
+// loadOrCreateKey reads the database key, creating one ONLY when there is no
+// database to orphan.
+//
+// The previous version generated a fresh key whenever the file could not be
+// read. If a database already existed -- the normal case -- that silently made
+// every stored memory permanently undecryptable, turning a transient read error
+// or a truncated file into total data loss. A missing key beside an existing
+// database is a situation only the user can resolve, so it fails closed and
+// says how to recover.
+func loadOrCreateKey(path, dbPath string) (string, error) {
+	data, readErr := os.ReadFile(path)
+	if readErr == nil {
 		if key := strings.TrimSpace(string(data)); len(key) == 64 {
 			return key, nil
 		}
+		readErr = fmt.Errorf("key file is malformed (expected 64 hex characters)")
 	}
+
+	dbExists := false
+	if fi, err := os.Stat(dbPath); err == nil && fi.Size() > 0 {
+		dbExists = true
+	}
+	if dbExists {
+		return "", fmt.Errorf(
+			"memory key at %s is unusable (%v) but an encrypted database exists at %s. "+
+				"Refusing to generate a new key, which would make every stored memory "+
+				"permanently unreadable. Restore the key from a backup, or move the "+
+				"database aside to start fresh",
+			path, readErr, dbPath)
+	}
+
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
 	}
 	key := hex.EncodeToString(raw)
-	if err := os.WriteFile(path, []byte(key+"\n"), 0o600); err != nil {
+	// O_EXCL: never clobber a key that appeared between the read and the write.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", fmt.Errorf("creating memory key: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(key + "\n"); err != nil {
 		return "", err
 	}
 	return key, nil
@@ -475,6 +506,15 @@ func (s *Store) DeleteAll() (int64, error) {
 // periodic sweep: expiry is enforced by deletion, not merely by filtering, so a
 // forgotten memory does not linger in the file.
 func (s *Store) PurgeExpired() (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.purgeExpiredLocked()
+}
+
+// purgeExpiredLocked assumes the caller holds s.mu. Open() calls this during
+// construction, before the store is shared, which is why the public wrapper
+// exists separately rather than Open taking its own lock.
+func (s *Store) purgeExpiredLocked() (int64, error) {
 	now := time.Now().Unix()
 	rows, err := s.db.Query(`SELECT id FROM memory WHERE expires_at IS NOT NULL AND expires_at <= ?`, now)
 	if err != nil {

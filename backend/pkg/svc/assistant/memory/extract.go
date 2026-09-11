@@ -10,9 +10,13 @@ import (
 	"time"
 )
 
-// Embed asks the local model server for a vector. Endpoint validation is the
-// caller's job; this package never decides what is a safe address.
-func Embed(ctx context.Context, endpoint, model, text string) ([]float32, error) {
+// Embed asks the local model server for a vector.
+//
+// The client is supplied by the caller and carries the local-only policy
+// (refuses redirects, refuses a non-loopback dial). This package deliberately
+// does not construct its own client: a second client would be a second chance
+// to get that policy wrong.
+func Embed(ctx context.Context, client *http.Client, endpoint, model, text string) ([]float32, error) {
 	body, err := json.Marshal(map[string]any{"model": model, "input": text})
 	if err != nil {
 		return nil, err
@@ -24,7 +28,7 @@ func Embed(ctx context.Context, endpoint, model, text string) ([]float32, error)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +85,7 @@ Rules:
 // Extract asks the model for memory candidates. It is a text-to-JSON transform
 // with no tool surface at all: the extraction model is never given the ability
 // to act, only to propose, and everything it proposes is filtered afterwards.
-func Extract(ctx context.Context, endpoint, model, userText, assistantText string) ([]Candidate, error) {
+func Extract(ctx context.Context, client *http.Client, endpoint, model, userText, assistantText string) ([]Candidate, error) {
 	convo := fmt.Sprintf("User said: %s\n\nAssistant replied: %s", userText, assistantText)
 
 	body, err := json.Marshal(map[string]any{
@@ -104,7 +108,7 @@ func Extract(ctx context.Context, endpoint, model, userText, assistantText strin
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

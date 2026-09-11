@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -31,15 +30,11 @@ func checkEndpoint(endpoint string) error {
 	if err != nil {
 		return fmt.Errorf("bad endpoint %q: %w", endpoint, err)
 	}
-	host := u.Hostname()
-	if host == "localhost" {
-		return nil
-	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("refusing non-loopback endpoint %q: local-only mode", endpoint)
-	}
-	return nil
+	_ = u
+	// Delegates to the shared policy so the endpoint check and the transport
+	// check can never disagree. See httpclient.go for why validating the
+	// configured URL alone was not enough.
+	return checkURL(endpoint)
 }
 
 func probeLLM(endpoint string) error {
@@ -52,7 +47,7 @@ func probeLLM(endpoint string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := newLocalClient(5 * time.Second).Do(req)
 	if err != nil {
 		return err
 	}
@@ -103,8 +98,7 @@ func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, onSenten
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := newLocalClient(120 * time.Second).Do(req)
 	if err != nil {
 		return fmt.Errorf("local model unreachable: %w", err)
 	}

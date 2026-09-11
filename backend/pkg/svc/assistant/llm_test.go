@@ -4,7 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
+
+	"ambxst/backend/pkg/svc/assistant/memory"
 )
 
 func TestCheckEndpointRefusesRemote(t *testing.T) {
@@ -147,5 +151,144 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 	if got.TTSVoice != "af_heart" {
 		t.Errorf("corrupt config should yield defaults, got %q", got.TTSVoice)
+	}
+}
+
+// The defect: default categories enabled only the two the extractor never
+// emits, so every confirmed memory was excluded from retrieval and memory
+// silently did nothing.
+func TestDefaultCategoriesCoverEverythingTheExtractorEmits(t *testing.T) {
+	s := &Service{cfg: defaultConfig()}
+	enabled := s.enabledCategories()
+
+	// Exactly the categories extract.go's validCategories admits.
+	emitted := []string{
+		memory.CatProfile, memory.CatPreference, memory.CatProject,
+		memory.CatEnvironment, memory.CatRoutine, memory.CatInstruction,
+		memory.CatFact,
+	}
+	for _, c := range emitted {
+		if !enabled[c] {
+			t.Errorf("category %q can be extracted and confirmed but is not retrievable by default", c)
+		}
+	}
+	// The expiring ones must stay on too; they are the only auto-saved kinds.
+	for _, c := range []string{memory.CatTemporary, memory.CatSummary} {
+		if !enabled[c] {
+			t.Errorf("auto-savable category %q is not enabled by default", c)
+		}
+	}
+}
+
+// The contract stated in the settings panel and the wiki: the assistant is off
+// after a restart. It was false, because `enabled` was persisted and restored.
+func TestEnabledNeverSurvivesARestart(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	cfg := defaultConfig()
+	cfg.Enabled = true
+	cfg.TTSVoice = "am_onyx" // a real preference, which MUST survive
+	if err := saveConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Enabled {
+		t.Error("enabled survived a restart; the off-after-reboot contract is broken")
+	}
+	if got.TTSVoice != "am_onyx" {
+		t.Errorf("a genuine preference was lost: voice = %q", got.TTSVoice)
+	}
+
+	// And it must not be on disk either, or the file contradicts the behaviour.
+	raw, err := os.ReadFile(filepath.Join(dir, "ambxst", "assistant.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), `"enabled": true`) {
+		t.Error("enabled:true was written to disk; the file should never claim it")
+	}
+}
+
+// The store used to check-then-act, so two concurrent callers could each open
+// the encrypted database and leak whichever handle lost the assignment.
+func TestConcurrentStoreOpenYieldsOneStore(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+
+	s := &Service{cfg: defaultConfig(), state: StateIdle}
+	s.cfg.Enabled = true
+	s.cfg.MemoryEnabled = true
+
+	const n = 16
+	got := make([]*memory.Store, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) { defer wg.Done(); got[i] = s.store() }(i)
+	}
+	wg.Wait()
+
+	first := got[0]
+	if first == nil {
+		t.Fatal("store() returned nil")
+	}
+	for i, st := range got {
+		if st != first {
+			t.Fatalf("caller %d got a different store instance; a handle leaked", i)
+		}
+	}
+	_ = first.Close()
+}
+
+// release() must be safe from any state and repeatable.
+func TestReleaseIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dir)
+
+	s := &Service{cfg: defaultConfig(), state: StateIdle}
+	s.cfg.Enabled = true
+	s.cfg.MemoryEnabled = true
+	if st := s.store(); st == nil {
+		t.Fatal("expected a store")
+	}
+	s.release()
+	s.release() // must not panic or double-close
+	s.mu.Lock()
+	mem := s.mem
+	s.mu.Unlock()
+	if mem != nil {
+		t.Error("release left the memory store open")
+	}
+}
+
+// Disabling is documented as releasing resources, not merely refusing work.
+func TestDisableClosesTheStore(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_DATA_HOME", dir)
+
+	s := &Service{cfg: defaultConfig(), state: StateIdle}
+	s.cfg.Enabled = true
+	s.cfg.MemoryEnabled = true
+	if st := s.store(); st == nil {
+		t.Fatal("expected a store")
+	}
+
+	if _, err := s.setConfig([]byte(`{"enabled":false}`)); err != nil {
+		t.Fatalf("disable failed: %v", err)
+	}
+	s.mu.Lock()
+	mem := s.mem
+	s.mu.Unlock()
+	if mem != nil {
+		t.Error("disabling did not close the memory store")
+	}
+	if s.store() != nil {
+		t.Error("store() returned a store while disabled")
 	}
 }

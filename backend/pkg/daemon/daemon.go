@@ -57,6 +57,7 @@ type Daemon struct {
 	powerprof  *powerprofile.Service
 	nightlight *nightlight.Service
 	recorder   *recordersvc.Service
+	assistant  *assistantsvc.Service
 	mods       *mods.Manager
 
 	shutdownCh   chan struct{}
@@ -164,6 +165,7 @@ func New() (*Daemon, error) {
 	// lifetime and never sees an endpoint it could point off-machine.
 	assistantSvc := assistantsvc.NewService()
 	assistantSvc.Register(d.srv)
+	d.assistant = assistantSvc
 
 	// notify — exposes notify.send so CLIs (colorpicker, screen, …) can
 	// route their notifications through the running shell instead of
@@ -370,6 +372,12 @@ func (d *Daemon) shutdown() {
 	}
 	if d.recorder != nil {
 		d.recorder.Close()
+	}
+	// The assistant owns the microphone and four worker process groups. Without
+	// this, a reload during capture or speech left pw-record holding the mic
+	// after the shell that started it had gone.
+	if d.assistant != nil {
+		d.assistant.Close()
 	}
 
 	// Defensive sweep: any child that escaped the process group cleanup

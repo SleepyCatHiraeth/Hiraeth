@@ -26,6 +26,8 @@ type health struct {
 	checkedAt time.Time
 	lastErr   string
 	starting  bool
+	// Ownership: only a server this assistant started may be stopped by it.
+	startedByUs bool
 }
 
 func (s *Service) healthSnapshot() (bool, string) {
@@ -120,6 +122,10 @@ func (s *Service) ensureServer(ctx context.Context) bool {
 		return false
 	}
 
+	s.health.mu.Lock()
+	s.health.startedByUs = true
+	s.health.mu.Unlock()
+
 	// The server needs a moment to bind before it answers.
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
@@ -182,7 +188,19 @@ func (s *Service) startHealthLoop() {
 // resident until its TTL expires, which matters on a machine that also plays
 // games. Turning the assistant off should be able to actually give that back,
 // so this is offered explicitly rather than left to the TTL.
+// startedServer records whether WE started llmster. Stopping a server the user
+// started themselves would be taking something that is not ours.
 func (s *Service) stopServer(ctx context.Context) error {
+	s.health.mu.Lock()
+	ours := s.health.startedByUs
+	s.health.mu.Unlock()
+	if !ours {
+		return fmt.Errorf("the model server was not started by the assistant; stop it yourself with `lms server stop`")
+	}
+	return s.stopServerForce(ctx)
+}
+
+func (s *Service) stopServerForce(ctx context.Context) error {
 	lms := lmsPath()
 	if lms == "" {
 		return fmt.Errorf("lms not found")
@@ -206,6 +224,9 @@ func (s *Service) stopServer(ctx context.Context) error {
 	down.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	_ = down.Run()
 
+	s.health.mu.Lock()
+	s.health.startedByUs = false
+	s.health.mu.Unlock()
 	s.refreshHealth(true)
 	return nil
 }

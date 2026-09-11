@@ -26,23 +26,30 @@ func (s *Service) memoryDir() string {
 // store returns the open memory store, opening it on first use. Returns nil
 // when memory is disabled -- every caller must handle that.
 func (s *Service) store() *memory.Store {
+	// The whole open is done under the lock. Previously this checked, released,
+	// opened, then re-took the lock, so two concurrent callers -- the settings
+	// panel and the post-turn extraction are a realistic pair -- could each open
+	// the encrypted database and leak whichever handle lost the assignment.
 	s.mu.Lock()
-	enabled := s.cfg.Enabled && s.cfg.MemoryEnabled
-	existing := s.mem
-	s.mu.Unlock()
-
-	if !enabled {
+	if !(s.cfg.Enabled && s.cfg.MemoryEnabled) {
+		s.mu.Unlock()
 		return nil
 	}
-	if existing != nil {
-		return existing
+	if s.mem != nil {
+		st := s.mem
+		s.mu.Unlock()
+		return st
 	}
-	st, err := memory.Open(s.memoryDir())
+	dir := s.memoryDir()
+	st, err := memory.Open(dir)
 	if err != nil {
-		s.setState(s.state, func() { s.lastErr = "memory unavailable: " + err.Error() })
+		s.lastErr = "memory unavailable: " + err.Error()
+		state := s.state // read under the lock; this used to be read outside it
+		s.seq++
+		s.mu.Unlock()
+		s.setState(state, nil)
 		return nil
 	}
-	s.mu.Lock()
 	s.mem = st
 	s.mu.Unlock()
 	return st
@@ -52,11 +59,25 @@ func (s *Service) enabledCategories() map[string]bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.cfg.MemoryCategories) == 0 {
-		// Conservative default: only the two categories that expire on their
-		// own are on until the user opts into more.
+		// Every category the extractor can produce, plus the two expiring ones.
+		//
+		// The previous default enabled ONLY the two expiring categories -- which
+		// the extractor never emits -- so every memory the user confirmed was
+		// then excluded from retrieval. Memory appeared to work and did nothing.
+		//
+		// The invariant this restores: anything the user explicitly confirms is
+		// eligible for retrieval unless they disable its category. Confirmation
+		// is the consent gate; category enablement is a filter, not a second gate.
 		return map[string]bool{
-			memory.CatTemporary: true,
-			memory.CatSummary:   true,
+			memory.CatTemporary:   true,
+			memory.CatSummary:     true,
+			memory.CatProfile:     true,
+			memory.CatPreference:  true,
+			memory.CatProject:     true,
+			memory.CatEnvironment: true,
+			memory.CatRoutine:     true,
+			memory.CatInstruction: true,
+			memory.CatFact:        true,
 		}
 	}
 	out := map[string]bool{}
@@ -86,7 +107,7 @@ func (s *Service) recall(ctx context.Context, prompt string) (string, []memory.R
 	}
 	// Embedding is best-effort; without it retrieval falls back to keyword
 	// ranking, which is degraded but correct.
-	if vec, err := memory.Embed(ctx, cfg.Endpoint, cfg.EmbedModel, prompt); err == nil {
+	if vec, err := memory.Embed(ctx, s.httpClient(), cfg.Endpoint, cfg.EmbedModel, prompt); err == nil {
 		q.Vector = vec
 		q.Model = cfg.EmbedModel
 	}
@@ -110,10 +131,13 @@ func (s *Service) capture(userText, replyText string) {
 	cfg := s.cfg
 	s.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
+	// Tied to the service's background context so shutdown and disable can
+	// cancel it. Previously this used context.Background(), so extraction kept
+	// issuing HTTP requests for up to 90s after the turn was cancelled.
+	ctx, done := s.backgroundContext(90 * time.Second)
+	defer done()
 
-	cands, err := memory.Extract(ctx, cfg.Endpoint, cfg.Model, userText, replyText)
+	cands, err := memory.Extract(ctx, s.httpClient(), cfg.Endpoint, cfg.Model, userText, replyText)
 	if err != nil || len(cands) == 0 {
 		return
 	}
@@ -131,9 +155,7 @@ func (s *Service) capture(userText, replyText string) {
 			pending++
 		}
 		if note == "" && it.Status == memory.StatusActive {
-			if vec, err := memory.Embed(ctx, cfg.Endpoint, cfg.EmbedModel, it.Content); err == nil {
-				_ = st.PutEmbedding(it.ID, cfg.EmbedModel, vec)
-			}
+			s.embedOrRecord(ctx, st, it.ID, it.Content)
 		}
 	}
 	if pending > 0 {
@@ -375,7 +397,7 @@ func (s *Service) embedOrRecord(ctx context.Context, st *memory.Store, id, conte
 	cfg := s.cfg
 	s.mu.Unlock()
 
-	vec, err := memory.Embed(ctx, cfg.Endpoint, cfg.EmbedModel, content)
+	vec, err := memory.Embed(ctx, s.httpClient(), cfg.Endpoint, cfg.EmbedModel, content)
 	if err != nil {
 		s.mu.Lock()
 		s.embedErr = "embedding unavailable, memory is keyword-only: " + err.Error()

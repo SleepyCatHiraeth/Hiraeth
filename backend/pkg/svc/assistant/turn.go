@@ -268,14 +268,23 @@ func (t *turn) answer(prompt, memCtx string) error {
 	return nil
 }
 
-// speaker pipes sentences into Piper and Piper's PCM into PipeWire. Both live in
-// one process group so an interrupt kills synthesis and playback together
-// instead of leaving a sentence to finish playing after the user said stop.
+// speaker pipes sentences into the TTS engine and its PCM into PipeWire.
+//
+// Each child gets its OWN process group (both set Setpgid), and close() signals
+// both groups, so an interrupt takes synthesis and playback down together
+// rather than leaving a sentence playing after the user said stop. An earlier
+// comment here claimed they shared one group; they never did.
 type speaker struct {
 	tts  *exec.Cmd
 	play *exec.Cmd
 	in   io.WriteCloser
 	once sync.Once
+
+	// reaped is set once Wait() has returned for both children. After that
+	// their PIDs belong to the kernel again, and signalling them could hit an
+	// unrelated process group that happened to inherit the number.
+	mu     sync.Mutex
+	reaped bool
 }
 
 func (t *turn) startSpeaker() (*speaker, error) {
@@ -342,10 +351,20 @@ func (s *speaker) finish() {
 	s.once.Do(func() { _ = s.in.Close() })
 	_ = s.tts.Wait()
 	_ = s.play.Wait()
+	s.mu.Lock()
+	s.reaped = true
+	s.mu.Unlock()
 }
 
 func (s *speaker) close() {
 	s.once.Do(func() { _ = s.in.Close() })
+	s.mu.Lock()
+	done := s.reaped
+	s.reaped = true
+	s.mu.Unlock()
+	if done {
+		return // already waited for; their PIDs are no longer ours to signal
+	}
 	for _, c := range []*exec.Cmd{s.tts, s.play} {
 		if c != nil && c.Process != nil {
 			_ = syscall.Kill(-c.Process.Pid, syscall.SIGKILL)

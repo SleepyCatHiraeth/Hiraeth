@@ -552,3 +552,66 @@ func TestEmptyListsMarshalAsArrays(t *testing.T) {
 		t.Error("Retrieve returned nil; must be an empty slice")
 	}
 }
+
+// The worst possible failure: a key problem beside an existing database used to
+// generate a fresh key, permanently orphaning every stored memory.
+func TestKeyFailureDoesNotOrphanDatabase(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Put(active("A memory that must survive.", CatFact)); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	keyPath := dir + "/memory.key"
+	original, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Truncate the key the way a bad write or a full disk would.
+	if err := os.WriteFile(keyPath, []byte("short"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir); err == nil {
+		t.Fatal("Open succeeded with a broken key beside an existing DB; it must fail closed")
+	}
+
+	// The key file must not have been replaced, or recovery becomes impossible.
+	after, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != "short" {
+		t.Error("the broken key was overwritten; a backup restore would be defeated")
+	}
+
+	// Restoring the real key must recover the data.
+	if err := os.WriteFile(keyPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := Open(dir)
+	if err != nil {
+		t.Fatalf("restoring the key should reopen the DB: %v", err)
+	}
+	defer s2.Close()
+	items, err := s2.List("", "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Errorf("expected the memory to survive, got %d", len(items))
+	}
+}
+
+func TestKeyIsCreatedWhenThereIsNoDatabase(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatalf("first run must create a key: %v", err)
+	}
+	s.Close()
+}

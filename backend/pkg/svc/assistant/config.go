@@ -40,6 +40,16 @@ func loadConfig() (Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return defaultConfig(), err
 	}
+	// The assistant always starts off, whatever the file says.
+	//
+	// `Enabled` is runtime state, not a preference. Persisting it meant the
+	// documented and UI-stated contract -- "off after a reboot, costing
+	// nothing until you turn it on" -- was false for every user who had ever
+	// enabled it. Treating it as a preference would require the disable path to
+	// genuinely release every resource on every shutdown; forcing it off at load
+	// gives the same guarantee with no way to get it wrong.
+	cfg.Enabled = false
+
 	// A file written by an older build can be missing newer fields; refill any
 	// that came back empty so a partial file never produces a broken stack.
 	def := defaultConfig()
@@ -82,6 +92,10 @@ func loadConfig() (Config, error) {
 func saveConfig(cfg Config) error {
 	configMu.Lock()
 	defer configMu.Unlock()
+
+	// Never persist runtime state. Writing `enabled: true` would imply a
+	// promise the next startup deliberately does not keep.
+	cfg.Enabled = false
 
 	path := configPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

@@ -116,6 +116,8 @@ type Service struct {
 
 	mem             *memory.Store
 	pendingMemories int
+	bg              background
+	closeOnce       sync.Once
 	health          health
 	embedErr        string
 
@@ -445,14 +447,9 @@ func (s *Service) setConfig(params json.RawMessage) (any, error) {
 	// Turning the assistant off must actually stop things, not just refuse new
 	// work: close the memory database and let the health loop idle.
 	if !next.Enabled {
-		s.mu.Lock()
-		mem := s.mem
-		s.mem = nil
-		s.pendingMemories = 0
-		s.mu.Unlock()
-		if mem != nil {
-			_ = mem.Close()
-		}
+		// Disabling must actually stop things, not merely refuse new work: the
+		// settings panel tells the user resources are released.
+		s.release()
 	} else {
 		// Probe immediately rather than waiting up to a full tick, or the panel
 		// reports "server not running" for 30s after being switched on.
