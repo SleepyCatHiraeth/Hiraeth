@@ -139,6 +139,9 @@ type Service struct {
 	// Warm transcriber, kept between turns. See stt.go.
 	stt sttWorker
 
+	// When the expiry sweep last ran. Guarded by mu.
+	lastSweep time.Time
+
 	mem             *memory.Store
 	pendingMemories int
 	speaking        bool
@@ -185,6 +188,7 @@ func (s *Service) Register(srv *ipc.Server) {
 			"memory.correct": s.memoryCorrect,
 			"memory.forget":  s.memoryForget,
 			"memory.stats":   s.memoryStats,
+			"memory.audit":   s.memoryAudit,
 			"memory.export":  s.memoryExport,
 			"memory.import":  s.memoryImport,
 		},

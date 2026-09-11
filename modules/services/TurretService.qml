@@ -189,6 +189,14 @@ Singleton {
         BackendService.call("assistant.health", {stop: true}, callback);
     }
 
+    // The store's own history: what was remembered, confirmed, corrected,
+    // superseded, refused or forgotten, and when. Contains no memory text.
+    function memoryAudit(limit, callback) {
+        BackendService.call("assistant.memory.audit", {limit: limit || 100}, (result, error) => {
+            callback(error || !result ? [] : (result.entries || []));
+        });
+    }
+
     function memoryStats(callback) {
         BackendService.call("assistant.memory.stats", {}, callback);
     }

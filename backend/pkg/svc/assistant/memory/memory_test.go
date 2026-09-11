@@ -615,3 +615,98 @@ func TestKeyIsCreatedWhenThereIsNoDatabase(t *testing.T) {
 	}
 	s.Close()
 }
+
+// An older binary opening a newer database is the case that loses data: it
+// would write into a schema it does not understand. It must refuse instead.
+func TestOpenRefusesANewerSchema(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE schema_version SET version = ?`, currentSchema+1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Open(dir); err == nil {
+		t.Fatal("opening a database from a newer build must fail")
+	} else if !strings.Contains(err.Error(), "newer AMBXST") {
+		t.Errorf("unhelpful error for a future schema: %v", err)
+	}
+}
+
+func TestOpenRecordsTheSchemaVersion(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	var version int
+	if err := s.db.QueryRow(`SELECT version FROM schema_version`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != currentSchema {
+		t.Errorf("schema version %d, want %d", version, currentSchema)
+	}
+}
+
+// The audit log was written from the first version and never readable, so
+// "what did it decide to remember, and when did it forget it?" had no answer.
+func TestAuditRecordsDecisionsWithoutContent(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	secret := "The user's bank is Example Bank."
+	it := &Item{
+		Category: CatFact, Content: secret, SourceType: "conversation",
+		Confidence: 0.9, Importance: 0.5, Sensitivity: "none",
+		Language: "en", TrustLevel: TrustUserStated, Status: StatusActive,
+	}
+	if err := s.Put(it); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(it.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := s.Audit(50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) < 2 {
+		t.Fatalf("expected the store and the delete to be recorded, got %d entries", len(entries))
+	}
+	for _, e := range entries {
+		if strings.Contains(e.Detail, secret) {
+			t.Errorf("audit entry leaked memory content: %+v", e)
+		}
+	}
+	// Newest first.
+	if entries[0].At < entries[len(entries)-1].At {
+		t.Error("audit entries must be newest first")
+	}
+}
+
+func TestAuditOnAnEmptyStoreReturnsAList(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	entries, err := s.Audit(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Not nil: an empty list marshals as [], and QML treats null as a defect.
+	if entries == nil {
+		t.Error("an empty audit must be an empty list, not nil")
+	}
+}

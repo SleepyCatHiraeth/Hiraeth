@@ -185,6 +185,7 @@ func (s *Service) startHealthLoop() {
 
 			s.refreshHealth(true)
 			s.stt.reapIfIdle()
+			s.sweepExpired()
 
 			if !idle.Stop() {
 				select {

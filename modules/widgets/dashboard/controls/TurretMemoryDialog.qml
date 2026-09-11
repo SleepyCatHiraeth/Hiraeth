@@ -27,11 +27,39 @@ Dialog {
 
     property var items: []
     property string editingId: ""
+    // The store's own history. Never contains memory text, so showing it costs
+    // nothing in privacy terms and answers the question the list cannot:
+    // what was decided, and when.
+    property var history: []
+    property bool showingHistory: false
 
     function refresh() {
         TurretService.listMemories(result => {
             root.items = (result && result.items) ? result.items : [];
         });
+        if (root.showingHistory)
+            root.refreshHistory();
+    }
+
+    function refreshHistory() {
+        TurretService.memoryAudit(100, entries => {
+            root.history = entries || [];
+        });
+    }
+
+    function describeAction(action) {
+        // Names come from Store.audit() in the Go memory package; keep them in
+        // step with it rather than inventing friendlier ones here.
+        switch (action) {
+        case "put": return "remembered";
+        case "confirm": return "you kept";
+        case "correct": return "you corrected";
+        case "delete": return "you forgot";
+        case "delete_all": return "you forgot everything";
+        case "purge_expired": return "expired";
+        case "purge_failed": return "expiry sweep failed";
+        default: return action.replace(/_/g, " ");
+        }
     }
 
     onOpened: refresh()
@@ -44,7 +72,7 @@ Dialog {
 
             Text {
                 Layout.fillWidth: true
-                text: "Stored memories"
+                text: root.showingHistory ? "History" : "Stored memories"
                 font.family: Config.theme.font
                 font.pixelSize: Styling.fontSize(1)
                 font.weight: Font.Medium
@@ -52,7 +80,17 @@ Dialog {
             }
 
             Button {
+                text: root.showingHistory ? "Memories" : "History"
+                onClicked: {
+                    root.showingHistory = !root.showingHistory;
+                    if (root.showingHistory)
+                        root.refreshHistory();
+                }
+            }
+
+            Button {
                 text: "Forget everything"
+                visible: !root.showingHistory
                 enabled: root.items.length > 0
                 onClicked: confirmClear.open()
             }
@@ -60,8 +98,52 @@ Dialog {
 
         Text {
             Layout.fillWidth: true
-            visible: root.items.length === 0
+            visible: !root.showingHistory && root.items.length === 0
             text: "Nothing stored yet."
+            font.family: Config.theme.font
+            font.pixelSize: Styling.fontSize(-1)
+            color: Colors.overSurfaceVariant
+        }
+
+        // History: what the store decided, newest first. Deliberately plain --
+        // this is a record to read, not a list to act on.
+        ListView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: root.showingHistory
+            clip: true
+            spacing: 2
+            model: root.history
+
+            delegate: RowLayout {
+                id: auditRow
+                required property var modelData
+                width: ListView.view.width
+                spacing: 8
+
+                Text {
+                    text: new Date(auditRow.modelData.at * 1000)
+                          .toLocaleString(Qt.locale(), Locale.ShortFormat)
+                    font.family: Config.theme.font
+                    font.pixelSize: Styling.fontSize(-2)
+                    color: Colors.overSurfaceVariant
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: root.describeAction(auditRow.modelData.action)
+                          + (auditRow.modelData.detail ? " · " + auditRow.modelData.detail : "")
+                    elide: Text.ElideRight
+                    font.family: Config.theme.font
+                    font.pixelSize: Styling.fontSize(-1)
+                    color: Colors.overSurface
+                }
+            }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: root.showingHistory && root.history.length === 0
+            text: "Nothing has happened yet."
             font.family: Config.theme.font
             font.pixelSize: Styling.fontSize(-1)
             color: Colors.overSurfaceVariant
@@ -70,6 +152,7 @@ Dialog {
         ListView {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: !root.showingHistory
             clip: true
             spacing: 6
             model: root.items

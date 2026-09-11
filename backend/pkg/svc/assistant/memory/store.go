@@ -19,6 +19,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -161,6 +162,57 @@ CREATE TABLE IF NOT EXISTS audit (
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(content, tokenize = 'porter');
 `
 
+// Schema version.
+//
+// The version row was written on creation and never read again, which meant two
+// things could go wrong silently. A future version of this code could not tell
+// an old database from a current one, and -- worse -- an OLDER binary opening a
+// NEWER database would write into a schema it did not understand. The second is
+// the one that loses data, and it is the reason this refuses rather than
+// guesses.
+const currentSchema = 1
+
+// migrations[i] upgrades a database at version i+1 to version i+2. Empty today:
+// version 1 is the first schema. A new migration is appended here, never
+// inserted, and the CREATE TABLE statements in schemaSQL are updated to match
+// so a fresh database is created at the current version directly.
+var migrations []func(*sql.DB) error
+
+func migrate(db *sql.DB) error {
+	var version int
+	err := db.QueryRow(`SELECT version FROM schema_version LIMIT 1`).Scan(&version)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// Fresh database, or one created before the version row existed.
+		if _, err := db.Exec(`INSERT INTO schema_version(version) VALUES (?)`, currentSchema); err != nil {
+			return err
+		}
+		return nil
+	case err != nil:
+		return err
+	}
+
+	if version > currentSchema {
+		return fmt.Errorf(
+			"memory database is at schema version %d but this build understands %d: "+
+				"it was written by a newer AMBXST. Refusing to open it rather than "+
+				"risk writing a schema this build does not understand",
+			version, currentSchema)
+	}
+
+	for version < currentSchema {
+		step := migrations[version-1]
+		if err := step(db); err != nil {
+			return fmt.Errorf("migrating memory database from version %d: %w", version, err)
+		}
+		version++
+		if _, err := db.Exec(`UPDATE schema_version SET version = ?`, version); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Store owns the encrypted database. Every access is serialised; this is a
 // single-user assistant and lock contention is not the bottleneck.
 type Store struct {
@@ -206,8 +258,7 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	if _, err := db.Exec(`INSERT INTO schema_version(version)
-	    SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM schema_version)`); err != nil {
+	if err := migrate(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -615,6 +666,46 @@ func (s *Store) List(status, category string, limit int) ([]*Item, error) {
 }
 
 // Stats powers the settings UI without exposing content.
+// AuditEntry is one line of the memory store's own history.
+type AuditEntry struct {
+	At       int64  `json:"at"`
+	Action   string `json:"action"`
+	MemoryID string `json:"memory_id,omitempty"`
+	Detail   string `json:"detail,omitempty"`
+}
+
+// Audit returns the most recent audit entries, newest first.
+//
+// The log was written from the first version and never readable, so "what did
+// it decide to remember, and when did it forget it?" had no answer short of
+// opening the encrypted database by hand. Entries never contain memory
+// plaintext; see the schema comment.
+func (s *Store) Audit(limit int) ([]AuditEntry, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	rows, err := s.db.Query(
+		`SELECT ts, action, COALESCE(memory_id, ''), COALESCE(detail, '')
+		   FROM audit ORDER BY ts DESC, rowid DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []AuditEntry{}
+	for rows.Next() {
+		var e AuditEntry
+		if err := rows.Scan(&e.At, &e.Action, &e.MemoryID, &e.Detail); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) Stats() (map[string]any, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

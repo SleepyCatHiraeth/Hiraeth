@@ -35,6 +35,33 @@ Item {
     property var stats: ({})
     property bool loaded: false
 
+    // The categories the backend accepts, in the order they are explained to
+    // the model. Keys must match memory.Cat* in the Go package.
+    readonly property var categories: [
+        {key: "user_profile", label: "Who you are"},
+        {key: "preferences", label: "How you like things"},
+        {key: "projects", label: "What you are working on"},
+        {key: "environment", label: "Your machine and tools"},
+        {key: "routines", label: "Habits and schedules"},
+        {key: "instructions", label: "Standing instructions"},
+        {key: "important_facts", label: "Other durable facts"},
+        {key: "temporary_context", label: "Short-lived notes"},
+        {key: "conversation_summaries", label: "Conversation summaries"}
+    ]
+
+    // Absent means enabled: a category the user has never touched is on, and
+    // only an explicit false turns it off.
+    function categoryEnabled(key) {
+        const map = root.cfg.memory_categories;
+        return !map || map[key] !== false;
+    }
+
+    function setCategory(key, on) {
+        let map = Object.assign({}, root.cfg.memory_categories || ({}));
+        map[key] = on;
+        root.apply("memory_categories", map);
+    }
+
     function reload() {
         TurretService.getConfig(result => {
             if (!root || !root.alive || !result)
@@ -317,6 +344,83 @@ Item {
                 Button {
                     text: "Manage"
                     onClicked: memoryDialog.open()
+                }
+            }
+
+            // Per-category consent. These existed over IPC from the first
+            // version and had no GUI at all, so the only way to stop the
+            // assistant remembering one kind of thing was to edit JSON.
+            TurretSettingCard {
+                Layout.fillWidth: true
+                visible: TurretService.enabled && TurretService.memoryEnabled
+                title: "What it may remember"
+                subtitle: "A category that is off is never stored and never recalled."
+                icon: Icons.shieldCheck
+                tall: true
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: 14
+                    rowSpacing: 2
+
+                    Repeater {
+                        model: root.categories
+
+                        delegate: RowLayout {
+                            id: catRow
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Switch {
+                                checked: root.categoryEnabled(catRow.modelData.key)
+                                onToggled: root.setCategory(catRow.modelData.key, checked)
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: catRow.modelData.label
+                                elide: Text.ElideRight
+                                font.family: Config.theme.font
+                                font.pixelSize: Styling.fontSize(-1)
+                                color: Colors.overSurface
+                            }
+                        }
+                    }
+                }
+            }
+
+            TurretSettingCard {
+                Layout.fillWidth: true
+                visible: TurretService.enabled && TurretService.memoryEnabled
+                title: "How much it recalls"
+                subtitle: (root.cfg.memory_limit ?? 6) + " memories per answer, at "
+                          + Math.round((root.cfg.memory_min_confidence ?? 0.5) * 100)
+                          + "% confidence or better"
+                icon: Icons.notepad
+                tall: true
+
+                StyledSlider {
+                    id: limitSlider
+                    Layout.fillWidth: true
+                    readonly property int maxLimit: 12
+                    value: Math.min(1, (root.cfg.memory_limit ?? 6) / maxLimit)
+                    onIsDraggingChanged: {
+                        if (isDragging)
+                            return;
+                        root.apply("memory_limit", Math.max(1, Math.round(value * maxLimit)));
+                    }
+                }
+
+                StyledSlider {
+                    id: confidenceSlider
+                    Layout.fillWidth: true
+                    value: root.cfg.memory_min_confidence ?? 0.5
+                    onIsDraggingChanged: {
+                        if (isDragging)
+                            return;
+                        root.apply("memory_min_confidence", Math.round(value * 100) / 100);
+                    }
                 }
             }
         }

@@ -178,3 +178,25 @@ func TestHealthLoopParksWhileDisabled(t *testing.T) {
 	}
 	t.Error("enabling the assistant did not wake the health loop")
 }
+
+// Turning one category off must not disable the other eight. The map used to be
+// returned verbatim when non-empty, so "absent" meant "disabled" -- which would
+// have made the per-category switches in Settings quietly destructive.
+func TestEnabledCategoriesMergesOntoDefaults(t *testing.T) {
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig()
+	s.cfg.MemoryCategories = map[string]bool{"projects": false}
+
+	cats := s.enabledCategories()
+	if cats["projects"] {
+		t.Error("an explicitly disabled category must stay disabled")
+	}
+	for _, k := range []string{"user_profile", "preferences", "environment", "routines", "instructions", "important_facts"} {
+		if !cats[k] {
+			t.Errorf("category %q was silently disabled by an unrelated choice", k)
+		}
+	}
+	if len(cats) != len(defaultCategories()) {
+		t.Errorf("got %d categories, want the full set of %d", len(cats), len(defaultCategories()))
+	}
+}

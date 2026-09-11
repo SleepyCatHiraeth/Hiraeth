@@ -55,32 +55,41 @@ func (s *Service) store() *memory.Store {
 	return st
 }
 
+// defaultCategories is every category the extractor can produce, plus the two
+// expiring ones.
+//
+// An earlier default enabled ONLY the two expiring categories -- which the
+// extractor never emits -- so every memory the user confirmed was then excluded
+// from retrieval. Memory appeared to work and did nothing.
+//
+// The invariant: anything the user explicitly confirms is eligible for
+// retrieval unless they disable its category. Confirmation is the consent gate;
+// category enablement is a filter, not a second gate.
+func defaultCategories() map[string]bool {
+	return map[string]bool{
+		memory.CatTemporary:   true,
+		memory.CatSummary:     true,
+		memory.CatProfile:     true,
+		memory.CatPreference:  true,
+		memory.CatProject:     true,
+		memory.CatEnvironment: true,
+		memory.CatRoutine:     true,
+		memory.CatInstruction: true,
+		memory.CatFact:        true,
+	}
+}
+
+// enabledCategories merges the user's choices onto the defaults.
+//
+// It used to return the configured map verbatim when it was non-empty, which
+// made "absent" mean "disabled". Turning ONE category off from the settings
+// panel would therefore have written a single-key map and silently disabled the
+// other eight. Merging is what makes a per-category switch safe to build.
 func (s *Service) enabledCategories() map[string]bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.cfg.MemoryCategories) == 0 {
-		// Every category the extractor can produce, plus the two expiring ones.
-		//
-		// The previous default enabled ONLY the two expiring categories -- which
-		// the extractor never emits -- so every memory the user confirmed was
-		// then excluded from retrieval. Memory appeared to work and did nothing.
-		//
-		// The invariant this restores: anything the user explicitly confirms is
-		// eligible for retrieval unless they disable its category. Confirmation
-		// is the consent gate; category enablement is a filter, not a second gate.
-		return map[string]bool{
-			memory.CatTemporary:   true,
-			memory.CatSummary:     true,
-			memory.CatProfile:     true,
-			memory.CatPreference:  true,
-			memory.CatProject:     true,
-			memory.CatEnvironment: true,
-			memory.CatRoutine:     true,
-			memory.CatInstruction: true,
-			memory.CatFact:        true,
-		}
-	}
-	out := map[string]bool{}
+
+	out := defaultCategories()
 	for k, v := range s.cfg.MemoryCategories {
 		out[k] = v
 	}
@@ -328,6 +337,62 @@ func (s *Service) memoryStats(_ json.RawMessage) (any, error) {
 	stats["categories"] = s.enabledCategories()
 	s.refreshPending()
 	return stats, nil
+}
+
+// How often expired memories are actually deleted, as opposed to merely
+// filtered out of retrieval.
+const expirySweepEvery = time.Hour
+
+// memoryAudit returns the store's own history: what was remembered, confirmed,
+// corrected, superseded, refused or forgotten, and when. It contains no memory
+// text, so it is safe to show without unlocking anything.
+func (s *Service) memoryAudit(params json.RawMessage) (any, error) {
+	var p struct {
+		Limit int `json:"limit"`
+	}
+	_ = json.Unmarshal(params, &p)
+
+	st := s.store()
+	if st == nil {
+		return map[string]any{"enabled": false, "entries": []any{}}, nil
+	}
+	entries, err := st.Audit(p.Limit)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"enabled": true, "entries": entries}, nil
+}
+
+// sweepExpired deletes memories whose expiry has passed.
+//
+// Purge ran at startup and on demand only, so a session left running for days
+// never re-purged: retrieval filtered expired rows out, but they stayed on disk
+// indefinitely, which is not what "expires" means to the person who set it.
+// Called from the health loop, which only runs while the assistant is on.
+func (s *Service) sweepExpired() {
+	st := s.store()
+	if st == nil {
+		return
+	}
+	s.mu.Lock()
+	due := time.Since(s.lastSweep) >= expirySweepEvery
+	if due {
+		s.lastSweep = time.Now()
+	}
+	s.mu.Unlock()
+	if !due {
+		return
+	}
+
+	n, err := st.PurgeExpired()
+	if err != nil {
+		logEvent("expiry sweep failed: %v", err)
+		return
+	}
+	if n > 0 {
+		logEvent("expiry sweep removed %d memories", n)
+		s.broadcast()
+	}
 }
 
 // memoryExport returns everything as JSON. Deliberately a separate, explicit
