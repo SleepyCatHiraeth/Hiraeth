@@ -175,9 +175,15 @@ func writeKeybinds(b *strings.Builder, in Input) {
 	kb := in.Keybinds
 
 	// core ambxst binds
+	//
+	// The SECOND hardcoded list of bind names: CompositorTomlWriter.qml has one
+	// too, and a bind must appear in both or it is dropped without a word. That
+	// cost an afternoon on push-to-talk -- the bind was registered in the action
+	// catalogue, the config adapter, the QML catalogue and the QML writer's
+	// list, gathered correctly, sent correctly, and discarded here.
 	for _, name := range []string{
-		"launcher", "dashboard", "assistant", "turret", "clipboard", "emoji",
-		"notes", "tmux", "wallpapers",
+		"launcher", "dashboard", "assistant", "turret", "turretRelease",
+		"clipboard", "emoji", "notes", "tmux", "wallpapers",
 	} {
 		if bind, ok := kb.Ambxst[name]; ok {
 			writeCoreBind(b, bind, in.Layout)
