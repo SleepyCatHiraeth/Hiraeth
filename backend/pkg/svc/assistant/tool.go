@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -147,9 +148,22 @@ func (s *Service) invoke(ctx context.Context, name string, args map[string]any, 
 		s.auditTool(name, "refused", "invalid arguments")
 		return "", err
 	}
-	if t.RequiresApproval && !approved {
-		s.auditTool(name, "refused", "needs approval")
-		return "", fmt.Errorf("tool %q needs your approval before it can run", name)
+	if t.RequiresApproval {
+		// Refused outright, and the boolean is ignored.
+		//
+		// `approved` arrives in the same unauthenticated JSON request that asks
+		// to run the tool. The socket is 0600 so the caller is this user, but
+		// nothing proves a human decided anything, or that a trusted UI sent
+		// it -- any process running as the user could set it. Calling that an
+		// approval boundary would be a lie told in a security-critical place.
+		//
+		// So until there is a real consent path -- a short-lived token minted
+		// by the review card, bound to this one call -- a tool that needs
+		// approval cannot run at all. No tool currently sets this, so nothing
+		// is lost today except the pretence.
+		_ = approved
+		s.auditTool(name, "refused", "approval path not built")
+		return "", fmt.Errorf("tool %q requires approval, and no approval path exists yet", name)
 	}
 
 	if t.Run != nil {
@@ -201,8 +215,12 @@ func (s *Service) invoke(ctx context.Context, name string, args map[string]any, 
 		return "", fmt.Errorf("tool %q took longer than %s", name, timeout)
 	}
 	if err != nil {
+		// The exit status only. A tool's stderr is output: it can carry its
+		// arguments, a file it was reading, a recipient address, or model text,
+		// and this journal is meant to hold none of those. The captured buffer
+		// exists for a developer at a terminal, not for the log.
 		s.auditTool(name, "failed", "exit error")
-		logWorker("tool:"+name, time.Since(started), err, stderr.String())
+		logWorker("tool:"+name, time.Since(started), err, "")
 		return "", fmt.Errorf("tool %q failed: %w", name, err)
 	}
 
@@ -228,7 +246,15 @@ func timeoutOf(t Tool) time.Duration {
 	return 10 * time.Second
 }
 
+var toolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
 func (s *Service) auditTool(name, decision, reason string) {
+	// A name that is not a declared identifier is caller-controlled text, and
+	// logging it verbatim let an IPC caller write whatever it liked into the
+	// journal -- a secret, or a newline and a forged second line.
+	if !toolNamePattern.MatchString(name) {
+		name = "<invalid name>"
+	}
 	if reason != "" {
 		logEvent("tool %s: %s (%s)", name, decision, reason)
 		return
@@ -251,6 +277,16 @@ func (s *Service) toolsList(json.RawMessage) (any, error) {
 }
 
 func (s *Service) toolsInvoke(params json.RawMessage) (any, error) {
+	// The master switch governs anything the assistant DOES, not just what it
+	// says. Leaving action endpoints live while the UI shows "off" is exactly
+	// the surprise that switch exists to prevent.
+	s.mu.Lock()
+	enabled := s.cfg.Enabled
+	s.mu.Unlock()
+	if !enabled {
+		return nil, fmt.Errorf("the turret assistant is off; turn it on in Settings")
+	}
+
 	var p struct {
 		Name     string         `json:"name"`
 		Args     map[string]any `json:"args"`

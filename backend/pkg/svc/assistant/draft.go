@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Email drafting. Stage 4, and deliberately only half of it.
@@ -41,7 +42,11 @@ const maxDraftBody = 64 << 10
 // line breaks.
 func headerSafe(field, value string) error {
 	for _, r := range value {
-		if r == '\n' || r == '\r' || r == 0x2028 || r == 0x2029 || (r < 0x20 && r != '\t') || r == 0x7f {
+		// unicode.IsControl covers C0 AND C1 -- the first version missed
+		// U+0080..U+009F, and U+0085 NEL in particular is treated as a line
+		// break by Unicode-aware consumers, so it reopened header injection
+		// against anything that is not byte-oriented.
+		if unicode.IsControl(r) && r != '\t' || r == 0x2028 || r == 0x2029 {
 			return fmt.Errorf("%s contains a control character (%U); refusing rather than guessing what was meant", field, r)
 		}
 	}
@@ -85,12 +90,30 @@ func (s *Service) draftsDir() string {
 
 // draftEmail writes an RFC 5322 message and returns where it went.
 func (s *Service) draftEmail(params json.RawMessage) (any, error) {
+	// Drafting is something the assistant DOES, so the master switch governs it.
+	s.mu.Lock()
+	enabled := s.cfg.Enabled
+	s.mu.Unlock()
+	if !enabled {
+		return nil, fmt.Errorf("the turret assistant is off; turn it on in Settings")
+	}
+
 	var p struct {
 		To      string `json:"to"`
 		Subject string `json:"subject"`
 		Body    string `json:"body"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+
+	// Validated BEFORE trimming. Trimming first silently removed a trailing
+	// CRLF or NEL instead of refusing it, which turns a refusal rule into a
+	// cleanup rule -- and the whole point is that the user finds out.
+	if err := headerSafe("recipient", p.To); err != nil {
+		return nil, err
+	}
+	if err := headerSafe("subject", p.Subject); err != nil {
 		return nil, err
 	}
 
@@ -139,13 +162,32 @@ func (s *Service) draftEmail(params json.RawMessage) (any, error) {
 	b.WriteString("Content-Transfer-Encoding: 8bit\r\n")
 	b.WriteString("X-Ambxst-Draft: turret-assistant\r\n")
 	b.WriteString("\r\n")
-	b.WriteString(strings.ReplaceAll(p.Body, "\n", "\r\n"))
+	// Normalise to LF first. Replacing every LF with CRLF turned an existing
+	// \r\n into \r\r\n, so pasted Windows correspondence came out malformed.
+	body := strings.ReplaceAll(p.Body, "\r\n", "\n")
+	body = strings.ReplaceAll(body, "\r", "\n")
+	b.WriteString(strings.ReplaceAll(body, "\n", "\r\n"))
 	if !strings.HasSuffix(p.Body, "\n") {
 		b.WriteString("\r\n")
 	}
 
-	// 0600, like every other file this assistant owns.
-	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+	// O_EXCL, and never through a symlink.
+	//
+	// os.WriteFile truncates whatever is already there, follows a final
+	// symlink, and leaves an existing file's mode alone. So two drafts sharing
+	// a slug in one second silently destroyed the first, an existing 0644
+	// target stayed world-readable after being overwritten, and a predictable
+	// symlink would have sent correspondence outside the drafts directory --
+	// which the lexical path check cannot see.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("could not create the draft (a file may already exist at %s): %w", path, err)
+	}
+	if _, err := f.WriteString(b.String()); err != nil {
+		f.Close()
+		return nil, err
+	}
+	if err := f.Close(); err != nil {
 		return nil, err
 	}
 

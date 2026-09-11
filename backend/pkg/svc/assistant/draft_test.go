@@ -16,6 +16,7 @@ func draftService(t *testing.T) *Service {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	s := &Service{state: StateIdle}
 	s.cfg = defaultConfig()
+	s.cfg.Enabled = true // drafting is an action, so the master switch gates it
 	return s
 }
 
@@ -70,6 +71,9 @@ func TestDraftRefusesHeaderInjection(t *testing.T) {
 		"a@b.com\nBcc: attacker@elsewhere.test",
 		"a@b.com\rReply-To: attacker@elsewhere.test",
 		"a@b.com\x00",
+		"a@b.com\u0085X-Injected: yes", // NEL: a line break to Unicode-aware readers
+		"a@b.com\u2028X-Injected: yes",
+		"a@b.com\r\n", // trailing, and must be refused not trimmed
 		"a@b.com Bcc: attacker@elsewhere.test",
 	}
 	for _, to := range injections {
