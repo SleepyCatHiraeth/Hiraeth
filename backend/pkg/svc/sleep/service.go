@@ -3,6 +3,7 @@ package sleep
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 
@@ -72,17 +73,23 @@ func (s *Service) watch() {
 	); err != nil {
 		return
 	}
-	if err := s.conn.AddMatchSignal(
-		dbus.WithMatchInterface("org.freedesktop.login1.Session"),
-		dbus.WithMatchMember("Lock"),
-	); err != nil {
-		return
-	}
-	if err := s.conn.AddMatchSignal(
-		dbus.WithMatchInterface("org.freedesktop.login1.Session"),
-		dbus.WithMatchMember("Unlock"),
-	); err != nil {
-		return
+	// Scoped to THIS session's object path. Session.Lock is emitted on a
+	// session object, and a match with only interface and member filters
+	// receives it for every session on the machine -- so a second user, or a
+	// second session of the same user, running `loginctl lock-session` would
+	// have locked the owner's active desktop.
+	sessionPath := ourSessionPath(s.conn)
+	for _, member := range []string{"Lock", "Unlock"} {
+		opts := []dbus.MatchOption{
+			dbus.WithMatchInterface("org.freedesktop.login1.Session"),
+			dbus.WithMatchMember(member),
+		}
+		if sessionPath != "" {
+			opts = append(opts, dbus.WithMatchObjectPath(sessionPath))
+		}
+		if err := s.conn.AddMatchSignal(opts...); err != nil {
+			return
+		}
 	}
 
 	go func() {
@@ -106,6 +113,12 @@ func (s *Service) watch() {
 					}
 				}
 			case "org.freedesktop.login1.Session.Lock":
+				// Checked again here: if the session path could not be
+				// resolved the match above is machine-wide, and locking the
+				// wrong desktop is worse than missing a lock.
+				if sessionPath != "" && sig.Path != sessionPath {
+					continue
+				}
 				s.broadcast("LOCK")
 				runDetached(s.command(func(c *Service) string { return c.lockCMD }))
 			case "org.freedesktop.login1.Session.Unlock":
@@ -178,6 +191,23 @@ func (s *Service) subscribe(sub *ipc.Subscriber) {
 		}
 	}
 	s.subsMu.Unlock()
+}
+
+// ourSessionPath resolves this process's logind session, or "" if it cannot be
+// determined.
+func ourSessionPath(conn *dbus.Conn) dbus.ObjectPath {
+	mgr := conn.Object("org.freedesktop.login1", dbus.ObjectPath("/org/freedesktop/login1"))
+	var path dbus.ObjectPath
+	if id := os.Getenv("XDG_SESSION_ID"); id != "" {
+		if err := mgr.Call("org.freedesktop.login1.Manager.GetSession", 0, id).Store(&path); err == nil {
+			return path
+		}
+	}
+	if err := mgr.Call("org.freedesktop.login1.Manager.GetSessionByPID", 0,
+		uint32(os.Getpid())).Store(&path); err != nil {
+		return ""
+	}
+	return path
 }
 
 func runDetached(cmd string) {

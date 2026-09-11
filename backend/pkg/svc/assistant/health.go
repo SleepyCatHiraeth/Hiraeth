@@ -297,12 +297,20 @@ func recoverOrphanedDaemon(out string) bool {
 	if !strings.Contains(out, "Invalid passkey") {
 		return false
 	}
-	logEvent("llmster is running with a passkey its CLI cannot use; restarting it")
-	cmd := exec.Command("pkill", "-x", "llmster")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	_ = cmd.Run()
-	time.Sleep(2 * time.Second)
-	return true
+	// Reported, not killed.
+	//
+	// The first version ran `pkill -x llmster`, which is name-wide: it would
+	// have killed an LM Studio the user had started for something else, along
+	// with whatever it was serving, on the strength of a stale CLI passkey. An
+	// invalid passkey says the CLI cannot talk to that process. It does not say
+	// the process is useless, and it certainly does not say we started it.
+	//
+	// So this explains the situation and leaves the decision to the user, whose
+	// server it may be. The recovery is one command and it is in the message.
+	logEvent("llmster is running with a passkey this CLI cannot use. " +
+		"Nothing here can reach it, and it may not be ours to stop. " +
+		"To recover: pkill -x llmster && lms daemon up")
+	return false
 }
 
 // lmsPath finds the LM Studio CLI without requiring it on PATH: the daemon does
