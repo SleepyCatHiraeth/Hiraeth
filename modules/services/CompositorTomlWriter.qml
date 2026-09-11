@@ -213,7 +213,11 @@ Singleton {
 
         const ambxstMap = adapter.ambxst || {};
         const ambxst = {};
-        for (const k of ["launcher", "dashboard", "assistant", "turret", "clipboard", "emoji", "notes", "tmux", "wallpapers"]) {
+        // This list is the set of ambxst binds that reach the compositor. A name
+        // missing from it is silently dropped no matter how correctly it is
+        // configured, which is how push-to-talk first failed: the bind existed,
+        // resolved to a real action, and never arrived. Add new binds here.
+        for (const k of ["launcher", "dashboard", "assistant", "turret", "turretRelease", "clipboard", "emoji", "notes", "tmux", "wallpapers"]) {
             if (ambxstMap[k])
                 ambxst[k] = {
                     modifiers: ambxstMap[k].modifiers || [],

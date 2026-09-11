@@ -46,6 +46,9 @@ type turn struct {
 	wavPath  string
 	stopOnce sync.Once
 	recDone  chan struct{}
+
+	// When listening began, for the push-to-talk release rule below.
+	startedAt time.Time
 }
 
 func (s *Service) startTurn() error {
@@ -118,6 +121,7 @@ func (s *Service) startTurn() error {
 		return fmt.Errorf("the turret assistant is off; turn it on in Settings")
 	}
 	t.cfg = cfg
+	t.startedAt = time.Now()
 	s.turn = t
 	s.transcript = ""
 	s.response = ""

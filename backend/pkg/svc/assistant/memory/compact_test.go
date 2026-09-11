@@ -1,6 +1,8 @@
 package memory
 
 import (
+	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -28,7 +30,7 @@ func TestCompactNeverPrunesConfirmedMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := s.Compact(compactPolicy())
+	result, err := s.Compact(context.Background(), compactPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +49,7 @@ func TestCompactNeverPrunesInstructions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := s.Compact(compactPolicy())
+	result, err := s.Compact(context.Background(), compactPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +69,7 @@ func TestCompactNeverPrunesQuarantinedMemory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := s.Compact(compactPolicy())
+	result, err := s.Compact(context.Background(), compactPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +99,7 @@ func TestCompactPrunesMemoryFTSAndEmbedding(t *testing.T) {
 	assertRowCount(t, s, `SELECT COUNT(*) FROM memory_fts WHERE rowid = ?`, rowID, 1)
 	assertRowCount(t, s, `SELECT COUNT(*) FROM embedding WHERE memory_id = ?`, it.ID, 1)
 
-	result, err := s.Compact(compactPolicy())
+	result, err := s.Compact(context.Background(), compactPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +144,7 @@ func TestCompactDryRunReportsWithoutChanges(t *testing.T) {
 
 	policy := compactPolicy()
 	policy.DryRun = true
-	dry, err := s.Compact(policy)
+	dry, err := s.Compact(context.Background(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +162,7 @@ func TestCompactDryRunReportsWithoutChanges(t *testing.T) {
 	}
 
 	policy.DryRun = false
-	live, err := s.Compact(policy)
+	live, err := s.Compact(context.Background(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +188,7 @@ func TestCompactUsesLastAccessTime(t *testing.T) {
 
 	policy := compactPolicy()
 	policy.RequireUnused = false
-	result, err := s.Compact(policy)
+	result, err := s.Compact(context.Background(), policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +208,7 @@ func TestCompactOnClosedStoreReturnsError(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Compact(DefaultCompactPolicy()); err == nil {
+	if _, err := s.Compact(context.Background(), DefaultCompactPolicy()); err == nil {
 		t.Fatal("Compact on a closed store must return an error")
 	}
 }
@@ -246,7 +248,7 @@ func TestCompactLeavesCandidatesForReview(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := s.Compact(DefaultCompactPolicy())
+	res, err := s.Compact(context.Background(), DefaultCompactPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,5 +259,50 @@ func TestCompactLeavesCandidatesForReview(t *testing.T) {
 	}
 	if _, err := s.Get(it.ID); err != nil {
 		t.Errorf("the candidate should still exist: %v", err)
+	}
+}
+
+// Shutdown gives background work a bounded wait and then closes the store,
+// which needs the same lock compaction holds. An uncancellable compaction
+// therefore made that bound a fiction.
+func TestCompactStopsOnCancellation(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	old := time.Now().Add(-365 * 24 * time.Hour).Unix()
+	for i := 0; i < 20; i++ {
+		it := &Item{
+			Category: CatFact, Content: fmt.Sprintf("stale %d", i), SourceType: "conversation",
+			Confidence: 0.1, Importance: 0.1, Sensitivity: "none", Language: "en",
+			TrustLevel: TrustDerived, Status: StatusActive,
+		}
+		if err := s.Put(it); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.db.Exec(`UPDATE memory SET created_at = ?, last_accessed_at = NULL WHERE id = ?`, old, it.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := s.Compact(ctx, DefaultCompactPolicy())
+	if err != nil {
+		t.Fatalf("a cancelled compaction must not error: %v", err)
+	}
+	if res.Pruned != 0 {
+		t.Errorf("pruned %d with an already-cancelled context, want 0", res.Pruned)
+	}
+	// And the work is still there for the next sweep.
+	left, err := s.List(StatusActive, "", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 20 {
+		t.Errorf("%d memories survived, want all 20", len(left))
 	}
 }

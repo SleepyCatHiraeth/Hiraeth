@@ -465,7 +465,11 @@ func (s *Service) memoryCompact(params json.RawMessage) (any, error) {
 
 	policy := memory.DefaultCompactPolicy()
 	policy.DryRun = p.DryRun
-	res, err := st.Compact(policy)
+	// Bounded: a manual compaction is an IPC handler, and per-service
+	// serialisation means a long one blocks the rest of the assistant's methods.
+	ctx, done := s.backgroundContext(2 * time.Minute)
+	defer done()
+	res, err := st.Compact(ctx, policy)
 	if err != nil {
 		return nil, err
 	}
@@ -510,7 +514,9 @@ func (s *Service) sweepExpired() {
 	// Compaction rides the same sweep rather than adding a second timer: both
 	// are "give back space nobody is using", both are cheap, and one wakeup is
 	// cheaper than two.
-	res, cerr := st.Compact(memory.DefaultCompactPolicy())
+	sweepCtx, sweepDone := s.backgroundContext(5 * time.Minute)
+	res, cerr := st.Compact(sweepCtx, memory.DefaultCompactPolicy())
+	sweepDone()
 	if cerr != nil {
 		logEvent("compaction failed: %v", cerr)
 	} else if res.Pruned > 0 {

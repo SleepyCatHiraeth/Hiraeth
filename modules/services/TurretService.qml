@@ -72,6 +72,16 @@ Singleton {
         });
     }
 
+    // Push-to-talk: the key came up.
+    //
+    // Hold to talk, release to send. A quick tap latches instead, leaving the
+    // microphone open so the same key still works as a press-twice toggle --
+    // the backend owns that rule, because it is the only side that knows when
+    // listening actually began.
+    function releaseKey() {
+        BackendService.call("assistant.release", {}, () => {});
+    }
+
     function cancel() {
         BackendService.call("assistant.cancel", {});
     }

@@ -1568,6 +1568,15 @@ Singleton {
                 property string key: "A"
                 property var action: ({ "id": "ambxst.turret", "args": {} })
             }
+            // The key-up half of the same bind: hold to talk, release to send.
+            // Same key deliberately -- the compositor takes a press binding and
+            // a release binding on one key, and the assistant decides what a
+            // quick tap means.
+            property JsonObject turretRelease: JsonObject {
+                property list<string> modifiers: ["SUPER", "CONTROL"]
+                property string key: "A"
+                property var action: ({ "id": "ambxst.turret.release", "args": {} })
+            }
             property JsonObject clipboard: JsonObject {
                 property list<string> modifiers: ["SUPER"]
                 property string key: "V"
@@ -1653,6 +1662,7 @@ Singleton {
                     "dashboard": { "modifiers": ["SUPER"], "key": "D", "action": { "id": "ambxst.dashboard", "args": {} } },
                     "assistant": { "modifiers": ["SUPER"], "key": "A", "action": { "id": "ambxst.assistant", "args": {} } },
                     "turret": { "modifiers": ["SUPER", "CONTROL"], "key": "A", "action": { "id": "ambxst.turret", "args": {} } },
+                    "turretRelease": { "modifiers": ["SUPER", "CONTROL"], "key": "A", "action": { "id": "ambxst.turret.release", "args": {} } },
                     "clipboard": { "modifiers": ["SUPER"], "key": "V", "action": { "id": "ambxst.clipboard", "args": {} } },
                     "emoji": { "modifiers": ["SUPER"], "key": "PERIOD", "action": { "id": "ambxst.emoji", "args": {} } },
                     "notes": { "modifiers": ["SUPER"], "key": "N", "action": { "id": "ambxst.notes", "args": {} } },

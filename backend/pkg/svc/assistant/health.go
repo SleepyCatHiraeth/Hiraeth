@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -116,8 +117,16 @@ func (s *Service) ensureServer(ctx context.Context) bool {
 
 	s.health.mu.Lock()
 	if s.health.starting {
+		// Someone else is already starting it. That is not a failure, and
+		// reporting it as one put "model server failed to start" in the log
+		// twice in the same second while a perfectly good start was in
+		// progress. Wait for it instead of racing it -- two concurrent
+		// `lms daemon up` invocations rewrite the CLI passkey file and orphan
+		// whichever daemon got there first, which is exactly how this machine
+		// ended up with a running llmster that its own CLI could not
+		// authenticate to.
 		s.health.mu.Unlock()
-		return false
+		return s.waitForStart(ctx)
 	}
 	s.health.starting = true
 	s.health.mu.Unlock()
@@ -139,7 +148,11 @@ func (s *Service) ensureServer(ctx context.Context) bool {
 	// on a status check that could race.
 	up := exec.CommandContext(ctx, lms, "daemon", "up")
 	up.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	_ = up.Run()
+	if out, err := up.CombinedOutput(); err != nil && recoverOrphanedDaemon(string(out)) {
+		retry := exec.CommandContext(ctx, lms, "daemon", "up")
+		retry.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		_ = retry.Run()
+	}
 
 	cmd := exec.CommandContext(ctx, lms, "server", "start")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -251,6 +264,45 @@ func (s *Service) ensureModelsLoaded(ctx context.Context, cfg Config) {
 	s.health.mu.Lock()
 	s.health.modelsReady = true
 	s.health.mu.Unlock()
+}
+
+// waitForStart blocks while another caller brings the server up.
+func (s *Service) waitForStart(ctx context.Context) bool {
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(500 * time.Millisecond):
+		}
+		s.health.mu.Lock()
+		starting := s.health.starting
+		s.health.mu.Unlock()
+		if !starting {
+			return s.refreshHealthCtx(ctx, true)
+		}
+	}
+}
+
+// recoverOrphanedDaemon deals with an llmster the CLI cannot talk to.
+//
+// `lms daemon up` rewrites ~/.lmstudio/.internal/lms-key-2 on every run, so a
+// second invocation orphans the daemon the first one started: the process keeps
+// running and every CLI call then fails with "Invalid passkey for lms CLI
+// client". Nothing recovers from that on its own, and the assistant reports only
+// that the server would not start -- which is true and useless.
+//
+// The orphan is useless to everyone, including whoever started it, because no
+// CLI can reach it any more. So it is killed and the caller retries once.
+func recoverOrphanedDaemon(out string) bool {
+	if !strings.Contains(out, "Invalid passkey") {
+		return false
+	}
+	logEvent("llmster is running with a passkey its CLI cannot use; restarting it")
+	cmd := exec.Command("pkill", "-x", "llmster")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	_ = cmd.Run()
+	time.Sleep(2 * time.Second)
+	return true
 }
 
 // lmsPath finds the LM Studio CLI without requiring it on PATH: the daemon does

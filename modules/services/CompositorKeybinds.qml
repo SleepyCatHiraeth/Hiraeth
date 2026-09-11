@@ -54,6 +54,7 @@ QtObject {
                 dashboard: cloneKeybind(ambxst.dashboard),
                 assistant: cloneKeybind(ambxst.assistant),
                 turret: cloneKeybind(ambxst.turret),
+                turretRelease: cloneKeybind(ambxst.turretRelease),
                 clipboard: cloneKeybind(ambxst.clipboard),
                 emoji: cloneKeybind(ambxst.emoji),
                 notes: cloneKeybind(ambxst.notes),
@@ -169,6 +170,7 @@ QtObject {
                 payload.unbinds.push(makeUnbindTarget(previousAmbxstBinds.ambxst.dashboard));
                 payload.unbinds.push(makeUnbindTarget(previousAmbxstBinds.ambxst.assistant));
                 payload.unbinds.push(makeUnbindTarget(previousAmbxstBinds.ambxst.turret));
+                payload.unbinds.push(makeUnbindTarget(previousAmbxstBinds.ambxst.turretRelease));
                 payload.unbinds.push(makeUnbindTarget(previousAmbxstBinds.ambxst.clipboard));
                 payload.unbinds.push(makeUnbindTarget(previousAmbxstBinds.ambxst.emoji));
                 payload.unbinds.push(makeUnbindTarget(previousAmbxstBinds.ambxst.notes));

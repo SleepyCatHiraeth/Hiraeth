@@ -187,15 +187,16 @@ func (s *Service) Register(srv *ipc.Server) {
 	srv.Register(&ipc.Service{
 		Name: "assistant",
 		Methods: map[string]ipc.HandlerFunc{
-			"toggle": s.toggle,
-			"cancel": s.cancel,
-			"state":  s.stateMethod,
-			"check":  s.check,
-			"config": s.getConfig,
-			"set":    s.setConfig,
-			"voices": s.listVoices,
-			"say":    s.say,
-			"health": s.healthMethod,
+			"toggle":  s.toggle,
+			"release": s.keyReleased,
+			"cancel":  s.cancel,
+			"state":   s.stateMethod,
+			"check":   s.check,
+			"config":  s.getConfig,
+			"set":     s.setConfig,
+			"voices":  s.listVoices,
+			"say":     s.say,
+			"health":  s.healthMethod,
 
 			"memory.list":    s.memoryList,
 			"memory.pending": s.memoryPending,
@@ -324,6 +325,34 @@ func (s *Service) toggle(_ json.RawMessage) (any, error) {
 		}
 		return map[string]any{"action": "listening"}, nil
 	}
+}
+
+// release is the key-up half of push-to-talk.
+//
+// Hold to talk, release to send. A quick tap instead latches: releasing within
+// the threshold leaves the microphone open so the key behaves as a toggle, and
+// a second press ends it. Without that, a tap would open and immediately close
+// the microphone and the turn would die with "no audio was captured" -- which
+// is what a pure press-and-hold binding does to anyone who taps the key out of
+// habit. Both gestures reach the same state machine.
+const pushToTalkLatch = 400 * time.Millisecond
+
+func (s *Service) keyReleased(_ json.RawMessage) (any, error) {
+	s.mu.Lock()
+	active := s.turn
+	state := s.state
+	s.mu.Unlock()
+
+	if active == nil || state != StateListening {
+		// Nothing is listening: the release belongs to a press that started
+		// something else, or to an interrupt. Not an error.
+		return map[string]any{"action": "ignored"}, nil
+	}
+	if time.Since(active.startedAt) < pushToTalkLatch {
+		return map[string]any{"action": "latched"}, nil
+	}
+	active.endCapture()
+	return map[string]any{"action": "stopped_listening"}, nil
 }
 
 func (s *Service) cancel(_ json.RawMessage) (any, error) {

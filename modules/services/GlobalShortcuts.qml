@@ -49,6 +49,8 @@ QtObject {
             case "wallpapers": toggleDashboardTab(1); break;
             case "assistant": toggleAssistant(); break;
             case "turret": TurretService.activate(); break;
+            // Key-up half of push-to-talk; see TurretService.releaseKey.
+            case "turret-release": TurretService.releaseKey(); break;
             case "dashboard-widgets": toggleDashboardTab(0); break;
             case "dashboard-wallpapers": toggleDashboardTab(1); break;
             case "dashboard-kanban": toggleDashboardTab(2); break;

@@ -45,6 +45,10 @@ var catalog = []ActionSpec{
 	{ID: "ambxst.dashboard", Label: "Open Dashboard", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run dashboard"},
 	{ID: "ambxst.assistant", Label: "Open Assistant", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run assistant"},
 	{ID: "ambxst.turret", Label: "Open Turret Assistant", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run turret"},
+	// The key-up half of push-to-talk. Bound to the same key as ambxst.turret
+	// with the release flag, so holding talks and releasing sends; see the
+	// latch rule in the assistant service for what a quick tap does.
+	{ID: "ambxst.turret.release", Label: "Turret Assistant (key up)", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run turret-release", Flags: "r"},
 	{ID: "ambxst.clipboard", Label: "Open Clipboard", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run clipboard"},
 	{ID: "ambxst.emoji", Label: "Open Emoji", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run emoji"},
 	{ID: "ambxst.notes", Label: "Open Notes", Category: "Ambxst", Dispatcher: "exec", Argument: "ambxst run notes"},

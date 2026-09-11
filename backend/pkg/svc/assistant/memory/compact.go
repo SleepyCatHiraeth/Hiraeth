@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -34,7 +35,15 @@ type CompactResult struct {
 	Removed []string // ids, for the audit trail and for tests
 }
 
-func (s *Store) Compact(p CompactPolicy) (CompactResult, error) {
+// Compact prunes stale memories. Cancellable, because it is not.
+//
+// It previously took no context and held the store lock across every delete, so
+// a large compaction ran past both of shutdown's five-second caps and then
+// blocked `Close`, which needs the same lock. Shutdown advertised a bound it
+// could not keep. Deletes now stop at a cancelled context and commit what was
+// already done, which is safe: pruning is idempotent and the next sweep
+// finishes the rest.
+func (s *Store) Compact(ctx context.Context, p CompactPolicy) (CompactResult, error) {
 	result := CompactResult{Removed: []string{}}
 	if p.MaxAge <= 0 {
 		return result, fmt.Errorf("compact max age must be positive")
@@ -101,7 +110,16 @@ func (s *Store) Compact(p CompactPolicy) (CompactResult, error) {
 	if p.DryRun {
 		return result, nil
 	}
+	done := 0
 	for _, id := range result.Removed {
+		if err := ctx.Err(); err != nil {
+			// Keep what has been deleted so far rather than rolling back an
+			// hour of work; report only what actually went.
+			result.Removed = result.Removed[:done]
+			result.Pruned = done
+			result.Kept = result.Scanned - done
+			break
+		}
 		n, err := deleteMemory(tx, id)
 		if err != nil {
 			return CompactResult{}, err
@@ -109,6 +127,7 @@ func (s *Store) Compact(p CompactPolicy) (CompactResult, error) {
 		if n != 1 {
 			return CompactResult{}, fmt.Errorf("compact selected missing memory %s", id)
 		}
+		done++
 	}
 	if err := tx.Commit(); err != nil {
 		return CompactResult{}, err
