@@ -3,6 +3,7 @@ package ipc
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"net"
 	"sync"
 )
@@ -36,6 +37,12 @@ func (s *Server) streamSubscribe(conn net.Conn, w *bufio.Writer, req *Request) {
 		Events: make(chan ServiceEvent, 256),
 		stop:   make(chan struct{}),
 	}
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		_, _ = io.Copy(io.Discard, conn)
+		sub.Stop()
+	}()
 
 	// Stream events in a goroutine. On dead conn it stops the sub.
 	done := make(chan struct{})
@@ -80,6 +87,8 @@ func (s *Server) streamSubscribe(conn net.Conn, w *bufio.Writer, req *Request) {
 	// observe sub.Stop via Select in their own goroutines.
 	<-done
 	sub.Stop()
+	conn.Close()
+	<-readDone
 	wg.Wait()
 }
 
