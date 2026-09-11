@@ -206,8 +206,13 @@ func (s *Service) Register(srv *ipc.Server) {
 			"memory.stats":   s.memoryStats,
 			"memory.audit":   s.memoryAudit,
 			"memory.compact": s.memoryCompact,
-			"memory.export":  s.memoryExport,
-			"memory.import":  s.memoryImport,
+
+			"draft.email": s.draftEmail,
+
+			"tools.list":    s.toolsList,
+			"tools.invoke":  s.toolsInvoke,
+			"memory.export": s.memoryExport,
+			"memory.import": s.memoryImport,
 		},
 		Subscribe: s.subscribe,
 	})
