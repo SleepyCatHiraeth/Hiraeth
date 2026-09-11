@@ -2,9 +2,23 @@ package compositor
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+var ambxstBindNames = []string{
+	"launcher", "dashboard", "assistant", "turret", "turretRelease",
+	"clipboard", "emoji", "notes", "tmux", "wallpapers",
+}
+
+var systemBindNames = []string{
+	"overview", "powermenu", "config", "lockscreen", "tools",
+	"screenshot", "screenrecord", "lens", "reload", "quit",
+}
+
+var reportedUnknownBinds sync.Map
 
 // Render builds the axctl.toml content for the given input. When gameMode
 // is active the appearance section is overridden with performance-first
@@ -174,31 +188,12 @@ func formatShadowColors(name string, opacity float64) string {
 func writeKeybinds(b *strings.Builder, in Input) {
 	kb := in.Keybinds
 
-	// core ambxst binds
-	//
-	// The SECOND hardcoded list of bind names: CompositorTomlWriter.qml has one
-	// too, and a bind must appear in both or it is dropped without a word. That
-	// cost an afternoon on push-to-talk -- the bind was registered in the action
-	// catalogue, the config adapter, the QML catalogue and the QML writer's
-	// list, gathered correctly, sent correctly, and discarded here.
-	for _, name := range []string{
-		"launcher", "dashboard", "assistant", "turret", "turretRelease",
-		"clipboard", "emoji", "notes", "tmux", "wallpapers",
-	} {
-		if bind, ok := kb.Ambxst[name]; ok {
-			writeCoreBind(b, bind, in.Layout)
-		}
-	}
+	// Go owns bind acceptance because it also owns action resolution. The QML
+	// client forwards every configured bind, including adapter defaults.
+	writeNamedBinds(b, "ambxst", kb.Ambxst, ambxstBindNames, in.Layout)
 
-	// system binds (nested under ambxst.system in binds.json)
-	for _, name := range []string{
-		"overview", "powermenu", "config", "lockscreen", "tools",
-		"screenshot", "screenrecord", "lens", "reload", "quit",
-	} {
-		if bind, ok := kb.System[name]; ok {
-			writeCoreBind(b, bind, in.Layout)
-		}
-	}
+	// System binds remain a separate group nested under ambxst.system.
+	writeNamedBinds(b, "system", kb.System, systemBindNames, in.Layout)
 
 	// custom binds
 	for _, bind := range kb.Custom {
@@ -216,6 +211,25 @@ func writeKeybinds(b *strings.Builder, in Input) {
 				}
 				pushKeybind(b, keySpec.Modifiers, keySpec.Key, resolved.Dispatcher, resolved.Argument, resolved.Flags)
 			}
+		}
+	}
+}
+
+func writeNamedBinds(b *strings.Builder, group string, binds map[string]Keybind, names []string, layout string) {
+	known := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		known[name] = struct{}{}
+		if bind, ok := binds[name]; ok {
+			writeCoreBind(b, bind, layout)
+		}
+	}
+	for name := range binds {
+		if _, ok := known[name]; ok {
+			continue
+		}
+		warningKey := group + "\x00" + name
+		if _, loaded := reportedUnknownBinds.LoadOrStore(warningKey, struct{}{}); !loaded {
+			log.Printf("[compositor] ignoring unknown %s bind %q", group, name)
 		}
 	}
 }

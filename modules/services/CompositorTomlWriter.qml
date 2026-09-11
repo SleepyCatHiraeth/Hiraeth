@@ -210,32 +210,51 @@ Singleton {
         }
 
         const toAction = (a) => a ? { id: a.id, args: a.args || {} } : null;
+        const toBind = (bind) => ({
+            modifiers: bind.modifiers || [],
+            key: bind.key || "",
+            action: toAction(bind.action),
+        });
+
+        let configuredAmbxst = {};
+        try {
+            const configured = JSON.parse(Config.keybindsLoader.text() || "{}");
+            configuredAmbxst = configured.ambxst || {};
+        } catch (e) {
+            console.warn("CompositorTomlWriter:gatherKeybinds could not read binds.json:", e);
+        }
+
+        // JsonObject properties supplied only by adapter defaults are not
+        // enumerable. Merge default and file keys so defaults survive while
+        // every configured name reaches Go, where bind acceptance belongs.
+        function gatherGroup(adapterGroup, defaultGroup, configuredGroup, excludedName) {
+            const keys = [];
+            for (const group of [defaultGroup, configuredGroup, adapterGroup]) {
+                for (const key of Object.keys(group || {})) {
+                    if (key !== excludedName && keys.indexOf(key) === -1)
+                        keys.push(key);
+                }
+            }
+            const gathered = {};
+            for (const key of keys) {
+                const bind = adapterGroup && adapterGroup[key]
+                    || configuredGroup && configuredGroup[key]
+                    || defaultGroup && defaultGroup[key];
+                if (bind)
+                    gathered[key] = toBind(bind);
+            }
+            return gathered;
+        }
 
         const ambxstMap = adapter.ambxst || {};
-        const ambxst = {};
-        // This list is the set of ambxst binds that reach the compositor. A name
-        // missing from it is silently dropped no matter how correctly it is
-        // configured, which is how push-to-talk first failed: the bind existed,
-        // resolved to a real action, and never arrived. Add new binds here.
-        for (const k of ["launcher", "dashboard", "assistant", "turret", "turretRelease", "clipboard", "emoji", "notes", "tmux", "wallpapers"]) {
-            if (ambxstMap[k])
-                ambxst[k] = {
-                    modifiers: ambxstMap[k].modifiers || [],
-                    key: ambxstMap[k].key || "",
-                    action: toAction(ambxstMap[k].action),
-                };
-        }
-
-        const sys = ambxstMap.system || {};
-        const system = {};
-        for (const k of ["overview", "powermenu", "config", "lockscreen", "tools", "screenshot", "screenrecord", "lens", "reload", "quit"]) {
-            if (sys[k])
-                system[k] = {
-                    modifiers: sys[k].modifiers || [],
-                    key: sys[k].key || "",
-                    action: toAction(sys[k].action),
-                };
-        }
+        const defaults = adapter.defaultAmbxstBinds || {};
+        const ambxst = gatherGroup(ambxstMap, defaults.ambxst, configuredAmbxst, "system");
+        const system = gatherGroup(
+            ambxstMap.system || {},
+            defaults.system,
+            configuredAmbxst.system || {},
+            ""
+        );
 
         // Quickshell's JsonAdapter exposes list<var> as a QVariantList, which
         // is iterable and has .length but fails Array.isArray(). Coerce to a

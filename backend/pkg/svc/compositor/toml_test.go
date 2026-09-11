@@ -1,6 +1,10 @@
 package compositor
 
 import (
+	"bytes"
+	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -191,6 +195,126 @@ func TestRenderCoreBindsAppear(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
+	}
+}
+
+func TestRenderEmitsEveryAmbxstBindName(t *testing.T) {
+	in := sampleInput()
+	in.Keybinds = KeybindsConfig{Ambxst: make(map[string]Keybind, len(ambxstBindNames))}
+	for _, name := range ambxstBindNames {
+		in.Keybinds.Ambxst[name] = Keybind{
+			Key:    "CORE_" + name,
+			Action: Action{ID: "ambxst.dashboard"},
+		}
+	}
+
+	out := Render(in, false)
+	for _, name := range ambxstBindNames {
+		if !strings.Contains(out, `key = "CORE_`+name+`"`) {
+			t.Errorf("source bind %q was not emitted:\n%s", name, out)
+		}
+	}
+}
+
+func TestRenderReportsUnknownAmbxstBindOnce(t *testing.T) {
+	const name = "unknown-test-bind"
+	reportedUnknownBinds.Delete("ambxst\x00" + name)
+	t.Cleanup(func() { reportedUnknownBinds.Delete("ambxst\x00" + name) })
+
+	var logs bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previousWriter) })
+
+	in := sampleInput()
+	in.Keybinds = KeybindsConfig{Ambxst: map[string]Keybind{
+		name: {Key: "UNKNOWN_TEST", Action: Action{ID: "ambxst.dashboard"}},
+	}}
+	Render(in, false)
+	Render(in, false)
+
+	if strings.Count(logs.String(), name) != 1 {
+		t.Fatalf("unknown bind should be logged once with its name; got %q", logs.String())
+	}
+	if out := Render(in, false); strings.Contains(out, `key = "UNKNOWN_TEST"`) {
+		t.Fatalf("unknown bind should not be emitted:\n%s", out)
+	}
+}
+
+func TestRenderEmitsDefaultOnlyTurretBinds(t *testing.T) {
+	in := sampleInput()
+	// These resolved Config.qml defaults are absent from binds.json on the
+	// affected machine. Keep this input isolated so no other bind can satisfy
+	// either assertion.
+	in.Keybinds = KeybindsConfig{Ambxst: map[string]Keybind{
+		"turret": {
+			Modifiers: []string{"SUPER", "CONTROL"},
+			Key:       "DEFAULT_TURRET",
+			Action:    Action{ID: "ambxst.turret"},
+		},
+		"turretRelease": {
+			Modifiers: []string{"SUPER", "CONTROL"},
+			Key:       "DEFAULT_TURRET_RELEASE",
+			Action:    Action{ID: "ambxst.turret.release"},
+		},
+	}}
+
+	out := Render(in, false)
+	for _, want := range []string{
+		`key = "DEFAULT_TURRET"`,
+		`argument = "ambxst run turret"`,
+		`key = "DEFAULT_TURRET_RELEASE"`,
+		`argument = "ambxst run turret-release"`,
+		`flags = "r"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("default-only bind missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestQMLGatherForwardsDefaultsWithoutASecondBindList(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "..", "modules", "services", "CompositorTomlWriter.qml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read QML writer: %v", err)
+	}
+	body := string(raw)
+	start := strings.Index(body, "    function gatherKeybinds()")
+	if start < 0 {
+		t.Fatal("could not find gatherKeybinds in QML writer")
+	}
+	end := strings.Index(body[start:], "    // Fallback writer")
+	if end < 0 {
+		t.Fatal("could not isolate gatherKeybinds in QML writer")
+	}
+	body = body[start : start+end]
+
+	for _, name := range append(append([]string(nil), ambxstBindNames...), systemBindNames...) {
+		if strings.Contains(body, `"`+name+`"`) {
+			t.Errorf("QML gather contains second bind-name source %q", name)
+		}
+	}
+	if !strings.Contains(body, "adapter.defaultAmbxstBinds") ||
+		!strings.Contains(body, `gatherGroup(ambxstMap, defaults.ambxst, configuredAmbxst, "system")`) ||
+		!strings.Contains(body, "configuredAmbxst.system || {}") {
+		t.Fatal("QML gather must merge adapter defaults with user binds while keeping system nested")
+	}
+}
+
+func TestAddingAmbxstBindNameIsSufficientToEmit(t *testing.T) {
+	const name = "new-source-only-bind"
+	original := ambxstBindNames
+	ambxstBindNames = append(append([]string(nil), original...), name)
+	t.Cleanup(func() { ambxstBindNames = original })
+
+	in := sampleInput()
+	in.Keybinds = KeybindsConfig{Ambxst: map[string]Keybind{
+		name: {Key: "NEW_SOURCE_ONLY", Action: Action{ID: "ambxst.dashboard"}},
+	}}
+	out := Render(in, false)
+	if !strings.Contains(out, `key = "NEW_SOURCE_ONLY"`) {
+		t.Fatalf("adding one source name did not make bind emit:\n%s", out)
 	}
 }
 
