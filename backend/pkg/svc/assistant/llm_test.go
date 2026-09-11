@@ -292,3 +292,23 @@ func TestDisableClosesTheStore(t *testing.T) {
 		t.Error("store() returned a store while disabled")
 	}
 }
+
+// Time to first audio is dominated by the opening sentence. A model that starts
+// with a long clause used to mean silence for the whole clause.
+func TestClauseEndSplitsOnlyWhenWorthwhile(t *testing.T) {
+	long := "The turret assistant is ready to help you with that, and it will begin now"
+	cut := clauseEnd(long)
+	if cut < 0 {
+		t.Fatal("a long opening clause should be speakable on its own")
+	}
+	if long[cut] != ',' {
+		t.Errorf("cut at %q, want a comma", long[cut])
+	}
+
+	if got := clauseEnd("Yes, of course."); got >= 0 {
+		t.Errorf("a short clause must not be split, got a cut at %d", got)
+	}
+	if got := clauseEnd("A sentence with no clause break at all here"); got >= 0 {
+		t.Errorf("nothing to cut on, got %d", got)
+	}
+}

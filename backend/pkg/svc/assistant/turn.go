@@ -243,11 +243,28 @@ func (t *turn) run() {
 	reply := s.response
 	s.mu.Unlock()
 	if reply != "" {
+		// In memory only, and only for a complete exchange: an interrupted
+		// half-answer is not something to refer back to.
+		s.convo.record(text, reply)
 		go s.capture(text, reply)
 	}
 }
 
 func (t *turn) transcribe() (string, error) {
+	// Warm worker first: it saves the ~0.7s model load that dominated cold
+	// start. A one-shot run is kept as the fallback, because a transcriber that
+	// will not stay up must not mean an assistant that cannot hear.
+	started := time.Now()
+	text, err := t.svc.transcribeWarm(t.ctx, t.wavPath)
+	if err == nil {
+		logWorker("stt", time.Since(started), nil, "")
+		return strings.TrimSpace(text), nil
+	}
+	if t.aborted() {
+		return "", err
+	}
+	logEventEvery("stt-warm", time.Minute, "warm transcriber unavailable (%v), falling back", err)
+
 	cfg := t.svc.cfg
 	cmd := exec.CommandContext(t.ctx,
 		filepath.Join(cfg.StackDir, ".venv", "bin", "python"),
@@ -267,9 +284,9 @@ func (t *turn) transcribe() (string, error) {
 	// STT failure surfaced as an empty transcript with no explanation anywhere.
 	errBuf := newCapped(4096)
 	cmd.Stderr = errBuf
-	started := time.Now()
+	started = time.Now()
 	out, err := cmd.Output()
-	logWorker("stt", time.Since(started), err, errBuf.String())
+	logWorker("stt-oneshot", time.Since(started), err, errBuf.String())
 	if err != nil {
 		return "", fmt.Errorf("speech recognition failed: %w", err)
 	}
@@ -290,7 +307,7 @@ func (t *turn) answer(prompt, memCtx string) error {
 	spoke := false
 	var full strings.Builder
 
-	err = streamChat(t.ctx, s.cfg, prompt, memCtx, func(sentence string) {
+	err = streamChat(t.ctx, s.cfg, prompt, memCtx, s.convo.messages(), func(sentence string) {
 		if !spoke {
 			spoke = true
 			s.setState(StateSpeaking, nil)

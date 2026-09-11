@@ -95,7 +95,15 @@ func (s *Service) release() {
 	s.bg.closed = false
 	s.bg.mu.Unlock()
 
-	// 3. Close the memory store last: extraction may still have been using it.
+	// 3. Release the warm transcriber. It holds a loaded model, which is most
+	//    of what "turn it off" is meant to give back.
+	s.stt.stop()
+
+	// 4. Drop the conversation. "Off" has to mean the assistant does not
+	//    remember what was said before it was switched off.
+	s.convo.forget()
+
+	// 5. Close the memory store last: extraction may still have been using it.
 	s.mu.Lock()
 	mem := s.mem
 	s.mem = nil

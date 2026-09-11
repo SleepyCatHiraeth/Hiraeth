@@ -83,14 +83,14 @@ var errTruncated = errors.New("the model stopped mid-reply; the answer is incomp
 // every reasoning token is emitted as reasoning_content and cannot be spoken.
 // LM Studio does not honour chat_template_kwargs.enable_thinking, so the
 // in-prompt switch is the only mechanism that works here.
-func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, onSentence func(string)) error {
+func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, history []map[string]string, onSentence func(string)) error {
 	if err := checkEndpoint(cfg.Endpoint); err != nil {
 		return err
 	}
 
 	body, err := json.Marshal(map[string]any{
 		"model":       cfg.Model,
-		"messages":    buildMessages(systemPrompt, memCtx, prompt),
+		"messages":    buildMessages(systemPrompt, memCtx, history, prompt),
 		"max_tokens":  cfg.MaxTokens,
 		"temperature": 0.7,
 		"stream":      true,
@@ -116,6 +116,7 @@ func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, onSenten
 	}
 
 	var pending strings.Builder
+	first := true
 	flush := func(force bool) {
 		for {
 			text := pending.String()
@@ -125,8 +126,25 @@ func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, onSenten
 					onSentence(strings.TrimSpace(text))
 					pending.Reset()
 				}
+				// The opening sentence sets how long the user waits for any
+				// sound at all, and a model that starts with a long clause
+				// makes that wait the whole clause. Break the first one at a
+				// comma so speech starts sooner; later sentences are already
+				// arriving while the previous one plays, so they wait for a
+				// real terminator and keep their prosody.
+				if first && !force {
+					if cut := clauseEnd(text); cut > 0 {
+						onSentence(strings.TrimSpace(text[:cut+1]))
+						rest := text[cut+1:]
+						pending.Reset()
+						pending.WriteString(rest)
+						first = false
+						continue
+					}
+				}
 				return
 			}
+			first = false
 			sentence := strings.TrimSpace(text[:idx+1])
 			rest := text[idx+1:]
 			pending.Reset()
@@ -207,6 +225,25 @@ func sentenceEnd(s string) int {
 	return -1
 }
 
+// clauseEnd finds a comma, semicolon or colon far enough into the text to be
+// worth speaking on its own. The minimum length exists because "Well," or
+// "Yes," spoken alone sounds like a fault rather than a pause.
+func clauseEnd(s string) int {
+	const minClause = 40
+	if len(s) < minClause {
+		return -1
+	}
+	for i := len(s) - 1; i >= minClause; i-- {
+		switch s[i] {
+		case ',', ';', ':':
+			if i+1 < len(s) && (s[i+1] == ' ' || s[i+1] == '\n') {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 var abbrevs = []string{"mr", "mrs", "ms", "dr", "prof", "st", "etc", "e.g", "i.e", "vs", "no"}
 
 func endsWithAbbrev(s string) bool {
@@ -230,11 +267,16 @@ func endsWithAbbrev(s string) bool {
 // names them as reference data. They are never concatenated into the system
 // prompt itself: keeping them in a separate, labelled message is what stops a
 // stored sentence from reading as policy.
-func buildMessages(sys, memCtx, prompt string) []map[string]string {
+// buildMessages assembles the request: persona, retrieved memory, the recent
+// conversation, then the new question. History goes after memory so a stored
+// fact cannot be contradicted by something said earlier in the same session by
+// accident of ordering.
+func buildMessages(sys, memCtx string, history []map[string]string, prompt string) []map[string]string {
 	msgs := []map[string]string{{"role": "system", "content": sys}}
 	if strings.TrimSpace(memCtx) != "" {
 		msgs = append(msgs, map[string]string{"role": "system", "content": memCtx})
 	}
+	msgs = append(msgs, history...)
 	msgs = append(msgs, map[string]string{"role": "user", "content": prompt + " /no_think"})
 	return msgs
 }

@@ -90,7 +90,7 @@ func TestStreamChatReportsATruncatedReply(t *testing.T) {
 	cfg.Endpoint = srv.URL
 
 	var spoken []string
-	err := streamChat(context.Background(), cfg, "hello", "", func(s string) {
+	err := streamChat(context.Background(), cfg, "hello", "", nil, func(s string) {
 		spoken = append(spoken, s)
 	})
 	if !errors.Is(err, errTruncated) {
@@ -110,7 +110,7 @@ func TestStreamChatAcceptsAFinishedReply(t *testing.T) {
 
 	cfg := defaultConfig()
 	cfg.Endpoint = srv.URL
-	if err := streamChat(context.Background(), cfg, "hello", "", func(string) {}); err != nil {
+	if err := streamChat(context.Background(), cfg, "hello", "", nil, func(string) {}); err != nil {
 		t.Fatalf("a completed stream must not error: %v", err)
 	}
 }

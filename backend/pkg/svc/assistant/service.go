@@ -132,6 +132,13 @@ type Service struct {
 	seq         uint64
 	turn        *turn // non-nil while a turn is active
 
+	// Recent exchanges, in memory only and never written to disk. See
+	// history.go for why it expires.
+	convo conversation
+
+	// Warm transcriber, kept between turns. See stt.go.
+	stt sttWorker
+
 	mem             *memory.Store
 	pendingMemories int
 	speaking        bool
