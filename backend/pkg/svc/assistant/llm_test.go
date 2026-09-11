@@ -2,6 +2,11 @@ package assistant
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -310,5 +315,57 @@ func TestClauseEndSplitsOnlyWhenWorthwhile(t *testing.T) {
 	}
 	if got := clauseEnd("A sentence with no clause break at all here"); got >= 0 {
 		t.Errorf("nothing to cut on, got %d", got)
+	}
+}
+
+// max_tokens cutting an answer off mid-sentence is the most likely truncation
+// there is, and `finish_reason: "length"` was being read as a clean finish.
+func TestTokenLimitCountsAsTruncation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"It goes on and \"},\"finish_reason\":\"length\"}]}\n\n")
+		io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	cfg := defaultConfig()
+	cfg.Endpoint = srv.URL
+	err := streamChat(context.Background(), cfg, "q", "", nil, func(string) {})
+	if !errors.Is(err, errTruncated) {
+		t.Fatalf("a length-limited reply must be reported as truncated, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "length") {
+		t.Errorf("the reason should say what cut it off: %v", err)
+	}
+}
+
+// localhost was accepted by the URL check and then refused by the dial guard,
+// so a documented-valid endpoint could never connect.
+func TestLocalhostEndpointActuallyConnects(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "http://localhost:" + port
+	if err := checkURL(endpoint); err != nil {
+		t.Fatalf("localhost must be accepted: %v", err)
+	}
+	if err := probeLLM(endpoint); err != nil {
+		t.Errorf("a localhost endpoint must be reachable, got %v", err)
+	}
+}
+
+// The dial guard still refuses a name that resolves off-machine.
+func TestDialRefusesANameThatResolvesRemotely(t *testing.T) {
+	if err := localOnlyDial("tcp", "example.com:80"); err == nil {
+		t.Error("a name resolving off-machine must be refused")
+	}
+	if err := localOnlyDial("tcp", "localhost:1234"); err != nil {
+		t.Errorf("localhost must dial: %v", err)
 	}
 }

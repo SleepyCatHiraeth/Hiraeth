@@ -157,6 +157,7 @@ func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, history 
 
 	sc := newLineScanner(resp.Body)
 	complete := false
+	truncatedBy := ""
 	for sc.Scan() {
 		select {
 		case <-ctx.Done():
@@ -178,8 +179,16 @@ func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, history 
 		}
 		// reasoning_content is deliberately dropped: it is the model thinking
 		// out loud, not an answer, and speaking it would be nonsense.
-		if d.Choices[0].FinishReason != "" {
+		// "length" means max_tokens cut the answer off mid-sentence, which is
+		// exactly the case this detection exists for. Treating any finish
+		// reason as completion made the most likely truncation invisible.
+		switch d.Choices[0].FinishReason {
+		case "stop":
 			complete = true
+		case "":
+			// still streaming
+		default:
+			truncatedBy = d.Choices[0].FinishReason
 		}
 		if c := d.Choices[0].Delta.Content; c != "" {
 			pending.WriteString(c)
@@ -190,6 +199,9 @@ func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, history 
 		return err
 	}
 	flush(true) // speak what did arrive before reporting the truncation
+	if truncatedBy != "" {
+		return fmt.Errorf("%w (%s)", errTruncated, truncatedBy)
+	}
 	if !complete {
 		return errTruncated
 	}

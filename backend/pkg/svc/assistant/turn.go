@@ -266,7 +266,15 @@ func (t *turn) run() {
 	s.mu.Lock()
 	reply := s.response
 	s.mu.Unlock()
-	if reply != "" {
+	// Only while still enabled. `finish` publishes idle before this runs, so a
+	// disable landing in that window would call convo.forget and then have this
+	// exchange appended behind it -- re-enabling would expose conversation that
+	// "off" promised to discard.
+	s.mu.Lock()
+	enabled := s.cfg.Enabled
+	s.mu.Unlock()
+
+	if reply != "" && enabled {
 		// In memory only, and only for a complete exchange: an interrupted
 		// half-answer is not something to refer back to.
 		s.convo.record(text, reply)
@@ -329,6 +337,7 @@ func (t *turn) answer(prompt, memCtx string) error {
 	defer speaker.close()
 
 	spoke := false
+	var sayErr error
 	var full strings.Builder
 
 	err = streamChat(t.ctx, s.cfg, prompt, memCtx, s.convo.messages(), func(sentence string) {
@@ -343,12 +352,24 @@ func (t *turn) answer(prompt, memCtx string) error {
 		s.seq++
 		s.mu.Unlock()
 		s.broadcast()
-		speaker.say(sentence)
+		if sayErr == nil {
+			sayErr = speaker.say(sentence)
+		}
 	})
 	if err != nil {
 		return err
 	}
+	if sayErr != nil {
+		return sayErr
+	}
 	speaker.finish()
+	// A synthesiser or playback process that died mid-answer means the user
+	// heard part of a reply, or none of it. Reporting that turn as a success
+	// let the exchange into conversation history and into memory extraction as
+	// though it had been spoken.
+	if err := speaker.err(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -367,9 +388,10 @@ type speaker struct {
 	// reaped is set once Wait() has returned for both children. After that
 	// their PIDs belong to the kernel again, and signalling them could hit an
 	// unrelated process group that happened to inherit the number.
-	mu     sync.Mutex
-	reaped bool
-	stderr *capped
+	mu      sync.Mutex
+	reaped  bool
+	exitErr error
+	stderr  *capped
 }
 
 // diagnostic returns the synthesiser's last words, for logging only. Never user
@@ -441,24 +463,50 @@ func (t *turn) startSpeaker() (*speaker, error) {
 	}
 	if err := play.Start(); err != nil {
 		_ = in.Close()
-		_ = tts.Process.Kill()
-		return nil, err
+		_ = syscall.Kill(-tts.Process.Pid, syscall.SIGKILL)
+		go func() { _ = tts.Wait() }() // reap, or it lingers as a zombie
+		return nil, fmt.Errorf("audio playback: %w", err)
 	}
 	return &speaker{tts: tts, play: play, in: in, stderr: ttsErr}, nil
 }
 
-func (s *speaker) say(sentence string) {
-	_, _ = io.WriteString(s.in, strings.ReplaceAll(sentence, "\n", " ")+"\n")
+// say queues one sentence. A write failure means the synthesiser has gone --
+// the pipe is closed or the process died -- and it used to be discarded, so a
+// turn in which nothing was ever spoken finished as a success, recorded the
+// exchange and extracted memories from it.
+func (s *speaker) say(sentence string) error {
+	if _, err := io.WriteString(s.in, strings.ReplaceAll(sentence, "\n", " ")+"\n"); err != nil {
+		return fmt.Errorf("speech output stopped accepting text: %w", err)
+	}
+	return nil
+}
+
+// err reports a child that exited badly, for the caller to surface. Populated
+// by finish; nil until then.
+func (s *speaker) err() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.exitErr
 }
 
 func (s *speaker) finish() {
 	s.once.Do(func() { _ = s.in.Close() })
-	if err := s.tts.Wait(); err != nil {
-		logWorker("tts", 0, err, s.diagnostic())
+	ttsErr := s.tts.Wait()
+	if ttsErr != nil {
+		logWorker("tts", 0, ttsErr, s.diagnostic())
 	}
-	if err := s.play.Wait(); err != nil {
-		logWorker("playback", 0, err, "")
+	playErr := s.play.Wait()
+	if playErr != nil {
+		logWorker("playback", 0, playErr, "")
 	}
+	s.mu.Lock()
+	switch {
+	case ttsErr != nil:
+		s.exitErr = fmt.Errorf("speech synthesis failed: %w", ttsErr)
+	case playErr != nil:
+		s.exitErr = fmt.Errorf("audio playback failed: %w", playErr)
+	}
+	s.mu.Unlock()
 	s.mu.Lock()
 	s.reaped = true
 	s.mu.Unlock()
@@ -474,9 +522,16 @@ func (s *speaker) close() {
 		return // already waited for; their PIDs are no longer ours to signal
 	}
 	for _, c := range []*exec.Cmd{s.tts, s.play} {
-		if c != nil && c.Process != nil {
-			_ = syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+		if c == nil || c.Process == nil {
+			continue
 		}
+		_ = syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+		// Reap. Killing without waiting left one zombie Python and one zombie
+		// pw-play behind every cancelled turn, accumulating until the daemon
+		// exited. On its own goroutine because a kill signal is not instant and
+		// this is on the cancellation path, which must stay immediate.
+		cmd := c
+		go func() { _ = cmd.Wait() }()
 	}
 }
 

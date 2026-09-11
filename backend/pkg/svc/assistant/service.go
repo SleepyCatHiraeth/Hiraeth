@@ -462,6 +462,17 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 		p.Text = "Turret assistant voice test."
 	}
 
+	// The master switch governs this too. It did not, so any IPC client could
+	// start the synthesiser and playback while the UI said the assistant was
+	// off -- and the settings panel only offers the voice test when it is on,
+	// so nothing legitimate is lost by refusing.
+	s.mu.Lock()
+	enabled := s.cfg.Enabled
+	s.mu.Unlock()
+	if !enabled {
+		return nil, fmt.Errorf("the turret assistant is off; turn it on in Settings")
+	}
+
 	// Claim the single-operation slot, exactly as a real turn does. Checking
 	// `turn == nil` without reserving anything let two voice tests -- or a
 	// voice test and a turn -- synthesise and play over each other.
@@ -479,8 +490,14 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 		defer func() {
 			s.mu.Lock()
 			s.speaking = false
+			failed := s.state == StateError
 			s.mu.Unlock()
-			s.setState(StateIdle, nil)
+			// Do not overwrite an error the test just reported: an
+			// unconditional return to idle erased the one thing the voice test
+			// exists to tell the user.
+			if !failed {
+				s.setState(StateIdle, nil)
+			}
 		}()
 
 		ctx, done := s.backgroundContext(60 * time.Second)
@@ -497,8 +514,19 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 
 		started := time.Now()
 		s.setState(StateSpeaking, nil)
-		sp.say(p.Text)
+		if err := sp.say(p.Text); err != nil {
+			logWorker("voice-test", time.Since(started), err, sp.diagnostic())
+			s.failKind(ErrTTS, err.Error())
+			return
+		}
 		sp.finish()
+		// A voice test that produced no sound must not report success: it is
+		// the one thing the test exists to tell the user.
+		if err := sp.err(); err != nil {
+			logWorker("voice-test", time.Since(started), err, sp.diagnostic())
+			s.failKind(ErrTTS, err.Error())
+			return
+		}
 		logWorker("voice-test", time.Since(started), nil, "")
 	}()
 
@@ -618,8 +646,36 @@ func (s *Service) setConfig(params json.RawMessage) (any, error) {
 	// work: close the memory database and let the health loop idle.
 	if !next.Enabled {
 		// Disabling must actually stop things, not merely refuse new work: the
-		// settings panel tells the user resources are released.
+		// settings panel tells the user resources are released, and the user's
+		// stated reason for the master switch is VRAM.
+		//
+		// `release` deliberately leaves the model server alone, because it is
+		// also the reload path and a reload should not unload a model. Disable
+		// is different: the user asked for the resources back. A server they
+		// started themselves is still theirs and is left running.
+		// Local resources go synchronously: the caller is told the assistant is
+		// off, and that has to be true when it is told. This is bounded --
+		// aborting a turn is immediate and the background drain gives up after
+		// five seconds.
 		s.release()
+
+		// Stopping the model server is a subprocess that takes tens of seconds,
+		// so it goes to the background like every other long operation. A
+		// server the user started themselves is theirs and is left alone.
+		s.health.mu.Lock()
+		ours := s.health.startedByUs
+		s.health.mu.Unlock()
+		if ours {
+			go func() {
+				ctx, done := s.backgroundContext(45 * time.Second)
+				defer done()
+				if err := s.stopServerForce(ctx); err != nil {
+					logEvent("could not stop the model server on disable: %v", err)
+					return
+				}
+				logEvent("model server stopped: assistant disabled")
+			}()
+		}
 	} else {
 		// Wake the parked health loop and probe immediately, or the panel
 		// reports "server not running" until the first tick after switch-on.

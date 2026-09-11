@@ -52,6 +52,8 @@ func checkURL(raw string) error {
 	}
 	host := u.Hostname()
 	if host == "localhost" {
+		// Accepted here and checked again at dial time, where it is resolved
+		// and every answer must be loopback. See localOnlyDial.
 		return nil
 	}
 	ip := net.ParseIP(host)
@@ -75,9 +77,29 @@ func localOnlyDial(network, addr string) error {
 	if err != nil {
 		return &LocalOnlyError{URL: addr, Reason: "unparseable address"}
 	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		return &LocalOnlyError{URL: addr, Reason: "dialled address is not loopback"}
+	if ip := net.ParseIP(host); ip != nil {
+		if !ip.IsLoopback() {
+			return &LocalOnlyError{URL: addr, Reason: "dialled address is not loopback"}
+		}
+		return nil
+	}
+
+	// A name reaches here unresolved, so "localhost" -- which checkURL accepts
+	// and the settings panel documents -- was refused at dial time and could
+	// never connect. Resolve it and require EVERY answer to be loopback: one
+	// non-loopback record is enough to make the destination unsafe, and which
+	// record the dialler picks is not ours to predict.
+	addrs, err := net.DefaultResolver.LookupIPAddr(context.Background(), host)
+	if err != nil {
+		return &LocalOnlyError{URL: addr, Reason: "host does not resolve"}
+	}
+	if len(addrs) == 0 {
+		return &LocalOnlyError{URL: addr, Reason: "host resolves to nothing"}
+	}
+	for _, a := range addrs {
+		if !a.IP.IsLoopback() {
+			return &LocalOnlyError{URL: addr, Reason: "host resolves to a non-loopback address"}
+		}
 	}
 	return nil
 }

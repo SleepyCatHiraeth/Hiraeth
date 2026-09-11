@@ -49,7 +49,7 @@ func (s *Service) transcribeWarm(ctx context.Context, wav string) (string, error
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if err := w.ensure(s.cfg); err != nil {
+	if err := w.ensure(ctx, s.cfg); err != nil {
 		return "", err
 	}
 
@@ -112,7 +112,11 @@ func (s *Service) transcribeWarm(ctx context.Context, wav string) (string, error
 
 // ensure starts the worker if it is not running, and waits for it to report
 // that the model is loaded. Caller holds the lock.
-func (w *sttWorker) ensure(cfg Config) error {
+//
+// The caller's context bounds the wait. It used to use only its own 60-second
+// timer, so a turn whose five-minute budget expired during Whisper model load
+// stayed occupied for up to another minute after it should have ended.
+func (w *sttWorker) ensure(ctx context.Context, cfg Config) error {
 	if w.cmd != nil {
 		return nil
 	}
@@ -155,14 +159,27 @@ func (w *sttWorker) ensure(cfg Config) error {
 
 	// Wait for the ready line. Model load is the whole point of this worker, so
 	// the first turn still pays for it -- but only the first.
+	// The ready line must be the ready OBJECT, not merely the first line of
+	// output. Accepting any line meant that one banner printed to stdout by
+	// Python or a dependency would be read as readiness -- and then the real
+	// {"ready":true} would be consumed as the first transcription's result,
+	// leaving every subsequent turn one answer behind.
 	ready := make(chan error, 1)
 	scanner := w.out // local, for the same reason as in transcribeWarm
 	go func() {
-		if !scanner.Scan() {
-			ready <- fmt.Errorf("transcriber failed to start: %s", oneLine(stderr.String()))
-			return
+		for scanner.Scan() {
+			var msg struct {
+				Ready bool `json:"ready"`
+			}
+			if err := json.Unmarshal(scanner.Bytes(), &msg); err == nil && msg.Ready {
+				ready <- nil
+				return
+			}
+			// Anything else on stdout before readiness is noise from a
+			// dependency; skip it rather than mistake it for a protocol message.
+			logEventEvery("stt-noise", time.Minute, "ignoring unexpected transcriber output before ready")
 		}
-		ready <- nil
+		ready <- fmt.Errorf("transcriber failed to start: %s", oneLine(stderr.String()))
 	}()
 	select {
 	case err := <-ready:
@@ -170,6 +187,9 @@ func (w *sttWorker) ensure(cfg Config) error {
 			w.stopLocked()
 			return err
 		}
+	case <-ctx.Done():
+		w.stopLocked()
+		return ctx.Err()
 	case <-time.After(60 * time.Second):
 		w.stopLocked()
 		return fmt.Errorf("transcriber did not become ready")

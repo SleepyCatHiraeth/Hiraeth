@@ -20,6 +20,7 @@ import (
 func TestSayReturnsWithoutWaitingForSpeech(t *testing.T) {
 	s := &Service{state: StateIdle}
 	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
 	s.cfg.StackDir = t.TempDir() // no python here: the worker fails, off the handler's path
 
 	start := time.Now()
@@ -41,6 +42,7 @@ func TestSayReturnsWithoutWaitingForSpeech(t *testing.T) {
 func TestSayRefusesToOverlapItself(t *testing.T) {
 	s := &Service{state: StateIdle, speaking: true}
 	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
 	if _, err := s.say(json.RawMessage(`{"text":"hello"}`)); err == nil {
 		t.Fatal("a second say must be refused while one is already speaking")
 	}
@@ -50,6 +52,7 @@ func TestSayRefusesToOverlapItself(t *testing.T) {
 func TestSayRefusesDuringATurn(t *testing.T) {
 	s := &Service{state: StateSpeaking}
 	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
 	s.turn = &turn{svc: s}
 	if _, err := s.say(json.RawMessage(`{"text":"hello"}`)); err == nil {
 		t.Fatal("say must be refused while a turn is active")
@@ -271,4 +274,39 @@ func TestConcurrentReleaseIsSafe(t *testing.T) {
 	if ctx.Err() != nil {
 		t.Error("the service must accept background work again after a release")
 	}
+}
+
+// The master switch governs the voice test too. It did not: any IPC client
+// could start the synthesiser and playback while the UI said "off".
+func TestSayRefusedWhileDisabled(t *testing.T) {
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig() // Enabled is false by default
+	if _, err := s.say(json.RawMessage(`{"text":"hello"}`)); err == nil {
+		t.Fatal("the voice test must be refused while the assistant is off")
+	}
+}
+
+// A voice test that cannot start the synthesiser must leave the error visible.
+// The deferred return to idle used to erase it immediately.
+func TestVoiceTestLeavesItsErrorVisible(t *testing.T) {
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
+	s.cfg.StackDir = t.TempDir() // no python: startSpeaker fails
+
+	if _, err := s.say(json.RawMessage(`{"text":"hello"}`)); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		snap := s.snapshot()
+		if snap["state"] == StateError {
+			if snap["error_kind"] != ErrTTS {
+				t.Errorf("error_kind = %v, want %q", snap["error_kind"], ErrTTS)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("a failed voice test must end in an error state, got %v", s.snapshot()["state"])
 }
