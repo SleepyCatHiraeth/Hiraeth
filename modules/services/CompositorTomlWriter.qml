@@ -231,6 +231,14 @@ Singleton {
             const keys = [];
             for (const group of [defaultGroup, configuredGroup, adapterGroup]) {
                 for (const key of Object.keys(group || {})) {
+                    // A JsonObject enumerates its Qt machinery too: every
+                    // property brings a `<name>Changed` signal, plus
+                    // `objectName`. Forwarding those made the daemon log a
+                    // dozen "ignoring unknown bind" lines on every single
+                    // reload -- noise that would eventually train someone to
+                    // ignore the message, which exists to be noticed.
+                    if (key === "objectName" || key.endsWith("Changed"))
+                        continue;
                     if (key !== excludedName && keys.indexOf(key) === -1)
                         keys.push(key);
                 }
