@@ -31,6 +31,11 @@ Singleton {
     property var pending: ({})
     property int nextId: 1
 
+    // This exceeds three times the shell's current IPC call sites while
+    // preventing daemon downtime from retaining requests without limit.
+    readonly property int maxPendingQueue: 256
+    property bool pendingQueueWarned: false
+
     // ---- subscriptions: keyed by integer handle ----
     property var subscriptions: ({})
     property int nextSubId: 1
@@ -56,18 +61,45 @@ Singleton {
             reqSocket.write(item.msg + "\n");
             reqSocket.flush();
         }
+        root.pendingQueueWarned = false;
+    }
+
+    function _failCallback(callback, error) {
+        if (typeof callback !== "function") return;
+        try {
+            callback(undefined, error);
+        } catch (e) {
+            console.warn("BackendService: request callback failed:", e);
+        }
+    }
+
+    function _failPendingRequests(error) {
+        const ids = Object.keys(root.pending);
+        for (let i = 0; i < ids.length; i++) {
+            const callback = root.pending[ids[i]];
+            delete root.pending[ids[i]];
+            root._failCallback(callback, error);
+        }
     }
 
     function call(method, params, callback) {
         if (!params) params = {};
         const id = root.nextId++;
         const msg = JSON.stringify({id, method, params});
-        if (callback !== undefined) root.pending[id] = callback;
         if (root.socketAvailable) {
+            if (callback !== undefined) root.pending[id] = callback;
             reqSocket.write(msg + "\n");
             reqSocket.flush();
             root._drainQueue();
         } else {
+            if (root.pendingQueue.length >= root.maxPendingQueue) {
+                const dropped = root.pendingQueue.shift();
+                root._failCallback(dropped.callback, "backend request queue full");
+                if (!root.pendingQueueWarned) {
+                    console.warn("BackendService: disconnected request queue full; dropping oldest request");
+                    root.pendingQueueWarned = true;
+                }
+            }
             root.pendingQueue.push({id, msg, callback});
         }
     }
@@ -190,7 +222,7 @@ Singleton {
 
         onError: (error) => {
             console.warn("BackendService: request socket error", error);
-            root.onSocketDown();
+            root.onRequestSocketDown();
         }
 
         onConnectionStateChanged: {
@@ -198,9 +230,14 @@ Singleton {
             if (reqSocket.connected) {
                 root._drainQueue();
             } else {
-                root.onSocketDown();
+                root.onRequestSocketDown();
             }
         }
+    }
+
+    function onRequestSocketDown() {
+        root.onSocketDown();
+        root._failPendingRequests("backend disconnected");
     }
 
     function onSocketDown() {

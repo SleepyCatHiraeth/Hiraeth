@@ -259,6 +259,72 @@ func TestConcurrencyCapQueuesRequests(t *testing.T) {
 	}
 }
 
+func TestConnectionRequestQueueRejectsExcess(t *testing.T) {
+	server := NewServer("")
+	started := make(chan struct{})
+	release := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
+	server.Register(&Service{Name: "work", Methods: map[string]HandlerFunc{
+		"run": func(json.RawMessage) (any, error) {
+			select {
+			case <-started:
+			default:
+				close(started)
+			}
+			<-release
+			return "ok", nil
+		},
+	}})
+
+	conn, _ := startPipeServer(t, server)
+	reader := bufio.NewReader(conn)
+	const admitted = maxQueuedRequests + 1
+	batch := make([]testRequest, admitted+1)
+	for i := range batch {
+		batch[i] = testRequest{i + 1, "work.run"}
+	}
+	var data []byte
+	for _, request := range batch {
+		line, err := json.Marshal(map[string]any{"id": request.id, "method": request.method, "params": map[string]any{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = append(data, line...)
+		data = append(data, '\n')
+	}
+	go func() {
+		_, _ = conn.Write(data)
+	}()
+	waitForSignal(t, started, "first admitted handler")
+
+	overflow := readResponse(t, conn, reader)
+	if id := responseID(t, overflow); id != admitted+1 {
+		t.Fatalf("overflow response id = %d, want %d", id, admitted+1)
+	}
+	if overflow.Error == "" {
+		t.Fatal("overflow response has no error")
+	}
+	if overflow.Error != requestQueueFullError {
+		t.Fatalf("overflow error = %q, want %q", overflow.Error, requestQueueFullError)
+	}
+	close(release)
+	released = true
+	for wantID := 1; wantID <= admitted; wantID++ {
+		response := readResponse(t, conn, reader)
+		if id := responseID(t, response); id != wantID {
+			t.Fatalf("admitted response id = %d, want %d", id, wantID)
+		}
+		if response.Error != "" {
+			t.Fatalf("admitted response %d error = %q", wantID, response.Error)
+		}
+	}
+}
+
 func TestSameServiceRequestsPreserveOrder(t *testing.T) {
 	server := NewServer("")
 	setStarted := make(chan struct{})

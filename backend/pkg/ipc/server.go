@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"sync"
+	"time"
 )
 
 // Request is a JSON-RPC like request: {"id":..., "method":"...", "params":{...}}
@@ -78,6 +80,28 @@ type Server struct {
 // daemon work with its request volume.
 const maxConcurrentRequests = 8
 
+// Two hundred fifty-six queued calls are over three times the shell's current
+// IPC call sites, leaving ample burst headroom while bounding retained data.
+const maxQueuedRequests = 256
+
+const requestQueueFullError = "request queue full"
+
+var queueFullLog = struct {
+	sync.Mutex
+	last time.Time
+}{}
+
+func logQueueFull() {
+	queueFullLog.Lock()
+	defer queueFullLog.Unlock()
+	// One flooded client must not turn admission control into a journal flood.
+	if time.Since(queueFullLog.last) < time.Minute {
+		return
+	}
+	queueFullLog.last = time.Now()
+	log.Printf("[ipc] request queue full (%d); rejecting excess requests", maxQueuedRequests)
+}
+
 type responseWriter struct {
 	mu sync.Mutex
 	w  *bufio.Writer
@@ -127,6 +151,7 @@ func (d *requestDispatcher) run() {
 	ready := make([]string, 0)
 	requests := d.requests
 	running := 0
+	queued := 0
 
 	for requests != nil || running > 0 || len(ready) > 0 {
 		for running < maxConcurrentRequests && len(ready) > 0 {
@@ -135,6 +160,7 @@ func (d *requestDispatcher) run() {
 			queue := pending[service]
 			req := queue[0]
 			pending[service] = queue[1:]
+			queued--
 			active[service] = true
 			running++
 			go func() {
@@ -153,8 +179,16 @@ func (d *requestDispatcher) run() {
 				requests = nil
 				continue
 			}
+			if queued >= maxQueuedRequests {
+				logQueueFull()
+				if len(req.ID) > 0 {
+					d.writer.write(Response{ID: req.ID, Error: requestQueueFullError})
+				}
+				continue
+			}
 			service, _ := splitMethod(req.Method)
 			pending[service] = append(pending[service], req)
+			queued++
 			if !active[service] && len(pending[service]) == 1 {
 				ready = append(ready, service)
 			}
