@@ -21,7 +21,7 @@ import (
 )
 
 type Service struct {
-	paths *paths.Paths
+	paths  *paths.Paths
 	mu     sync.Mutex
 	active bool
 	temp   uint32 // Kelvin

@@ -50,10 +50,10 @@ func TestRenderMatchesCurrentAxctlToml(t *testing.T) {
 func realishInput() Input {
 	return Input{
 		Compositor: CompositorConfig{
-			GapsIn:    2,
-			GapsOut:   4,
-			BorderSize: 2,
-			Rounding:  16,
+			GapsIn:              2,
+			GapsOut:             4,
+			BorderSize:          2,
+			Rounding:            16,
 			ActiveBorderColor:   []string{"primary"},
 			ActiveBorderAngle:   45,
 			InactiveBorderColor: []string{"surface"},
@@ -84,8 +84,8 @@ func realishInput() Input {
 			},
 			Custom: []CustomBind{
 				{
-					Name: "Close Window",
-					Keys: []KeySpec{{Modifiers: []string{"SUPER"}, Key: "C"}},
+					Name:    "Close Window",
+					Keys:    []KeySpec{{Modifiers: []string{"SUPER"}, Key: "C"}},
 					Actions: []Action{{ID: "window.close"}},
 					Enabled: true,
 				},

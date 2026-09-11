@@ -523,6 +523,9 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 		began := time.Now()
 		s.setState(StateSpeaking, nil)
 		if err := sp.say(p.Text); err != nil {
+			if ctx.Err() != nil {
+				return // cancelled, not broken: disable kills these workers
+			}
 			logWorker("voice-test", time.Since(began), err, sp.diagnostic())
 			s.failKind(ErrTTS, err.Error())
 			return
@@ -531,6 +534,14 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 		// A voice test that produced no sound must not report success: it is
 		// the one thing the test exists to tell the user.
 		if err := sp.err(); err != nil {
+			// A cancelled voice test kills its own workers, so their non-zero
+			// exits are expected. Reporting them as a speech-output failure
+			// left Settings showing a fault after the user simply switched the
+			// assistant off -- and the state is deliberately preserved, so it
+			// stayed on screen.
+			if ctx.Err() != nil {
+				return
+			}
 			logWorker("voice-test", time.Since(began), err, sp.diagnostic())
 			s.failKind(ErrTTS, err.Error())
 			return
@@ -577,7 +588,7 @@ func (s *Service) healthMethod(params json.RawMessage) (any, error) {
 
 	if p.Stop || p.Repair {
 		stop := p.Stop
-		s.goBackground(45*time.Second, func(ctx context.Context) {
+		started := s.goBackground(45*time.Second, func(ctx context.Context) {
 			if stop {
 				if err := s.stopServer(ctx); err != nil {
 					logEvent("model server stop failed: %v", err)
@@ -593,6 +604,12 @@ func (s *Service) healthMethod(params json.RawMessage) (any, error) {
 			}
 			s.setState(StateIdle, nil)
 		})
+		// Reporting "accepted" for work that was never admitted is a lie the
+		// caller cannot detect. A concurrent disable closes the background
+		// group, and the dispatch is refused.
+		if !started {
+			return nil, fmt.Errorf("the assistant is shutting down")
+		}
 		ok, lastErr := s.healthSnapshot()
 		return map[string]any{
 			"accepted": true, "async": true,

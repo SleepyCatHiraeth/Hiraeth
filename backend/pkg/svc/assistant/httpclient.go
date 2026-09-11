@@ -73,35 +73,57 @@ func checkURL(raw string) error {
 // dial time. Belt and braces, because this is the guarantee the whole design
 // rests on.
 func localOnlyDial(network, addr string) error {
-	host, _, err := net.SplitHostPort(addr)
+	_, err := resolveLoopback(context.Background(), addr)
+	return err
+}
+
+// resolveLoopback checks an address and returns the exact address that must be
+// dialled.
+//
+// Returning the resolved address is the point. An earlier version validated a
+// name's DNS answers and then handed the NAME to the dialler, which resolved it
+// a second time -- so a resolver that answered loopback to the check and
+// something else to the dialler would have sent the transcript off the machine.
+// Validating one answer and connecting to another is not a check at all.
+func resolveLoopback(ctx context.Context, addr string) ([]string, error) {
+	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return &LocalOnlyError{URL: addr, Reason: "unparseable address"}
+		return nil, &LocalOnlyError{URL: addr, Reason: "unparseable address"}
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		if !ip.IsLoopback() {
-			return &LocalOnlyError{URL: addr, Reason: "dialled address is not loopback"}
+			return nil, &LocalOnlyError{URL: addr, Reason: "dialled address is not loopback"}
 		}
-		return nil
+		return []string{addr}, nil
 	}
 
 	// A name reaches here unresolved, so "localhost" -- which checkURL accepts
 	// and the settings panel documents -- was refused at dial time and could
-	// never connect. Resolve it and require EVERY answer to be loopback: one
-	// non-loopback record is enough to make the destination unsafe, and which
-	// record the dialler picks is not ours to predict.
-	addrs, err := net.DefaultResolver.LookupIPAddr(context.Background(), host)
+	// never connect. Resolve it under the request's own context, so a wedged
+	// resolver cannot outlive the request that needed it.
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil {
-		return &LocalOnlyError{URL: addr, Reason: "host does not resolve"}
+		return nil, &LocalOnlyError{URL: addr, Reason: "host does not resolve"}
 	}
 	if len(addrs) == 0 {
-		return &LocalOnlyError{URL: addr, Reason: "host resolves to nothing"}
+		return nil, &LocalOnlyError{URL: addr, Reason: "host resolves to nothing"}
 	}
+	// Every answer must be loopback: one non-loopback record is enough to make
+	// the destination unsafe, and which record a dialler would pick is not ours
+	// to predict.
+	//
+	// All of them are returned, not just the first. "localhost" commonly
+	// resolves to both ::1 and 127.0.0.1 while a server listens on only one, so
+	// pinning to one answer turns a working endpoint into a refused connection
+	// -- which is exactly the bug this whole path exists to fix.
+	out := make([]string, 0, len(addrs))
 	for _, a := range addrs {
 		if !a.IP.IsLoopback() {
-			return &LocalOnlyError{URL: addr, Reason: "host resolves to a non-loopback address"}
+			return nil, &LocalOnlyError{URL: addr, Reason: "host resolves to a non-loopback address"}
 		}
+		out = append(out, net.JoinHostPort(a.IP.String(), port))
 	}
-	return nil
+	return out, nil
 }
 
 // newLocalClient builds the only HTTP client this package uses.
@@ -119,10 +141,25 @@ func newLocalClient(timeout time.Duration) *http.Client {
 		Transport: &http.Transport{
 			Proxy: nil, // never honour HTTP_PROXY: that is an off-machine hop
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				if err := localOnlyDial(network, addr); err != nil {
+				// Resolve and validate once, then connect to the literal that
+				// was validated. Handing the name back to the dialler would let
+				// it resolve again and reach somewhere else.
+				checked, err := resolveLoopback(ctx, addr)
+				if err != nil {
 					return nil, err
 				}
-				return dialer.DialContext(ctx, network, addr)
+				// Try each validated literal in turn, as the standard dialler
+				// would for a name -- but only ever the literals this policy
+				// approved.
+				var lastErr error
+				for _, target := range checked {
+					conn, err := dialer.DialContext(ctx, network, target)
+					if err == nil {
+						return conn, nil
+					}
+					lastErr = err
+				}
+				return nil, lastErr
 			},
 			ForceAttemptHTTP2:     false,
 			MaxIdleConns:          4,

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -87,6 +88,16 @@ func (s *Service) refreshHealth(force bool) bool {
 // attempted at most once at a time, and a failure is reported rather than
 // retried in a loop.
 func (s *Service) ensureServer(ctx context.Context) bool {
+	// Nothing starts a model server while the assistant is off. Without this,
+	// a turn that began just before a disable could bring the server back up
+	// behind the switch -- the exact VRAM surprise the switch exists to stop.
+	s.mu.Lock()
+	enabled := s.cfg.Enabled
+	s.mu.Unlock()
+	if !enabled {
+		return false
+	}
+
 	if s.refreshHealth(true) {
 		// Reachable, but the models may still be absent or JIT-loaded: a server
 		// the user started themselves has loaded nothing in particular.
@@ -259,8 +270,14 @@ func lmsPath() string {
 // perfectly healthy server is reported as down on a fresh daemon -- which is
 // exactly what the settings panel showed on first load. The interval is long
 // because this is a local HTTP GET against a server that is either up or not.
+// healthLoopsRunning counts live health loops, so a test can prove the loop
+// actually exited rather than merely that Close signalled it.
+var healthLoopsRunning int32
+
 func (s *Service) startHealthLoop() {
+	atomic.AddInt32(&healthLoopsRunning, 1)
 	go func() {
+		defer atomic.AddInt32(&healthLoopsRunning, -1)
 		idle := time.NewTimer(time.Hour)
 		defer idle.Stop()
 		for {

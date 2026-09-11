@@ -184,11 +184,26 @@ func (s *Service) capture(userText, replyText string) {
 		return
 	}
 
+	// The category switches are a consent gate, not a retrieval filter. They
+	// were only consulted when building a retrieval query, so a category the
+	// user had switched off was still extracted and written to disk -- it just
+	// was not read back. The settings panel says "never stored and never
+	// recalled", and the storing half of that was not true.
+	allowed := s.enabledCategories()
+
 	var pending int
 	for _, c := range cands {
+		if !allowed[c.Category] {
+			continue // the user said not to remember this kind of thing
+		}
 		it, note := memory.ToItem(c, "conversation", "")
 		if it == nil {
 			continue // refused; the reason is deliberately not stored
+		}
+		// ToItem can reclassify: external content loses the instructions
+		// category. Re-check, so a rewrite cannot land in a disabled category.
+		if !allowed[it.Category] {
+			continue
 		}
 		if err := st.Put(it); err != nil {
 			continue

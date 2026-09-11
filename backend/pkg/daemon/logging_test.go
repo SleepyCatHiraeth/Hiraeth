@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"ambxst/backend/pkg/paths"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,6 +52,15 @@ func TestStartLoggingRepairsAnExistingModeS(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+
+	// startLogging redirects the package-global standard logger. Put it back, or
+	// every later test in this package writes into a deleted temp directory.
+	prev := log.Writer()
+	prevFlags := log.Flags()
+	t.Cleanup(func() {
+		log.SetOutput(prev)
+		log.SetFlags(prevFlags)
+	})
 
 	startLogging(paths.New())
 

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -69,18 +70,27 @@ func TestSayRefusesDuringATurn(t *testing.T) {
 // It now stubs `lms` with a script that sleeps, and asserts the handler returns
 // while that script is still running.
 func TestHealthStopIsNotSynchronous(t *testing.T) {
+	s := &Service{state: StateIdle, stopHealth: make(chan struct{})}
+	s0 := s
 	slow := filepath.Join(t.TempDir(), "lms")
 	if err := os.WriteFile(slow, []byte("#!/bin/sh\nsleep 10\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	old := exeLookPath
 	exeLookPath = func(string) (string, error) { return slow, nil }
-	// Restored after the background stop has been drained, not on defer: the
-	// worker reads this package variable, so putting it back while that
-	// goroutine still runs is itself a race.
-	restore := func() { exeLookPath = old }
+	// Drain first, then restore: the worker reads this package variable, so
+	// putting it back while that goroutine still runs is itself a race.
+	// Registered as cleanup so an early t.Fatal cannot leave the stub installed
+	// for every test that follows.
+	restored := false
+	restore := func() {
+		if !restored {
+			exeLookPath = old
+			restored = true
+		}
+	}
+	t.Cleanup(func() { s0.release(); restore() })
 
-	s := &Service{state: StateIdle, stopHealth: make(chan struct{})}
 	s.cfg = defaultConfig()
 	// Ours, so the stop is really attempted rather than refused outright.
 	s.health.startedByUs = true
@@ -179,10 +189,11 @@ func TestHealthLoopParksWhileDisabled(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := &Service{state: StateIdle, healthWake: make(chan struct{}, 1)}
+	s := &Service{state: StateIdle, healthWake: make(chan struct{}, 1), stopHealth: make(chan struct{})}
 	s.cfg = defaultConfig()
 	s.cfg.Endpoint = srv.URL
 	s.cfg.Enabled = false
+	defer s.Close() // or the loop outlives the test
 
 	s.startHealthLoop()
 	time.Sleep(300 * time.Millisecond)
@@ -235,7 +246,10 @@ func TestStartTurnRefusedWhileSpeaking(t *testing.T) {
 	s := &Service{state: StateIdle, speaking: true}
 	s.cfg = defaultConfig()
 	s.cfg.Enabled = true
-	s.cfg.StackDir = t.TempDir()
+	// A stack that passes preflight, so the refusal can only come from the
+	// `speaking` guard. With an empty directory this test passed whether or not
+	// the guard existed.
+	s.cfg.StackDir = fakeStack(t, "#!/bin/sh\nexit 0\n")
 
 	if err := s.startTurn(); err == nil {
 		t.Fatal("a turn must be refused while a voice test is speaking")
@@ -254,10 +268,14 @@ func TestStartTurnReleasesTheSlotWhenItFails(t *testing.T) {
 	s := &Service{state: StateIdle}
 	s.cfg = defaultConfig()
 	s.cfg.Enabled = true
-	s.cfg.StackDir = t.TempDir() // no .venv here: startTurn fails its pre-flight
+	// Preflight passes; the recorder is what fails, which is the path that
+	// claims the slot and has to give it back. Pointing PATH at an empty
+	// directory makes pw-record unavailable.
+	s.cfg.StackDir = fakeStack(t, "#!/bin/sh\nexit 0\n")
+	t.Setenv("PATH", t.TempDir())
 
 	if err := s.startTurn(); err == nil {
-		t.Fatal("expected the missing stack to fail the turn")
+		t.Fatal("expected the missing recorder to fail the turn")
 	}
 	s.mu.Lock()
 	active := s.turn
@@ -345,21 +363,29 @@ func TestCloseStopsTheHealthLoop(t *testing.T) {
 	}
 	s.cfg = defaultConfig() // disabled: the loop parks immediately
 
-	done := make(chan struct{})
-	go func() {
-		s.startHealthLoop()
-		close(done)
-	}()
-	<-done
-	time.Sleep(50 * time.Millisecond) // let the loop reach its park
+	s.startHealthLoop()
+
+	// Wait for the loop to actually park, rather than sleeping and hoping.
+	deadline := time.Now().Add(2 * time.Second)
+	for atomic.LoadInt32(&healthLoopsRunning) == 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if atomic.LoadInt32(&healthLoopsRunning) == 0 {
+		t.Fatal("the health loop never started")
+	}
 
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case <-s.stopHealth:
-	default:
-		t.Error("Close must signal the health loop to stop")
+
+	// The loop must actually exit, not merely be signalled. Checking that Close
+	// closed the channel would pass against a loop that ignored it.
+	deadline = time.Now().Add(3 * time.Second)
+	for atomic.LoadInt32(&healthLoopsRunning) != 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := atomic.LoadInt32(&healthLoopsRunning); n != 0 {
+		t.Errorf("%d health loop(s) still running after Close", n)
 	}
 }
 
@@ -447,5 +473,86 @@ func TestSettingsRefusedWhileSpeaking(t *testing.T) {
 	s.cfg.Enabled = true
 	if _, err := s.setConfig([]byte(`{"speed":1.4}`)); err == nil {
 		t.Error("settings must not change during a voice test")
+	}
+}
+
+// The settings panel says a disabled category is "never stored and never
+// recalled". Only the recall half was true: the category map was consulted when
+// building a retrieval query, never when writing, so a category the user had
+// switched off was still extracted to disk.
+func TestDisabledCategoriesAreNotStored(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_DATA_HOME", dir)
+
+	// An extractor that always proposes a user_profile memory.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "embeddings") {
+			_, _ = w.Write([]byte(`{"data":[{"embedding":[0.1,0.2,0.3]}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` +
+			`"[{\"category\":\"user_profile\",\"content\":\"The user is a test.\",\"confidence\":0.9,\"importance\":0.9}]"}}]}`))
+	}))
+	defer srv.Close()
+
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
+	s.cfg.MemoryEnabled = true
+	s.cfg.Endpoint = srv.URL
+	s.cfg.MemoryCategories = map[string]bool{"user_profile": false}
+	defer s.release()
+
+	s.capture("I am a test.", "Noted.")
+
+	st, rel := s.useStore()
+	if st == nil {
+		t.Fatal("expected a store")
+	}
+	defer rel()
+	items, err := st.List("", "", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		if it.Category == "user_profile" {
+			t.Errorf("a disabled category was stored anyway: %q", it.Content)
+		}
+	}
+}
+
+// Capture-target discovery runs a subprocess, so a disable can complete between
+// the start of a turn's preflight and the moment it claims the slot. The turn
+// would then start the microphone, and ensureServer would bring the model
+// server back up behind a switch the UI shows as off.
+func TestStartTurnRechecksTheMasterSwitchWhenItClaims(t *testing.T) {
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
+	s.cfg.StackDir = fakeStack(t, "#!/bin/sh\nexit 0\n")
+
+	// Disable lands while preflight is in progress.
+	s.mu.Lock()
+	s.cfg.Enabled = false
+	s.mu.Unlock()
+
+	if err := s.startTurn(); err == nil {
+		t.Fatal("a turn must not claim the slot after the assistant was disabled")
+	}
+	s.mu.Lock()
+	active := s.turn
+	s.mu.Unlock()
+	if active != nil {
+		t.Error("no turn should be installed")
+	}
+}
+
+// And the server itself refuses to start while off.
+func TestEnsureServerRefusesWhileDisabled(t *testing.T) {
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig() // disabled
+	if s.ensureServer(context.Background()) {
+		t.Error("ensureServer must not start anything while the assistant is off")
 	}
 }

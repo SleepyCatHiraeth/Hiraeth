@@ -95,7 +95,7 @@ func (s *Service) scan() []Preset {
 	seen := map[string]*Preset{}
 
 	for _, root := range []struct {
-		dir     string
+		dir      string
 		official bool
 	}{
 		{userDir, false},

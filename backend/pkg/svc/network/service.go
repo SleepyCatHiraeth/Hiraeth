@@ -13,7 +13,7 @@ import (
 // Service wraps NetworkManager via the nmcli CLI (mirroring NetworkService.qml)
 // and streams a state snapshot on every `nmcli monitor` event.
 type Service struct {
-	mu  chan struct{}
+	mu   chan struct{}
 	stop chan struct{}
 }
 
@@ -25,10 +25,10 @@ func (s *Service) Register(srv *ipc.Server) {
 	srv.Register(&ipc.Service{
 		Name: "network",
 		Methods: map[string]ipc.HandlerFunc{
-			"status":    s.status,
-			"networks":  s.networks,
-			"enable":    s.enable,
-			"connect":   s.connect,
+			"status":     s.status,
+			"networks":   s.networks,
+			"enable":     s.enable,
+			"connect":    s.connect,
 			"disconnect": s.disconnect,
 		},
 		Subscribe: s.subscribe,
@@ -44,22 +44,22 @@ func (s *Service) Close() {
 }
 
 type state struct {
-	Wifi          bool   `json:"wifi"`
-	Ethernet      bool   `json:"ethernet"`
-	WifiEnabled   bool   `json:"wifi_enabled"`
-	WifiStatus    string `json:"wifi_status"`
-	NetworkName   string `json:"network_name"`
-	Strength      int    `json:"strength"`
-	Connectivity  string `json:"connectivity"`
+	Wifi         bool   `json:"wifi"`
+	Ethernet     bool   `json:"ethernet"`
+	WifiEnabled  bool   `json:"wifi_enabled"`
+	WifiStatus   string `json:"wifi_status"`
+	NetworkName  string `json:"network_name"`
+	Strength     int    `json:"strength"`
+	Connectivity string `json:"connectivity"`
 }
 
 type apEntry struct {
-	Active   bool   `json:"active"`
-	Strength int    `json:"strength"`
-	Frequency int   `json:"frequency"`
-	SSID     string `json:"ssid"`
-	BSSID    string `json:"bssid"`
-	Security string `json:"security"`
+	Active    bool   `json:"active"`
+	Strength  int    `json:"strength"`
+	Frequency int    `json:"frequency"`
+	SSID      string `json:"ssid"`
+	BSSID     string `json:"bssid"`
+	Security  string `json:"security"`
 }
 
 // snapshot collects the same data NetworkService.qml reads via nmcli.

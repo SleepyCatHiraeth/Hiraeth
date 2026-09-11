@@ -12,19 +12,19 @@ import (
 
 // StaticInfo is the one-time detected hardware info.
 type StaticInfo struct {
-	CPUModel   string `json:"cpu_model"`
-	GPUNames   []string `json:"gpu_names"`
-	GPUVendors []string `json:"gpu_vendors"`
+	CPUModel   string            `json:"cpu_model"`
+	GPUNames   []string          `json:"gpu_names"`
+	GPUVendors []string          `json:"gpu_vendors"`
 	DiskTypes  map[string]string `json:"disk_types"`
-	GPUCount   int    `json:"gpu_count"`
+	GPUCount   int               `json:"gpu_count"`
 }
 
 // Delta holds a sample of live metrics.
 type Delta struct {
-	CPU  CPU   `json:"cpu"`
-	RAM  RAM   `json:"ram"`
-	Disk Disk  `json:"disk"`
-	GPU  GPU   `json:"gpu"`
+	CPU  CPU  `json:"cpu"`
+	RAM  RAM  `json:"ram"`
+	Disk Disk `json:"disk"`
+	GPU  GPU  `json:"gpu"`
 }
 
 type CPU struct {

@@ -49,12 +49,12 @@ func (s *Service) Register(srv *ipc.Server) {
 }
 
 type startParams struct {
-	Mode    string `json:"mode"`
-	Output  string `json:"output"`
-	Region  string `json:"region"`
-	AudioOut bool  `json:"audioOut"`
-	AudioIn  bool  `json:"audioIn"`
-	Framerate int  `json:"framerate"`
+	Mode      string `json:"mode"`
+	Output    string `json:"output"`
+	Region    string `json:"region"`
+	AudioOut  bool   `json:"audioOut"`
+	AudioIn   bool   `json:"audioIn"`
+	Framerate int    `json:"framerate"`
 }
 
 func (s *Service) start(params json.RawMessage) (any, error) {

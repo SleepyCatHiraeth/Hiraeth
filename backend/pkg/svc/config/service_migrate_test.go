@@ -37,9 +37,9 @@ func readStates(t *testing.T, s *Service) map[string]any {
 func TestMigrateNightLightTrue(t *testing.T) {
 	s := newTestService(t)
 	writeStates(t, s, map[string]any{
-		"nightLight":         true,
-		"compositorLayout":   "scrolling",
-		"animStyleSpeeds":    map[string]any{"hyprland": 120},
+		"nightLight":       true,
+		"compositorLayout": "scrolling",
+		"animStyleSpeeds":  map[string]any{"hyprland": 120},
 	})
 	if err := s.MigrateStates(); err != nil {
 		t.Fatal(err)
@@ -71,9 +71,9 @@ func TestMigrateNightLightTrue(t *testing.T) {
 func TestMigrateNightLightFalseAndExistingNewKey(t *testing.T) {
 	s := newTestService(t)
 	writeStates(t, s, map[string]any{
-		"nightLight":         false,
-		"nightlight":         map[string]any{"active": true, "temp": 4000},
-		"animStyleSpeeds":    map[string]any{},
+		"nightLight":      false,
+		"nightlight":      map[string]any{"active": true, "temp": 4000},
+		"animStyleSpeeds": map[string]any{},
 	})
 	if err := s.MigrateStates(); err != nil {
 		t.Fatal(err)

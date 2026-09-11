@@ -143,7 +143,13 @@ func (s *Service) release() {
 
 	// 4. Drop the conversation. "Off" has to mean the assistant does not
 	//    remember what was said before it was switched off.
+	//
+	//    Under the service lock, because a finishing turn records its exchange
+	//    under that same lock. Without it the ordering held only by accident of
+	//    when setConfig happened to release.
+	s.mu.Lock()
 	s.convo.forget()
+	s.mu.Unlock()
 
 	// 5. Close the memory store last: extraction may still have been using it.
 	s.mu.Lock()

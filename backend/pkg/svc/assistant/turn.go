@@ -106,6 +106,17 @@ func (s *Service) startTurn() error {
 		cancel()
 		return fmt.Errorf("busy")
 	}
+	// Re-check the master switch at the moment of claiming, not only at the
+	// start of preflight. Capture-target discovery runs a subprocess, so a
+	// disable can complete inside that window -- releasing resources and
+	// stopping the model server -- after which this turn would have started the
+	// microphone and had ensureServer bring the server straight back up, with
+	// the UI still showing "off".
+	if !s.cfg.Enabled {
+		s.mu.Unlock()
+		cancel()
+		return fmt.Errorf("the turret assistant is off; turn it on in Settings")
+	}
 	t.cfg = cfg
 	s.turn = t
 	s.transcript = ""
@@ -288,14 +299,20 @@ func (t *turn) run() {
 	// disable landing in that window would call convo.forget and then have this
 	// exchange appended behind it -- re-enabling would expose conversation that
 	// "off" promised to discard.
+	//
+	// The check and the append happen under the service lock together. Reading
+	// `enabled`, releasing, then recording left the same window open, just
+	// narrower.
 	s.mu.Lock()
 	enabled := s.cfg.Enabled
-	s.mu.Unlock()
-
 	if reply != "" && enabled {
 		// In memory only, and only for a complete exchange: an interrupted
 		// half-answer is not something to refer back to.
 		s.convo.record(text, reply)
+	}
+	s.mu.Unlock()
+
+	if reply != "" && enabled {
 		// Registered on this stack, not inside the goroutine: a disable landing
 		// between the two would otherwise see nothing to wait for.
 		s.goBackground(90*time.Second, func(context.Context) { s.capture(text, reply) })

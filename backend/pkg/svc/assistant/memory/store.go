@@ -216,9 +216,10 @@ func migrate(db *sql.DB) error {
 // Store owns the encrypted database. Every access is serialised; this is a
 // single-user assistant and lock contention is not the bottleneck.
 type Store struct {
-	mu  sync.Mutex
-	db  *sql.DB
-	dir string
+	mu     sync.Mutex
+	db     *sql.DB
+	dir    string
+	closed bool
 }
 
 // Open creates or opens the memory database under dir, generating a 32-byte key
@@ -279,15 +280,23 @@ func Open(dir string) (*Store, error) {
 	return s, nil
 }
 
+// Close releases the database. Idempotent.
+//
+// The handle is deliberately NOT set to nil. Every method here dereferences
+// s.db, so nil-ing it turned "used after close" -- which happens whenever a
+// slow background embed outlives a disable -- into a nil dereference in a
+// goroutine, which takes the whole daemon down. database/sql already returns
+// "sql: database is closed" for calls after Close, so leaving the handle in
+// place converts a panic into an error at all twenty-six call sites without
+// touching any of them.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.db == nil {
+	if s.closed {
 		return nil
 	}
-	err := s.db.Close()
-	s.db = nil
-	return err
+	s.closed = true
+	return s.db.Close()
 }
 
 // loadOrCreateKey reads the database key, creating one ONLY when there is no

@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -103,5 +104,62 @@ func TestClientIgnoresProxyEnvironment(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status %d", resp.StatusCode)
+	}
+}
+
+// The repair for "localhost could never connect" introduced a worse bug: it
+// validated a name's DNS answers and then handed the NAME to the dialler, which
+// resolved it again. Validating one answer and connecting to another is not a
+// check. The dial target must be the literal that was validated.
+func TestResolveReturnsTheValidatedLiteral(t *testing.T) {
+	got, err := resolveLoopback(context.Background(), "localhost:1234")
+	if err != nil {
+		t.Fatalf("localhost must resolve: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatal("no dial targets returned")
+	}
+	// Every answer is kept: localhost commonly resolves to both ::1 and
+	// 127.0.0.1 while a server listens on only one of them.
+	for _, target := range got {
+		host, port, err := net.SplitHostPort(target)
+		if err != nil {
+			t.Fatalf("bad address %q: %v", target, err)
+		}
+		if port != "1234" {
+			t.Errorf("port %q, want 1234", port)
+		}
+		ip := net.ParseIP(host)
+		if ip == nil {
+			t.Fatalf("dial target %q is still a name; it must be a validated literal", host)
+		}
+		if !ip.IsLoopback() {
+			t.Errorf("dial target %q is not loopback", host)
+		}
+	}
+}
+
+func TestResolveKeepsLiteralsUntouched(t *testing.T) {
+	for _, addr := range []string{"127.0.0.1:1234", "[::1]:1234"} {
+		got, err := resolveLoopback(context.Background(), addr)
+		if err != nil {
+			t.Errorf("%s should be allowed: %v", addr, err)
+			continue
+		}
+		if len(got) != 1 || got[0] != addr {
+			t.Errorf("literal rewritten: %q -> %v", addr, got)
+		}
+	}
+	if _, err := resolveLoopback(context.Background(), "10.0.0.5:1234"); err == nil {
+		t.Error("a non-loopback literal must be refused")
+	}
+}
+
+// A wedged resolver must not outlive the request that needed it.
+func TestResolveHonoursTheContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := resolveLoopback(ctx, "some-name-that-needs-dns.invalid:80"); err == nil {
+		t.Error("a cancelled context must abort resolution")
 	}
 }

@@ -7,11 +7,11 @@ import (
 
 func TestResolveActionCatalogEntry(t *testing.T) {
 	cases := []struct {
-		name        string
-		action      Action
-		wantDisp    string
-		wantArg     string
-		wantFlags   string
+		name      string
+		action    Action
+		wantDisp  string
+		wantArg   string
+		wantFlags string
 	}{
 		{
 			name:     "ambxst.launcher carries r flag",

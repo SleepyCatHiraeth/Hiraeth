@@ -18,9 +18,9 @@ const (
 
 // WeatherResponse mirrors the open-meteo payload consumed by WeatherService.qml.
 type WeatherResponse struct {
-	Error          string        `json:"error,omitempty"`
+	Error          string          `json:"error,omitempty"`
 	CurrentWeather *CurrentWeather `json:"current_weather"`
-	Daily          *Daily        `json:"daily"`
+	Daily          *Daily          `json:"daily"`
 }
 
 type CurrentWeather struct {
@@ -31,12 +31,12 @@ type CurrentWeather struct {
 }
 
 type Daily struct {
-	Time               []string `json:"time"`
-	Weathercode        []int    `json:"weathercode"`
-	Temperature2mMax   []float64 `json:"temperature_2m_max"`
-	Temperature2mMin   []float64 `json:"temperature_2m_min"`
-	Sunrise            []string `json:"sunrise"`
-	Sunset             []string `json:"sunset"`
+	Time             []string  `json:"time"`
+	Weathercode      []int     `json:"weathercode"`
+	Temperature2mMax []float64 `json:"temperature_2m_max"`
+	Temperature2mMin []float64 `json:"temperature_2m_min"`
+	Sunrise          []string  `json:"sunrise"`
+	Sunset           []string  `json:"sunset"`
 }
 
 // Client performs weather fetches for a given location.
@@ -85,8 +85,8 @@ func (c *Client) resolveCoords(location string) (float64, float64, error) {
 
 func (c *Client) geoip() (string, error) {
 	var data struct {
-		Status  string  `json:"status"`
-		Message string  `json:"message"`
+		Status    string  `json:"status"`
+		Message   string  `json:"message"`
 		Latitude  float64 `json:"lat"`
 		Longitude float64 `json:"lon"`
 	}

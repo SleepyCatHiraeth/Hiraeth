@@ -33,6 +33,7 @@ import (
 	"ambxst/backend/pkg/svc/preset"
 	recordersvc "ambxst/backend/pkg/svc/recorder"
 	"ambxst/backend/pkg/svc/screenshot"
+	"ambxst/backend/pkg/svc/sessionlock"
 	"ambxst/backend/pkg/svc/sleep"
 	"ambxst/backend/pkg/svc/systemmonitor"
 	"ambxst/backend/pkg/svc/wallpaper"
@@ -48,18 +49,19 @@ type Daemon struct {
 	paths *paths.Paths
 	srv   *ipc.Server
 
-	ui         *svc.UIService
-	sleep      *sleep.Service
-	clipboard  *clipboard.Service
-	network    *network.Service
-	compositor *compositor.Service
-	caffeine   *caffeine.Service
-	gamemode   *gamemode.Service
-	powerprof  *powerprofile.Service
-	nightlight *nightlight.Service
-	recorder   *recordersvc.Service
-	assistant  *assistantsvc.Service
-	mods       *mods.Manager
+	ui          *svc.UIService
+	sleep       *sleep.Service
+	clipboard   *clipboard.Service
+	network     *network.Service
+	compositor  *compositor.Service
+	caffeine    *caffeine.Service
+	gamemode    *gamemode.Service
+	powerprof   *powerprofile.Service
+	nightlight  *nightlight.Service
+	recorder    *recordersvc.Service
+	assistant   *assistantsvc.Service
+	sessionLock *sessionlock.Service
+	mods        *mods.Manager
 
 	shutdownCh   chan struct{}
 	shutdownOnce sync.Once
@@ -155,6 +157,12 @@ func New() (*Daemon, error) {
 
 	uiSvc := svc.NewUIService()
 	uiSvc.Register(d.srv)
+
+	// Registered early and unconditionally: the reload guard depends on it, and
+	// a reload arriving before this exists is exactly the case that strands the
+	// user at a locked screen.
+	d.sessionLock = sessionlock.NewService()
+	d.sessionLock.Register(d.srv)
 
 	sysMon := systemmonitor.NewService(2000, []string{"/"})
 	sysMon.Register(d.srv)

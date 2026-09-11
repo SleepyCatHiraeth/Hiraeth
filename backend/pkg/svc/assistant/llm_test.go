@@ -360,12 +360,20 @@ func TestLocalhostEndpointActuallyConnects(t *testing.T) {
 	}
 }
 
-// The dial guard still refuses a name that resolves off-machine.
-func TestDialRefusesANameThatResolvesRemotely(t *testing.T) {
-	if err := localOnlyDial("tcp", "example.com:80"); err == nil {
-		t.Error("a name resolving off-machine must be refused")
+// The dial guard still refuses a name that does not resolve to loopback.
+//
+// Hermetic: an earlier version resolved example.com for real, which needed the
+// network and passed on DNS failure without proving anything at all. .invalid
+// is reserved by RFC 2606 and must never resolve, so the refusal is guaranteed
+// to come from the guard.
+func TestDialRefusesANameThatIsNotLoopback(t *testing.T) {
+	if err := localOnlyDial("tcp", "not-a-real-host.invalid:80"); err == nil {
+		t.Error("a name that does not resolve to loopback must be refused")
 	}
 	if err := localOnlyDial("tcp", "localhost:1234"); err != nil {
-		t.Errorf("localhost must dial: %v", err)
+		t.Errorf("localhost must be allowed: %v", err)
+	}
+	if err := localOnlyDial("tcp", "93.184.216.34:80"); err == nil {
+		t.Error("a non-loopback literal must be refused")
 	}
 }

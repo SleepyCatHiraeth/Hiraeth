@@ -114,7 +114,7 @@ func (s *Service) get(params json.RawMessage) (any, error) {
 	if p.Provider == "" {
 		return map[string]any{"error": "get requires provider"}, nil
 	}
-	out, err := s.query(`SELECT * FROM api_keys WHERE provider = `+qsql(p.Provider))
+	out, err := s.query(`SELECT * FROM api_keys WHERE provider = ` + qsql(p.Provider))
 	if err != nil || strings.TrimSpace(out) == "" {
 		return map[string]any{"error": fmt.Sprintf("Provider '%s' not found", p.Provider)}, nil
 	}

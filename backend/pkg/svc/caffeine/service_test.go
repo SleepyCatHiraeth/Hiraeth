@@ -24,10 +24,10 @@ func newTestService(t *testing.T) (*Service, *fakeRunner) {
 }
 
 type fakeRunner struct {
-	calls  [][]string
-	create []byte
+	calls      [][]string
+	create     []byte
 	createErr  error
-	setErr    error
+	setErr     error
 	destroyErr error
 }
 

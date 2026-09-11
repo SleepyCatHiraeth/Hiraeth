@@ -13,6 +13,7 @@ import (
 // makePresetRoot arranges the directory layout the service expects:
 //   - userDir = t.TempDir() — service reads <ConfigDir>/presets from it.
 //   - shellDir = t.TempDir() with assets/presets/ inside it.
+//
 // Returns ConfigDir and ShellSourceDir-like values.
 func makePresetRoot(t *testing.T) (userConfigDir string) {
 	t.Helper()

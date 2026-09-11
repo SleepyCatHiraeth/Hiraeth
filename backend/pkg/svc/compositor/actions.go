@@ -13,15 +13,15 @@ import (
 // still consults the JS file for UI; this Go copy is used solely by the
 // TOML renderer.
 type ActionSpec struct {
-	ID          string
-	Label       string
-	Category    string
-	Dispatcher  string
-	Argument    string
-	Flags       string
-	Args        []ActionArg
-	ArgumentFn  func(args map[string]any) string
-	Hidden      bool
+	ID         string
+	Label      string
+	Category   string
+	Dispatcher string
+	Argument   string
+	Flags      string
+	Args       []ActionArg
+	ArgumentFn func(args map[string]any) string
+	Hidden     bool
 }
 
 type ActionArg struct {
@@ -95,7 +95,9 @@ var catalog = []ActionSpec{
 	{ID: "scrolling.toggle-fit", Label: "Toggle Fit", Category: "Scrolling Layout", Dispatcher: "layoutmsg", Argument: "togglefit"},
 	{ID: "scrolling.toggle-full-column", Label: "Toggle Full Column", Category: "Scrolling Layout", Dispatcher: "layoutmsg", Argument: "colresize +conf"},
 	{ID: "scrolling.swap-column", Label: "Swap Column", Category: "Scrolling Layout", Dispatcher: "layoutmsg", Args: []ActionArg{{Key: "direction", Label: "Direction", Placeholder: "left/right", DefaultValue: "left"}}, ArgumentFn: func(args map[string]any) string { return "swapcol " + directionToLetter(stringArg(args, "direction")) }},
-	{ID: "scrolling.move-column-workspace", Label: "Move Column to Workspace", Category: "Scrolling Layout", Dispatcher: "layoutmsg", Args: []ActionArg{{Key: "index", Label: "Workspace", Placeholder: "1", DefaultValue: "1"}}, ArgumentFn: func(args map[string]any) string { return "movecoltoworkspace " + strings.TrimSpace(stringArg(args, "index")) }},
+	{ID: "scrolling.move-column-workspace", Label: "Move Column to Workspace", Category: "Scrolling Layout", Dispatcher: "layoutmsg", Args: []ActionArg{{Key: "index", Label: "Workspace", Placeholder: "1", DefaultValue: "1"}}, ArgumentFn: func(args map[string]any) string {
+		return "movecoltoworkspace " + strings.TrimSpace(stringArg(args, "index"))
+	}},
 
 	{ID: "media.play-pause", Label: "Play/Pause", Category: "Media", Dispatcher: "exec", Argument: "playerctl play-pause"},
 	{ID: "media.play-pause-locked", Label: "Play/Pause (Locked)", Category: "Media", Dispatcher: "exec", Argument: "playerctl play-pause", Flags: "l"},

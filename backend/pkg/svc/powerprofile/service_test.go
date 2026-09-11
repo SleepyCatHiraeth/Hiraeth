@@ -44,8 +44,8 @@ func newTestService(t *testing.T, resp map[string]execCall) *Service {
 
 func TestPowerProfilesCtlDetected(t *testing.T) {
 	s := newTestService(t, map[string]execCall{
-		"powerprofilesctl version": {out: []byte("powerprofilesctl 0.13\n")},
-		"powerprofilesctl get":     {out: []byte("balanced\n")},
+		"powerprofilesctl version":           {out: []byte("powerprofilesctl 0.13\n")},
+		"powerprofilesctl get":               {out: []byte("balanced\n")},
 		"bash -c powerprofilesctl list 2>&1": {out: []byte("* balanced:\n  performance:\n* power-saver:\n")},
 	})
 	out, err := s.available(nil)
@@ -106,8 +106,8 @@ func TestNoneAvailable(t *testing.T) {
 
 func TestSetRejectsUnknownProfile(t *testing.T) {
 	s := newTestService(t, map[string]execCall{
-		"powerprofilesctl version": {out: []byte("ok")},
-		"powerprofilesctl get":     {out: []byte("balanced")},
+		"powerprofilesctl version":           {out: []byte("ok")},
+		"powerprofilesctl get":               {out: []byte("balanced")},
 		"bash -c powerprofilesctl list 2>&1": {out: []byte("* balanced:\n  performance:\n* power-saver:\n")},
 	})
 	_, err := s.set(json.RawMessage(`{"profile":"hyper-boost"}`))
