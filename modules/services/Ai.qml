@@ -672,13 +672,27 @@ Singleton {
         }
 
         if (customCurl) {
-            // Replace placeholders in custom curl
+            // The key goes through the environment, never into the command
+            // string.
+            //
+            // Substituting it into the text handed to `bash -c` put it in the
+            // process's own argv, where any process owned by this user can read
+            // it out of /proc/<pid>/cmdline, and made a key containing shell
+            // metacharacters into command execution. That is the same defect
+            // fixed for model discovery on 2026-09-10, still present on this
+            // path. The template is the user's own, so it stays a shell command
+            // -- that is the feature -- but the secret in it does not have to be
+            // literal.
             const curlCmd = customCurl
                 .replace("{{BODY_PATH}}", bodyPath)
                 .replace("{{ENDPOINT}}", payload.endpoint)
-                .replace("{{API_KEY}}", getApiKey(owner.model));
+                .replace("{{API_KEY}}", "$AMBXST_API_KEY");
+            curlProcess.environment = ({
+                "AMBXST_API_KEY": getApiKey(owner.model)
+            });
             curlProcess.command = ["/usr/bin/bash", "-c", curlCmd];
         } else {
+            curlProcess.environment = ({});
             curlProcess.command = ["curl", "-s", "--no-buffer", "-N", "--connect-timeout", "15", "--max-time", "300", "-X", "POST", payload.endpoint]
                 .concat(payload.headers.flatMap(header => ["-H", header]), ["-d", "@" + bodyPath]);
         }
