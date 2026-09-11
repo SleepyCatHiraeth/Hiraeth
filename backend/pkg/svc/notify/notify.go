@@ -16,9 +16,9 @@ import (
 // tracked, dismissable, and visible in the popup/notch/dashboard history
 // instead of leaking into the system notification daemon.
 type Service struct {
-	mu         sync.RWMutex
-	subs       map[*ipc.Subscriber]struct{}
-	nextReqID  atomic.Uint64
+	mu        sync.RWMutex
+	subs      map[*ipc.Subscriber]struct{}
+	nextReqID atomic.Uint64
 }
 
 func NewService() *Service {
@@ -43,15 +43,15 @@ func (s *Service) Register(srv *ipc.Server) {
 // `wl-copy` with that value. This is how cross-process colorpicker actions
 // stay in sync without requiring the CLI to keep its notification alive.
 type SendParams struct {
-	Summary      string         `json:"summary"`
-	Body         string         `json:"body"`
-	AppName      string         `json:"appName"`
-	AppIcon      string         `json:"appIcon"`
-	Image        string         `json:"image"`
-	Urgency      string         `json:"urgency"`
-	ExpireTimeout int           `json:"expireTimeout"`
-	ReplaceKey   string         `json:"replaceKey"`
-	Actions      []SendAction   `json:"actions"`
+	Summary       string       `json:"summary"`
+	Body          string       `json:"body"`
+	AppName       string       `json:"appName"`
+	AppIcon       string       `json:"appIcon"`
+	Image         string       `json:"image"`
+	Urgency       string       `json:"urgency"`
+	ExpireTimeout int          `json:"expireTimeout"`
+	ReplaceKey    string       `json:"replaceKey"`
+	Actions       []SendAction `json:"actions"`
 }
 
 type SendAction struct {

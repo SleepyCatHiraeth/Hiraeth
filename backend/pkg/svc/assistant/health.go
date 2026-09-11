@@ -166,20 +166,47 @@ func lmsPath() string {
 // because this is a local HTTP GET against a server that is either up or not.
 func (s *Service) startHealthLoop() {
 	go func() {
-		t := time.NewTicker(30 * time.Second)
-		defer t.Stop()
+		idle := time.NewTimer(time.Hour)
+		defer idle.Stop()
 		for {
 			s.mu.Lock()
 			enabled := s.cfg.Enabled
 			s.mu.Unlock()
-			// Nothing is probed while the assistant is off. The loop stays
-			// parked rather than exiting, so turning it on needs no restart.
-			if enabled {
-				s.refreshHealth(true)
+
+			if !enabled {
+				// Park completely. The old loop woke every 30 seconds to
+				// discover the assistant was still off -- 2,880 wakeups a day
+				// on a laptop, for a service the user had deliberately
+				// disabled. Turning it on signals this channel, so nothing is
+				// lost by sleeping indefinitely.
+				<-s.healthWake
+				continue
 			}
-			<-t.C
+
+			s.refreshHealth(true)
+
+			if !idle.Stop() {
+				select {
+				case <-idle.C:
+				default:
+				}
+			}
+			idle.Reset(30 * time.Second)
+			select {
+			case <-idle.C:
+			case <-s.healthWake:
+			}
 		}
 	}()
+}
+
+// wakeHealth nudges the health loop, so enabling the assistant probes at once
+// instead of at the next tick.
+func (s *Service) wakeHealth() {
+	select {
+	case s.healthWake <- struct{}{}:
+	default: // already pending: one wakeup is as good as two
+	}
 }
 
 // stopServer shuts the model server down and unloads whatever it is holding.

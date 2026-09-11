@@ -40,7 +40,8 @@ Item {
     readonly property var reviewItem: reviewing ? TurretService.reviewQueue[0] : null
 
     readonly property string caption: TurretStateStyle.label(
-        state, TurretService.transcript, TurretService.response, TurretService.lastError)
+        state, TurretService.transcript, TurretService.response,
+        TurretService.lastError, TurretService.lastErrorKind)
 
     // Size tiers. Width follows content; height only changes for the review card.
     readonly property int restingLength: 200

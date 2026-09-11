@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,11 @@ import (
 )
 
 var exeLookPath = exec.LookPath
+
+// turnBudget caps one whole interaction: listening, transcription, generation
+// and speech. Generous, because a long answer spoken slowly is legitimate; it
+// exists to end a turn that is never going to finish, not to hurry a real one.
+const turnBudget = 5 * time.Minute
 
 // turn is one voice interaction. It owns every child process it starts and
 // guarantees two things on exit, however it exits: the microphone is closed and
@@ -52,7 +58,10 @@ func (s *Service) startTurn() error {
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// C9: every stage had its own timeout and the turn as a whole had none, so
+	// a wedged synthesiser or a model that never finished left the assistant
+	// occupied indefinitely with no way back except a keypress.
+	ctx, cancel := context.WithTimeout(context.Background(), turnBudget)
 	t := &turn{
 		svc:     s,
 		ctx:     ctx,
@@ -121,6 +130,26 @@ func (t *turn) finish(state string, mutate func()) {
 	t.svc.setState(state, mutate)
 }
 
+// failWith ends the turn in an error state carrying the kind of failure.
+func (t *turn) failWith(kind, msg string) {
+	logEvent("turn failed (%s)", kind)
+	t.finish(StateError, func() {
+		t.svc.lastErr = msg
+		t.svc.lastErrKind = kind
+	})
+}
+
+// expired ends a turn whose context is done. A user cancellation and a blown
+// budget both land here, and they are reported differently: one is a decision,
+// the other is a fault.
+func (t *turn) expired() {
+	if errors.Is(t.ctx.Err(), context.DeadlineExceeded) {
+		t.failWith(ErrTimeout, "the turn ran past its time budget and was ended")
+		return
+	}
+	t.finish(StateCancelled, nil)
+}
+
 func (t *turn) aborted() bool {
 	select {
 	case <-t.ctx.Done():
@@ -135,35 +164,45 @@ func (t *turn) run() {
 
 	// Wait for the user to end the utterance, or for a hard cap that stops the
 	// microphone even if the second keypress never arrives.
+	// Timer rather than time.After: the discarded timer stayed armed for the
+	// full minute after a normal turn ended, holding the turn and its closure
+	// live in the runtime heap once per interaction.
+	cap := time.NewTimer(60 * time.Second)
 	select {
 	case <-t.recDone:
+		cap.Stop()
 	case <-t.ctx.Done():
+		cap.Stop()
 		t.endCapture()
-		t.finish(StateCancelled, nil)
+		t.expired()
 		return
-	case <-time.After(60 * time.Second):
+	case <-cap.C:
 		t.endCapture()
 	}
 
-	_ = t.rec.Wait() // reap; a non-zero code here is expected after SIGINT
+	// Reap. A non-zero code is expected after SIGINT, but a failure to even
+	// start recording is not, and used to be invisible.
+	if werr := t.rec.Wait(); werr != nil {
+		logEventEvery("rec-exit", time.Minute, "recorder exited: %v", werr)
+	}
 
 	if t.aborted() {
-		t.finish(StateCancelled, nil)
+		t.expired()
 		return
 	}
 	if fi, err := os.Stat(t.wavPath); err != nil || fi.Size() < 4096 {
-		t.finish(StateError, func() { s.lastErr = "no audio captured" })
+		t.failWith(ErrMicrophone, "no audio was captured; check the input device in Settings")
 		return
 	}
 
 	s.setState(StateTranscribing, nil)
 	text, err := t.transcribe()
 	if t.aborted() {
-		t.finish(StateCancelled, nil)
+		t.expired()
 		return
 	}
 	if err != nil {
-		t.finish(StateError, func() { s.lastErr = "speech recognition: " + err.Error() })
+		t.failWith(ErrSTT, "speech recognition: "+err.Error())
 		return
 	}
 	if strings.TrimSpace(text) == "" {
@@ -180,9 +219,7 @@ func (t *turn) run() {
 		if why == "" {
 			why = "the local model server is not running"
 		}
-		t.finish(StateError, func() {
-			s.lastErr = "model server unreachable: " + why + " (try: lms server start)"
-		})
+		t.failWith(ErrProvider, "model server unreachable: "+why+" (try: lms server start)")
 		return
 	}
 
@@ -192,10 +229,10 @@ func (t *turn) run() {
 
 	if err := t.answer(text, memCtx); err != nil {
 		if t.aborted() {
-			t.finish(StateCancelled, nil)
+			t.expired()
 			return
 		}
-		t.finish(StateError, func() { s.lastErr = err.Error() })
+		t.failWith(classifyError(err), err.Error())
 		return
 	}
 	t.finish(StateIdle, nil)
@@ -226,9 +263,15 @@ func (t *turn) transcribe() (string, error) {
 		"HF_HOME="+filepath.Join(cfg.StackDir, "models", "hf"),
 		"HF_HUB_OFFLINE=1",
 	)
+	// Capture stderr: a Python traceback used to be discarded entirely, so an
+	// STT failure surfaced as an empty transcript with no explanation anywhere.
+	errBuf := newCapped(4096)
+	cmd.Stderr = errBuf
+	started := time.Now()
 	out, err := cmd.Output()
+	logWorker("stt", time.Since(started), err, errBuf.String())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("speech recognition failed: %w", err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -285,6 +328,16 @@ type speaker struct {
 	// unrelated process group that happened to inherit the number.
 	mu     sync.Mutex
 	reaped bool
+	stderr *capped
+}
+
+// diagnostic returns the synthesiser's last words, for logging only. Never user
+// content: tts.py writes progress and errors here, not text.
+func (s *speaker) diagnostic() string {
+	if s.stderr == nil {
+		return ""
+	}
+	return s.stderr.String()
 }
 
 func (t *turn) startSpeaker() (*speaker, error) {
@@ -300,6 +353,12 @@ func (t *turn) startSpeaker() (*speaker, error) {
 			"--voice", cfg.TTSVoice,
 			"--speed", strconv.FormatFloat(cfg.Speed, 'f', 2, 64),
 		)
+	} else if cfg.Speed > 0 && cfg.Speed != 1.0 {
+		// Piper measures duration, not rate, so the setting inverts: 1.25x speed
+		// is a length scale of 0.8. Passing --speed here did nothing at all, so
+		// the speed slider silently had no effect on the fallback engine.
+		ttsArgs = append(ttsArgs,
+			"--length-scale", strconv.FormatFloat(1.0/cfg.Speed, 'f', 3, 64))
 	}
 	tts := exec.CommandContext(t.ctx,
 		filepath.Join(cfg.StackDir, ".venv", "bin", "python"),
@@ -307,6 +366,10 @@ func (t *turn) startSpeaker() (*speaker, error) {
 	)
 	tts.Dir = cfg.StackDir
 	tts.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// The synthesiser's stderr was discarded, so "no sound" and "the model file
+	// is missing" looked identical from the outside.
+	ttsErr := newCapped(4096)
+	tts.Stderr = ttsErr
 
 	in, err := tts.StdinPipe()
 	if err != nil {
@@ -340,7 +403,7 @@ func (t *turn) startSpeaker() (*speaker, error) {
 		_ = tts.Process.Kill()
 		return nil, err
 	}
-	return &speaker{tts: tts, play: play, in: in}, nil
+	return &speaker{tts: tts, play: play, in: in, stderr: ttsErr}, nil
 }
 
 func (s *speaker) say(sentence string) {
@@ -349,8 +412,12 @@ func (s *speaker) say(sentence string) {
 
 func (s *speaker) finish() {
 	s.once.Do(func() { _ = s.in.Close() })
-	_ = s.tts.Wait()
-	_ = s.play.Wait()
+	if err := s.tts.Wait(); err != nil {
+		logWorker("tts", 0, err, s.diagnostic())
+	}
+	if err := s.play.Wait(); err != nil {
+		logWorker("playback", 0, err, "")
+	}
 	s.mu.Lock()
 	s.reaped = true
 	s.mu.Unlock()

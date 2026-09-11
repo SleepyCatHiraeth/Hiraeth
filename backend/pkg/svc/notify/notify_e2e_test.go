@@ -76,7 +76,13 @@ func TestE2E_SendTriggersSubscriberEvent(t *testing.T) {
 	}()
 
 	// Wait for the subscriber to register before firing the request.
-	waitFor(t, func() bool { return len(svc.subs) == 1 }, 2*time.Second, "subscriber registration")
+	// Under the service lock: subscribe() writes this map from the IPC server's
+	// goroutine, so reading it bare made every -race run of this package fail.
+	waitFor(t, func() bool {
+		svc.mu.RLock()
+		defer svc.mu.RUnlock()
+		return len(svc.subs) == 1
+	}, 2*time.Second, "subscriber registration")
 
 	// Caller dials and invokes notify.send.
 	conn, err := net.Dial("unix", sockPath)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -64,8 +65,15 @@ type chatDelta struct {
 			Content          string `json:"content"`
 			ReasoningContent string `json:"reasoning_content"`
 		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 }
+
+// errTruncated reports a stream that ended without the server saying it was
+// finished. The sentences already spoken are still correct; what is wrong is
+// that the reply stopped mid-thought and the assistant went idle as though it
+// had answered. A dropped connection and a completed answer looked identical.
+var errTruncated = errors.New("the model stopped mid-reply; the answer is incomplete")
 
 // streamChat calls the local model and invokes onSentence for each complete
 // sentence, so speech starts before generation finishes.
@@ -130,6 +138,7 @@ func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, onSenten
 	}
 
 	sc := newLineScanner(resp.Body)
+	complete := false
 	for sc.Scan() {
 		select {
 		case <-ctx.Done():
@@ -142,6 +151,7 @@ func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, onSenten
 		}
 		payload := strings.TrimSpace(line[5:])
 		if payload == "[DONE]" {
+			complete = true
 			break
 		}
 		var d chatDelta
@@ -150,6 +160,9 @@ func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, onSenten
 		}
 		// reasoning_content is deliberately dropped: it is the model thinking
 		// out loud, not an answer, and speaking it would be nonsense.
+		if d.Choices[0].FinishReason != "" {
+			complete = true
+		}
 		if c := d.Choices[0].Delta.Content; c != "" {
 			pending.WriteString(c)
 			flush(false)
@@ -158,7 +171,10 @@ func streamChat(ctx context.Context, cfg Config, prompt, memCtx string, onSenten
 	if err := sc.Err(); err != nil {
 		return err
 	}
-	flush(true)
+	flush(true) // speak what did arrive before reporting the truncation
+	if !complete {
+		return errTruncated
+	}
 	return nil
 }
 

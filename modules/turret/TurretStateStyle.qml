@@ -53,7 +53,31 @@ Singleton {
         }
     }
 
-    function label(state, transcript, response, error) {
+    // What to tell the user when the backend gave a kind but no message.
+    function errorHint(kind) {
+        switch (kind) {
+        case "microphone":
+            return "Microphone problem";
+        case "stt":
+            return "Could not transcribe";
+        case "tts":
+            return "Could not speak";
+        case "audio":
+            return "Playback problem";
+        case "memory":
+            return "Memory problem";
+        case "provider":
+            return "Model server problem";
+        case "timeout":
+            return "Timed out";
+        case "config":
+            return "Setup problem";
+        default:
+            return "Error";
+        }
+    }
+
+    function label(state, transcript, response, error, errorKind) {
         switch (state) {
         case "listening":
             return "Listening";
@@ -68,7 +92,7 @@ Singleton {
         case "cancelled":
             return "Cancelled";
         case "error":
-            return error !== "" ? error : "Error";
+            return error !== "" ? error : errorHint(errorKind);
         default:
             return transcript !== "" ? transcript : "Ready";
         }

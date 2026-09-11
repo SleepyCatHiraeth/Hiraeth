@@ -21,6 +21,10 @@ Singleton {
     property string transcript: ""
     property string response: ""
     property string lastError: ""
+    // Which part failed: "microphone", "stt", "tts", "audio", "memory",
+    // "provider", "timeout" or "config". The backend keeps one error state and
+    // varies this instead, so the UI can point at the right setting.
+    property string lastErrorKind: ""
 
     // Backend events can be dropped when a subscriber queue is full
     // (pkg/ipc/server.go's Push discards rather than blocks), so every event
@@ -88,6 +92,7 @@ Singleton {
         root.transcript = data.transcript || "";
         root.response = data.response || "";
         root.lastError = data.error || "";
+        root.lastErrorKind = data.error_kind || "";
         root.enabled = data.enabled === true;
         root.memoryEnabled = data.memory_enabled === true;
         root.llmReachable = data.llm_reachable !== false;

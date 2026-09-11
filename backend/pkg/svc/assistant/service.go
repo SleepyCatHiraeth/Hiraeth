@@ -11,9 +11,11 @@ package assistant
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +34,21 @@ const (
 	StateStarting     = "starting"
 	StateCancelled    = "cancelled"
 	StateError        = "error"
+)
+
+// Error kinds accompany StateError. One state with a kind, rather than six
+// error states: the UI shows an error the same way whatever failed, and the
+// only thing it needs to vary is what it tells the user to check. Adding six
+// states would have meant six entries in every style map for no visible gain.
+const (
+	ErrMicrophone = "microphone" // capture device missing, busy, or silent
+	ErrSTT        = "stt"        // transcription worker failed
+	ErrTTS        = "tts"        // synthesis worker failed to start or died
+	ErrAudio      = "audio"      // playback failed
+	ErrMemory     = "memory"     // store or embedding failed
+	ErrProvider   = "provider"   // model server unreachable, refused, or truncated
+	ErrTimeout    = "timeout"    // the turn ran past its budget
+	ErrConfig     = "config"     // the stack or endpoint is not usable
 )
 
 // Config carries the resolved locations of the local stack. Nothing here is a
@@ -106,20 +123,25 @@ func defaultConfig() Config {
 type Service struct {
 	cfg Config
 
-	mu         sync.Mutex
-	state      string
-	transcript string
-	response   string
-	lastErr    string
-	seq        uint64
-	turn       *turn // non-nil while a turn is active
+	mu          sync.Mutex
+	state       string
+	transcript  string
+	response    string
+	lastErr     string
+	lastErrKind string
+	seq         uint64
+	turn        *turn // non-nil while a turn is active
 
 	mem             *memory.Store
 	pendingMemories int
+	speaking        bool
 	bg              background
 	closeOnce       sync.Once
 	health          health
 	embedErr        string
+
+	// buffered so a wake never blocks the setter; see startHealthLoop.
+	healthWake chan struct{}
 
 	subsMu sync.Mutex
 	subs   []*ipc.Subscriber
@@ -127,7 +149,7 @@ type Service struct {
 
 func NewService() *Service {
 	cfg, err := loadConfig()
-	s := &Service{cfg: cfg, state: StateIdle}
+	s := &Service{cfg: cfg, state: StateIdle, healthWake: make(chan struct{}, 1)}
 	if err != nil {
 		// Surfaced rather than swallowed: the user gets defaults this session
 		// and their file is left untouched for inspection.
@@ -196,6 +218,7 @@ func (s *Service) snapshot() map[string]any {
 		"transcript":       s.transcript,
 		"response":         s.response,
 		"error":            s.lastErr,
+		"error_kind":       s.lastErrKind,
 		"seq":              s.seq,
 		"enabled":          s.cfg.Enabled,
 		"memory_enabled":   s.cfg.MemoryEnabled,
@@ -222,12 +245,17 @@ func (s *Service) healthErrLocked() string {
 
 func (s *Service) setState(state string, mutate func()) {
 	s.mu.Lock()
+	from := s.state
 	s.state = state
 	s.seq++
+	if state != StateError {
+		s.lastErrKind = ""
+	}
 	if mutate != nil {
 		mutate()
 	}
 	s.mu.Unlock()
+	logState(from, state, state == StateListening)
 	s.broadcast()
 }
 
@@ -285,8 +313,37 @@ func (s *Service) stateMethod(_ json.RawMessage) (any, error) {
 	return s.snapshot(), nil
 }
 
+// fail records an error state with the kind of failure it was, so the UI can
+// say "check your microphone" rather than "something went wrong".
+func (s *Service) failKind(kind, msg string) {
+	s.setState(StateError, func() {
+		s.lastErr = msg
+		s.lastErrKind = kind
+	})
+}
+
 func (s *Service) fail(err error) {
-	s.setState(StateError, func() { s.lastErr = err.Error() })
+	s.failKind(classifyError(err), err.Error())
+}
+
+// classifyError maps the errors startTurn can return onto a kind.
+func classifyError(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, errNoStack):
+		return ErrConfig
+	case errors.Is(err, context.DeadlineExceeded):
+		return ErrTimeout
+	}
+	var local *LocalOnlyError
+	if errors.As(err, &local) {
+		return ErrConfig
+	}
+	if strings.Contains(err.Error(), "microphone") {
+		return ErrMicrophone
+	}
+	return ErrProvider
 }
 
 // check reports whether every local dependency is actually present, so the UI
@@ -324,9 +381,12 @@ func (s *Service) check(_ json.RawMessage) (any, error) {
 	} else {
 		res["endpoint"] = true
 	}
-	res["llm_reachable"] = probeLLM(s.cfg.Endpoint) == nil
-	if err := probeLLM(s.cfg.Endpoint); err != nil {
-		res["llm_error"] = err.Error()
+	// One probe, not two: this ran the request twice, doubling the stall that
+	// every other shell module waits through on the shared request socket.
+	llmErr := probeLLM(s.cfg.Endpoint)
+	res["llm_reachable"] = llmErr == nil
+	if llmErr != nil {
+		res["llm_error"] = llmErr.Error()
 	}
 	return res, nil
 }
@@ -345,30 +405,58 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 		p.Text = "Turret assistant voice test."
 	}
 
+	// Claim the single-operation slot, exactly as a real turn does. Checking
+	// `turn == nil` without reserving anything let two voice tests -- or a
+	// voice test and a turn -- synthesise and play over each other.
 	s.mu.Lock()
-	if s.turn != nil {
+	if s.turn != nil || s.speaking {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("busy")
 	}
+	s.speaking = true
 	s.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	t := &turn{svc: s, ctx: ctx, cancel: cancel}
+	// Returns immediately: speaking took up to 60s inside the handler, freezing
+	// every other shell module for the duration.
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			s.speaking = false
+			s.mu.Unlock()
+			s.setState(StateIdle, nil)
+		}()
 
-	sp, err := t.startSpeaker()
-	if err != nil {
-		return nil, err
-	}
-	defer sp.close()
-	sp.say(p.Text)
-	sp.finish()
-	return map[string]any{"spoke": p.Text}, nil
+		ctx, done := s.backgroundContext(60 * time.Second)
+		defer done()
+
+		t := &turn{svc: s, ctx: ctx, cancel: func() {}}
+		sp, err := t.startSpeaker()
+		if err != nil {
+			logWorker("voice-test", 0, err, "")
+			s.failKind(ErrTTS, "speech output: "+err.Error())
+			return
+		}
+		defer sp.close()
+
+		started := time.Now()
+		s.setState(StateSpeaking, nil)
+		sp.say(p.Text)
+		sp.finish()
+		logWorker("voice-test", time.Since(started), nil, "")
+	}()
+
+	return map[string]any{"accepted": true, "async": true}, nil
 }
 
-// healthMethod reports model-server reachability and repairs it on request, so
-// a settings panel can offer a "start the server" button rather than leaving
-// the user to discover `lms server start` on their own.
+// healthMethod reports model-server reachability, and optionally repairs or
+// stops the server.
+//
+// Repair and stop run subprocesses that take tens of seconds. They used to run
+// inside the handler, which stalled every other shell request: the IPC server
+// handles one request at a time per connection and QML shares a single request
+// socket across all modules. So both are dispatched to a background worker and
+// the caller is told the work was accepted; progress arrives over the normal
+// state broadcast.
 func (s *Service) healthMethod(params json.RawMessage) (any, error) {
 	var p struct {
 		Repair bool `json:"repair"`
@@ -376,26 +464,51 @@ func (s *Service) healthMethod(params json.RawMessage) (any, error) {
 	}
 	_ = json.Unmarshal(params, &p)
 
-	if p.Stop {
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		defer cancel()
-		if err := s.stopServer(ctx); err != nil {
-			return nil, err
+	if p.Repair {
+		// The master switch means nothing starts while the assistant is off.
+		// Repair used to start the model server regardless, which is exactly
+		// the VRAM the switch exists to not spend.
+		s.mu.Lock()
+		enabled := s.cfg.Enabled
+		s.mu.Unlock()
+		if !enabled {
+			return nil, fmt.Errorf("the turret assistant is off; turn it on in Settings first")
 		}
-	} else if p.Repair {
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		defer cancel()
-		s.ensureServer(ctx)
-		s.setState(StateIdle, nil)
-	} else {
-		s.refreshHealth(true)
 	}
+
+	if p.Stop || p.Repair {
+		stop := p.Stop
+		go func() {
+			ctx, done := s.backgroundContext(45 * time.Second)
+			defer done()
+			if stop {
+				if err := s.stopServer(ctx); err != nil {
+					logEvent("model server stop failed: %v", err)
+				} else {
+					logEvent("model server stopped")
+				}
+				return
+			}
+			if s.ensureServer(ctx) {
+				logEvent("model server started")
+			} else {
+				logEvent("model server failed to start")
+			}
+			s.setState(StateIdle, nil)
+		}()
+		ok, lastErr := s.healthSnapshot()
+		return map[string]any{
+			"accepted": true, "async": true,
+			"reachable": ok, "error": lastErr,
+			"lms": lmsPath(), "endpoint": s.cfg.Endpoint,
+		}, nil
+	}
+
+	s.refreshHealth(true)
 	ok, lastErr := s.healthSnapshot()
 	return map[string]any{
-		"reachable": ok,
-		"error":     lastErr,
-		"lms":       lmsPath(),
-		"endpoint":  s.cfg.Endpoint,
+		"reachable": ok, "error": lastErr,
+		"lms": lmsPath(), "endpoint": s.cfg.Endpoint,
 	}, nil
 }
 
@@ -451,8 +564,9 @@ func (s *Service) setConfig(params json.RawMessage) (any, error) {
 		// settings panel tells the user resources are released.
 		s.release()
 	} else {
-		// Probe immediately rather than waiting up to a full tick, or the panel
-		// reports "server not running" for 30s after being switched on.
+		// Wake the parked health loop and probe immediately, or the panel
+		// reports "server not running" until the first tick after switch-on.
+		s.wakeHealth()
 		go s.refreshHealth(true)
 		if next.MemoryEnabled {
 			// Enabling must surface anything already waiting, not just what

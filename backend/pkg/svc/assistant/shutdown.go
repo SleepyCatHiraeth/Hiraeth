@@ -25,20 +25,36 @@ type background struct {
 	wg     sync.WaitGroup
 	cancel context.CancelFunc
 	ctx    context.Context
+	// closed while release() is draining. WaitGroup.Add must not run
+	// concurrently with Wait, so registration is refused for the duration
+	// rather than racing the drain.
+	closed bool
 }
 
 // ctxFor returns a context that shutdown can cancel, and registers the caller
 // with the wait group. The returned done() must be called when the work ends.
 func (s *Service) backgroundContext(timeout time.Duration) (context.Context, func()) {
 	s.bg.mu.Lock()
+	if s.bg.closed {
+		// Shutting down: hand back a context that is already done, and register
+		// nothing. The caller checks ctx.Err() the same way it would for a
+		// cancellation, so no caller needs a second code path.
+		s.bg.mu.Unlock()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		return ctx, func() {}
+	}
 	if s.bg.ctx == nil {
 		s.bg.ctx, s.bg.cancel = context.WithCancel(context.Background())
 	}
 	parent := s.bg.ctx
+	// Add under the same lock that release() takes before it waits. Adding
+	// after the unlock let a worker register while the drain was already
+	// running, which is a WaitGroup misuse and a real race.
+	s.bg.wg.Add(1)
 	s.bg.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(parent, timeout)
-	s.bg.wg.Add(1)
 	return ctx, func() {
 		cancel()
 		s.bg.wg.Done()
@@ -66,11 +82,18 @@ func (s *Service) release() {
 	cancel := s.bg.cancel
 	s.bg.cancel = nil
 	s.bg.ctx = nil
+	s.bg.closed = true
 	s.bg.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
 	waitWithTimeout(&s.bg.wg, 5*time.Second)
+
+	// Reopen. release() is also what "turn the assistant off" runs, and turning
+	// it back on must not need a restart.
+	s.bg.mu.Lock()
+	s.bg.closed = false
+	s.bg.mu.Unlock()
 
 	// 3. Close the memory store last: extraction may still have been using it.
 	s.mu.Lock()
