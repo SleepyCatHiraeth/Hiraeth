@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,6 +27,10 @@ type health struct {
 	checkedAt time.Time
 	lastErr   string
 	starting  bool
+	// Set once the chat and embedding models have been explicitly loaded, so
+	// the check is not a subprocess on every turn. Cleared when the server
+	// stops, because a new server has loaded nothing.
+	modelsReady bool
 	// Ownership: only a server this assistant started may be stopped by it.
 	startedByUs bool
 }
@@ -83,6 +88,12 @@ func (s *Service) refreshHealth(force bool) bool {
 // retried in a loop.
 func (s *Service) ensureServer(ctx context.Context) bool {
 	if s.refreshHealth(true) {
+		// Reachable, but the models may still be absent or JIT-loaded: a server
+		// the user started themselves has loaded nothing in particular.
+		s.mu.Lock()
+		cfg := s.cfg
+		s.mu.Unlock()
+		s.ensureModelsLoaded(ctx, cfg)
 		return true
 	}
 
@@ -135,10 +146,94 @@ func (s *Service) ensureServer(ctx context.Context) bool {
 		case <-time.After(500 * time.Millisecond):
 		}
 		if s.refreshHealth(true) {
+			s.mu.Lock()
+			cfg := s.cfg
+			s.mu.Unlock()
+			s.ensureModelsLoaded(ctx, cfg)
 			return true
 		}
 	}
 	return false
+}
+
+// loadedModels returns the model keys currently resident, via `lms ps --json`.
+func loadedModels(ctx context.Context, lms string) map[string]bool {
+	out, err := exec.CommandContext(ctx, lms, "ps", "--json").Output()
+	if err != nil {
+		return nil
+	}
+	var entries []struct {
+		Identifier string `json:"identifier"`
+		ModelKey   string `json:"modelKey"`
+	}
+	if err := json.Unmarshal(out, &entries); err != nil {
+		return nil
+	}
+	loaded := make(map[string]bool, len(entries)*2)
+	for _, e := range entries {
+		loaded[e.Identifier] = true
+		loaded[e.ModelKey] = true
+	}
+	return loaded
+}
+
+// ensureModelsLoaded loads the chat and embedding models explicitly.
+//
+// This is the single biggest latency win measured on this machine, and it is
+// not an optimisation so much as a workaround for a specific behaviour:
+// LM Studio's `unloadPreviousJITModelOnLoad` is true by default, and a model
+// pulled in on demand by an API request is JIT-loaded. So a turn with memory
+// enabled did this, every time:
+//
+//	recall   -> embedding request -> loads the 84MB embedder, EVICTING the 9GB chat model
+//	answer   -> chat request      -> reloads the 9GB chat model
+//
+// Measured 2026-09-11 on the live server: a chat request immediately after an
+// embedding took 3.70s to its first token, against 0.118s with both models
+// resident. That 3.6s was the whole of the gap between the user finishing
+// speaking and the assistant starting to answer.
+//
+// Models loaded explicitly are not JIT models, so they are not subject to that
+// eviction. Loading is skipped when a model is already resident, because
+// `lms load` would otherwise start a second copy of it.
+func (s *Service) ensureModelsLoaded(ctx context.Context, cfg Config) {
+	s.health.mu.Lock()
+	done := s.health.modelsReady
+	s.health.mu.Unlock()
+	if done {
+		return
+	}
+
+	lms := lmsPath()
+	if lms == "" {
+		return
+	}
+	loaded := loadedModels(ctx, lms)
+	if loaded == nil {
+		return // could not tell; loading blind risks duplicate instances
+	}
+
+	want := []string{cfg.Model}
+	if cfg.MemoryEnabled && cfg.EmbedModel != "" {
+		want = append(want, cfg.EmbedModel)
+	}
+	for _, key := range want {
+		if key == "" || loaded[key] {
+			continue
+		}
+		started := time.Now()
+		cmd := exec.CommandContext(ctx, lms, "load", key, "-y")
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := cmd.Run(); err != nil {
+			logEvent("could not preload %s: %v", key, err)
+			continue
+		}
+		logEvent("preloaded %s in %s", key, time.Since(started).Round(time.Millisecond))
+	}
+
+	s.health.mu.Lock()
+	s.health.modelsReady = true
+	s.health.mu.Unlock()
 }
 
 // lmsPath finds the LM Studio CLI without requiring it on PATH: the daemon does
@@ -269,6 +364,7 @@ func (s *Service) stopServerForce(ctx context.Context) error {
 
 	s.health.mu.Lock()
 	s.health.startedByUs = false
+	s.health.modelsReady = false
 	s.health.mu.Unlock()
 	s.refreshHealth(true)
 	return nil

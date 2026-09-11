@@ -265,7 +265,9 @@ func (t *turn) run() {
 
 	// Retrieval is best-effort and never blocks the answer. An empty string
 	// means the model simply gets no stored context this turn.
+	recallStart := time.Now()
 	memCtx, _ := s.recall(t.ctx, text)
+	logWorker("recall", time.Since(recallStart), nil, "")
 
 	if err := t.answer(text, memCtx); err != nil {
 		if t.aborted() {
@@ -357,10 +359,15 @@ func (t *turn) answer(prompt, memCtx string) error {
 	spoke := false
 	var sayErr error
 	var full strings.Builder
+	// Time to first audio is the number the user actually feels. It was not
+	// recorded anywhere, so the live test had to be reconstructed from state
+	// transitions.
+	answerStart := time.Now()
 
 	err = streamChat(t.ctx, t.cfg, prompt, memCtx, s.convo.messages(), func(sentence string) {
 		if !spoke {
 			spoke = true
+			logWorker("llm-first-speech", time.Since(answerStart), nil, "")
 			s.setState(StateSpeaking, nil)
 		}
 		full.WriteString(sentence)
