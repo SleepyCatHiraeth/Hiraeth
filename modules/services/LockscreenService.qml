@@ -99,19 +99,29 @@ Singleton {
         }
     }
 
+    // The IPC surface can LOCK. It deliberately cannot unlock.
+    //
+    // This used to expose `unlock()` and a `toggle()` that could unlock, and
+    // both set `GlobalStates.lockscreenVisible = false`, which is bound
+    // straight to `WlSessionLock.locked`. So `qs ipc call lockscreen unlock`
+    // released the session lock with no PAM call and no password: the lock
+    // screen stopped a person at the keyboard and nobody else. Any process
+    // running as this user could walk past it.
+    //
+    // Unlocking is the one transition that must be earned, so it has exactly
+    // one path -- PAM success inside LockScreen.qml -- and no remote entrance.
+    // Locking from outside stays, because locking is always safe to allow.
     property IpcHandler ipc: IpcHandler {
         target: "lockscreen"
-
-        function toggle() {
-            root.toggle();
-        }
 
         function lock() {
             root.lock();
         }
 
-        function unlock() {
-            root.unlock();
+        // Kept for callers that used it, but it can only ever lock now.
+        // Silently unlocking would be the same bypass wearing a different name.
+        function toggle() {
+            root.lock();
         }
     }
 }
