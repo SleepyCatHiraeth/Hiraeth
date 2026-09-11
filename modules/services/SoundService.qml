@@ -45,9 +45,23 @@ Singleton {
     onShellReadyChanged: playBootUpOnce()
     Component.onCompleted: playBootUpOnce()
 
+    // Last play time per event key, for the cooldown below.
+    property var lastPlayed: ({})
+
+    // Shortest gap between two plays of the same event. The assistant changes
+    // state several times a second during a turn, and without this a cue could
+    // retrigger before the previous one had finished, which sounds like a
+    // stutter rather than a signal.
+    readonly property int repeatCooldownMs: 400
+
     function play(eventKey) {
         if (!Config.sound.enabled)
             return;
+
+        const now = Date.now();
+        if (lastPlayed[eventKey] && now - lastPlayed[eventKey] < repeatCooldownMs)
+            return;
+        lastPlayed[eventKey] = now;
 
         const event = Config.sound.events?.[eventKey];
         if (!event || event.muted)

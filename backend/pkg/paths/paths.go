@@ -55,6 +55,13 @@ func (p *Paths) AxctlToml() string {
 	return filepath.Join(p.DataDir, "axctl.toml")
 }
 
+// DaemonLog is where the daemon's own log goes. The shell launcher sends the
+// daemon's stdout and stderr to /dev/null, so every log line the services wrote
+// -- including the assistant's -- was discarded before it could be read.
+func (p *Paths) DaemonLog() string {
+	return filepath.Join(p.StateDir, "daemon.log")
+}
+
 func (p *Paths) StatesFile() string {
 	return filepath.Join(p.StateDir, "states.json")
 }

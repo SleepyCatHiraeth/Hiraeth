@@ -4,6 +4,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import qs.modules.globals
+import qs.modules.services
 
 // Frontend mirror of the backend assistant service.
 //
@@ -88,6 +89,7 @@ Singleton {
         if (incoming < root.seq)
             return;
         root.seq = incoming;
+        const previousState = root.state;
         root.state = data.state || "idle";
         root.transcript = data.transcript || "";
         root.response = data.response || "";
@@ -99,6 +101,7 @@ Singleton {
         root.llmError = data.llm_error || "";
         root.embedError = data.embed_error || "";
         const pending = data.pending_memories || 0;
+        const hadPending = root.pendingMemories;
         if (pending !== root.pendingMemories) {
             root.pendingMemories = pending;
             if (pending > 0)
@@ -106,6 +109,42 @@ Singleton {
             else
                 root.reviewQueue = [];
         }
+
+        _announce(previousState, hadPending, pending);
+    }
+
+    // Sound follows state transitions, not states: a cue means "this just
+    // happened". Only transitions the user would want to hear are announced --
+    // the microphone opening above all, because that is the one the shell has a
+    // duty to make audible.
+    function _announce(previousState, hadPending, pending) {
+        if (root.state === previousState) {
+            // No state change; a memory arriving is still worth a cue.
+            if (pending > hadPending)
+                SoundService.play("turretReview");
+            return;
+        }
+
+        switch (root.state) {
+        case "listening":
+            SoundService.play("turretListening");
+            break;
+        case "thinking":
+            SoundService.play("turretThinking");
+            break;
+        case "error":
+            SoundService.play("turretError");
+            break;
+        case "idle":
+            // Only when a turn actually produced something: going idle from
+            // idle, or after a cancel, is not an achievement.
+            if (previousState === "speaking")
+                SoundService.play("turretDone");
+            break;
+        }
+
+        if (pending > hadPending)
+            SoundService.play("turretReview");
     }
 
     function refreshReviewQueue() {

@@ -30,7 +30,15 @@ Singleton {
             "deviceConnect": "polite-warning-tone.wav",
             "deviceDisconnect": "polite-warning-tone.wav",
             "batteryLow": "polite-warning-tone.wav",
-            "shutdown": "polite-warning-tone.wav"
+            "shutdown": "polite-warning-tone.wav",
+            // The turret assistant's cues. The default theme has one tone, so
+            // these are deliberately sparse: only the microphone opening and a
+            // failure are worth a sound when every sound is the same sound.
+            "turretListening": "polite-warning-tone.wav",
+            "turretThinking": "",
+            "turretDone": "",
+            "turretError": "polite-warning-tone.wav",
+            "turretReview": "polite-warning-tone.wav"
         }
     })
     readonly property var portalTurretTheme: ({
@@ -49,7 +57,12 @@ Singleton {
             "deviceConnect": "deviceConnect.wav",
             "deviceDisconnect": "deviceDisconnect.wav",
             "batteryLow": "batteryLow.wav",
-            "shutdown": "shutdown.wav"
+            "shutdown": "shutdown.wav",
+            "turretListening": "turretListening.wav",
+            "turretThinking": "turretThinking.wav",
+            "turretDone": "turretDone.wav",
+            "turretError": "turretError.wav",
+            "turretReview": "turretReview.wav"
         }
     })
 

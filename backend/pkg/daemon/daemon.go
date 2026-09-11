@@ -67,10 +67,38 @@ type Daemon struct {
 	qsDone <-chan error
 }
 
+// startLogging routes the daemon's log to a file.
+//
+// The launcher redirects the daemon's stdout and stderr to /dev/null, so
+// everything written with the standard logger vanished. That is how a stopped
+// model server and a silently failing worker both became invisible: the
+// evidence existed and was thrown away at the last step.
+//
+// Truncation rather than rotation, and at a size nothing normal will reach: a
+// desktop shell's log is for reading after something went wrong this week, not
+// an archive.
+func startLogging(p *paths.Paths) {
+	if err := os.MkdirAll(p.StateDir, 0o755); err != nil {
+		return
+	}
+	path := p.DaemonLog()
+	if fi, err := os.Stat(path); err == nil && fi.Size() > 4<<20 {
+		_ = os.Remove(path)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return // keep the default logger rather than failing to start
+	}
+	log.SetFlags(log.LstdFlags)
+	log.SetOutput(f)
+	log.Printf("[ambxst] daemon starting, pid %d", os.Getpid())
+}
+
 // New wires every service into a freshly constructed server. The caller is
 // expected to call Run() next.
 func New() (*Daemon, error) {
 	p := paths.New()
+	startLogging(p)
 	d := &Daemon{
 		paths:      p,
 		srv:        ipc.NewServer(p.SocketPath()),

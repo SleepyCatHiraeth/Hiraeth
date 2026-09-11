@@ -14,6 +14,11 @@ var data = {
         "deviceConnect": { "sound": "", "muted": false },
         "deviceDisconnect": { "sound": "", "muted": false },
         "batteryLow": { "sound": "", "muted": false },
-        "shutdown": { "sound": "", "muted": false }
+        "shutdown": { "sound": "", "muted": false },
+        "turretListening": { "sound": "", "muted": false },
+        "turretThinking": { "sound": "", "muted": false },
+        "turretDone": { "sound": "", "muted": false },
+        "turretError": { "sound": "", "muted": false },
+        "turretReview": { "sound": "", "muted": false }
     }
 }

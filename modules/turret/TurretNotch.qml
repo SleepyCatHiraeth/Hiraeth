@@ -114,6 +114,38 @@ Item {
     Component.onCompleted: if (Config.animDuration <= 0) shapeSettled = true
     onTargetLengthChanged: if (Config.animDuration <= 0) shapeSettled = active
 
+    // Asking for attention.
+    //
+    // A memory waiting for review is the one state where the notch needs the
+    // user to come to it, and it used to arrive with exactly the same motion as
+    // every other state change -- so it read as a status update and was missed.
+    // A small nudge on arrival, then a slow breath every few seconds while it
+    // waits: visible in peripheral vision, not loud enough to nag.
+    //
+    // Scale rather than size: the shape is already animating width and height,
+    // and a second geometry animation on the same item would fight it.
+    transformOrigin: Item.Top
+
+    SequentialAnimation {
+        running: root.reviewing && root.shapeSettled && Config.animDuration > 0
+        loops: Animation.Infinite
+        alwaysRunToEnd: false
+
+        NumberAnimation {
+            target: root; property: "scale"
+            to: 1.035; duration: Math.round(Config.animDuration * 0.8)
+            easing.type: Easing.OutBack; easing.overshoot: 1.6
+        }
+        NumberAnimation {
+            target: root; property: "scale"
+            to: 1.0; duration: Config.animDuration
+            easing.type: Easing.OutQuart
+        }
+        PauseAnimation { duration: 5000 }
+
+        onRunningChanged: if (!running) root.scale = 1
+    }
+
     Item {
         id: notchHitbox
         anchors.fill: parent
@@ -143,6 +175,8 @@ Item {
                     accent: root.accent
                     spinning: TurretStateStyle.animated(root.state)
                     pulsing: TurretService.capturing
+                    // Nothing loops while the notch is closed or off-screen.
+                    live: root.visible && root.shapeSettled
                 }
 
                 Text {
