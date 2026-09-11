@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -236,5 +237,38 @@ func TestStartTurnReleasesTheSlotWhenItFails(t *testing.T) {
 	s.mu.Unlock()
 	if active != nil {
 		t.Error("the slot must be free after a failed start")
+	}
+}
+
+// Two disables on two IPC connections, or a disable racing daemon shutdown.
+// Without serialisation one release could clear the draining flag while the
+// other was still waiting, which readmits work during a WaitGroup wait.
+func TestConcurrentReleaseIsSafe(t *testing.T) {
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, done := s.backgroundContext(time.Second)
+			<-ctx.Done()
+			done()
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.release()
+		}()
+	}
+	wg.Wait()
+
+	// Still usable afterwards: release is also "turn it off", and turning it
+	// back on must not need a restart.
+	ctx, done := s.backgroundContext(time.Second)
+	defer done()
+	if ctx.Err() != nil {
+		t.Error("the service must accept background work again after a release")
 	}
 }

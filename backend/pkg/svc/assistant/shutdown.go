@@ -66,7 +66,16 @@ func (s *Service) backgroundContext(timeout time.Duration) (context.Context, fun
 // Idempotent, and safe to call from any state. Returns once workers are gone
 // rather than merely signalled, because the caller's whole purpose is to be able
 // to say truthfully that nothing is running.
+//
+// Serialised against itself: two concurrent releases -- a disable from the
+// settings panel racing a daemon shutdown, or simply two disables on two IPC
+// connections -- could otherwise have one clear the `closed` flag while the
+// other was still draining, which lets new work register during a WaitGroup
+// wait. That is the same misuse this flag exists to prevent.
 func (s *Service) release() {
+	s.releaseMu.Lock()
+	defer s.releaseMu.Unlock()
+
 	// 1. Abort any in-flight turn. This closes the microphone and kills the
 	//    recorder, transcriber, synthesiser and playback process groups.
 	s.mu.Lock()

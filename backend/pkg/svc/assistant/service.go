@@ -142,6 +142,9 @@ type Service struct {
 	// When the expiry sweep last ran. Guarded by mu.
 	lastSweep time.Time
 
+	// Serialises release(); see shutdown.go.
+	releaseMu sync.Mutex
+
 	mem             *memory.Store
 	pendingMemories int
 	speaking        bool
