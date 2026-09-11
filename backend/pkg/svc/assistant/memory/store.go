@@ -524,23 +524,15 @@ func (s *Store) Delete(id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM memory_fts WHERE rowid =
-	    (SELECT rowid FROM memory WHERE id = ?)`, id); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(`DELETE FROM embedding WHERE memory_id = ?`, id); err != nil {
-		return err
-	}
-	res, err := tx.Exec(`DELETE FROM memory WHERE id = ?`, id)
+	n, err := deleteMemory(tx, id)
 	if err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	n, _ := res.RowsAffected()
 	if n == 0 {
 		return fmt.Errorf("no memory with id %s", id)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 	s.audit("delete", id, "")
 	return nil

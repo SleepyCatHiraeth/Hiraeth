@@ -204,6 +204,7 @@ func (s *Service) Register(srv *ipc.Server) {
 			"memory.forget":  s.memoryForget,
 			"memory.stats":   s.memoryStats,
 			"memory.audit":   s.memoryAudit,
+			"memory.compact": s.memoryCompact,
 			"memory.export":  s.memoryExport,
 			"memory.import":  s.memoryImport,
 		},

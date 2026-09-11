@@ -439,7 +439,39 @@ func (s *Service) memoryAudit(params json.RawMessage) (any, error) {
 	return map[string]any{"enabled": true, "entries": entries}, nil
 }
 
-// sweepExpired deletes memories whose expiry has passed.
+// memoryCompact prunes stale, unconfirmed, low-importance memories.
+//
+// Exposed so the user can run it on demand and see what it would do first: a
+// dry run reports exactly the set a real run would remove.
+func (s *Service) memoryCompact(params json.RawMessage) (any, error) {
+	var p struct {
+		DryRun bool `json:"dry_run"`
+	}
+	_ = json.Unmarshal(params, &p)
+
+	st, release := s.useStore()
+	defer release()
+	if st == nil {
+		return nil, fmt.Errorf("memory is disabled")
+	}
+
+	policy := memory.DefaultCompactPolicy()
+	policy.DryRun = p.DryRun
+	res, err := st.Compact(policy)
+	if err != nil {
+		return nil, err
+	}
+	if !p.DryRun && res.Pruned > 0 {
+		logEvent("compaction pruned %d of %d memories", res.Pruned, res.Scanned)
+		s.broadcast()
+	}
+	return map[string]any{
+		"scanned": res.Scanned, "pruned": res.Pruned,
+		"kept": res.Kept, "removed": res.Removed, "dry_run": p.DryRun,
+	}, nil
+}
+
+// sweepExpired deletes memories whose expiry has passed, and compacts.
 //
 // Purge ran at startup and on demand only, so a session left running for days
 // never re-purged: retrieval filtered expired rows out, but they stayed on disk
@@ -466,8 +498,21 @@ func (s *Service) sweepExpired() {
 		logEvent("expiry sweep failed: %v", err)
 		return
 	}
-	if n > 0 {
-		logEvent("expiry sweep removed %d memories", n)
+
+	// Compaction rides the same sweep rather than adding a second timer: both
+	// are "give back space nobody is using", both are cheap, and one wakeup is
+	// cheaper than two.
+	res, cerr := st.Compact(memory.DefaultCompactPolicy())
+	if cerr != nil {
+		logEvent("compaction failed: %v", cerr)
+	} else if res.Pruned > 0 {
+		logEvent("compaction pruned %d of %d memories", res.Pruned, res.Scanned)
+	}
+
+	if n > 0 || (cerr == nil && res.Pruned > 0) {
+		if n > 0 {
+			logEvent("expiry sweep removed %d memories", n)
+		}
 		s.broadcast()
 	}
 }
