@@ -61,6 +61,39 @@ func (s *Service) backgroundContext(timeout time.Duration) (context.Context, fun
 	}
 }
 
+// goBackground runs fn on its own goroutine, registered with the shutdown wait
+// group BEFORE the goroutine starts.
+//
+// Registering inside the goroutine left a gap: a release running between the
+// `go` statement and the registration saw nothing to wait for, returned while
+// claiming everything had stopped, and the worker then started behind it. The
+// only way to close that gap is to join the group on the caller's stack.
+//
+// Returns false when the service is shutting down, in which case fn never runs.
+func (s *Service) goBackground(timeout time.Duration, fn func(context.Context)) bool {
+	s.bg.mu.Lock()
+	if s.bg.closed {
+		s.bg.mu.Unlock()
+		return false
+	}
+	if s.bg.ctx == nil {
+		s.bg.ctx, s.bg.cancel = context.WithCancel(context.Background())
+	}
+	parent := s.bg.ctx
+	s.bg.wg.Add(1)
+	s.bg.mu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(parent, timeout)
+		defer func() {
+			cancel()
+			s.bg.wg.Done()
+		}()
+		fn(ctx)
+	}()
+	return true
+}
+
 // release stops everything this service owns except the model server.
 //
 // Idempotent, and safe to call from any state. Returns once workers are gone
@@ -127,6 +160,11 @@ func (s *Service) release() {
 // exit cannot orphan the microphone.
 func (s *Service) Close() error {
 	s.closeOnce.Do(func() {
+		// Stop the health loop before releasing, so nothing it drives can
+		// restart a worker behind the teardown.
+		if s.stopHealth != nil {
+			close(s.stopHealth)
+		}
 		s.release()
 
 		// Only stop a server we started. One the user launched is theirs.

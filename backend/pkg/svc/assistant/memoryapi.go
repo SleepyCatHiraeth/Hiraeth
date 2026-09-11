@@ -25,6 +25,35 @@ func (s *Service) memoryDir() string {
 
 // store returns the open memory store, opening it on first use. Returns nil
 // when memory is disabled -- every caller must handle that.
+// useStore hands out the store and registers the caller with the shutdown wait
+// group, so a disable cannot close the database underneath work that is still
+// using it.
+//
+// Only work started through backgroundContext was tracked, which left every
+// synchronous memory handler invisible to shutdown: one IPC connection could
+// disable the assistant while another was mid-embedding on a confirmed memory,
+// and release would close the store under it.
+//
+// Returns nil when memory is off or the service is shutting down; the returned
+// function must always be called.
+func (s *Service) useStore() (*memory.Store, func()) {
+	s.bg.mu.Lock()
+	if s.bg.closed {
+		s.bg.mu.Unlock()
+		return nil, func() {}
+	}
+	s.bg.wg.Add(1)
+	s.bg.mu.Unlock()
+
+	done := func() { s.bg.wg.Done() }
+	st := s.store()
+	if st == nil {
+		done()
+		return nil, func() {}
+	}
+	return st, done
+}
+
 func (s *Service) store() *memory.Store {
 	// The whole open is done under the lock. Previously this checked, released,
 	// opened, then re-took the lock, so two concurrent callers -- the settings
@@ -100,7 +129,8 @@ func (s *Service) enabledCategories() map[string]bool {
 // than failing the turn: an assistant that cannot remember is still useful, one
 // that refuses to answer is not.
 func (s *Service) recall(ctx context.Context, prompt string) (string, []memory.Result) {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return "", nil
 	}
@@ -132,7 +162,8 @@ func (s *Service) recall(ctx context.Context, prompt string) (string, []memory.R
 // candidate awaiting confirmation; only expiring categories may activate
 // themselves, and secrets never reach the database at all.
 func (s *Service) capture(userText, replyText string) {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return
 	}
@@ -142,7 +173,9 @@ func (s *Service) capture(userText, replyText string) {
 
 	// Tied to the service's background context so shutdown and disable can
 	// cancel it. Previously this used context.Background(), so extraction kept
-	// issuing HTTP requests for up to 90s after the turn was cancelled.
+	// issuing HTTP requests for up to 90s after the turn was cancelled. The
+	// caller also registers this goroutine before starting it, so a release
+	// cannot slip between the two.
 	ctx, done := s.backgroundContext(90 * time.Second)
 	defer done()
 
@@ -179,7 +212,8 @@ func (s *Service) capture(userText, replyText string) {
 // disagrees with the review list is worse than no badge. Counting the rows is
 // cheap and cannot be wrong.
 func (s *Service) refreshPending() {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return
 	}
@@ -205,7 +239,8 @@ func (s *Service) refreshPending() {
 // --- IPC ------------------------------------------------------------------
 
 func (s *Service) memoryList(params json.RawMessage) (any, error) {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return map[string]any{"enabled": false, "items": []any{}}, nil
 	}
@@ -223,7 +258,8 @@ func (s *Service) memoryList(params json.RawMessage) (any, error) {
 }
 
 func (s *Service) memoryPending(_ json.RawMessage) (any, error) {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return map[string]any{"items": []any{}}, nil
 	}
@@ -244,7 +280,8 @@ func (s *Service) memoryPending(_ json.RawMessage) (any, error) {
 }
 
 func (s *Service) memoryConfirm(params json.RawMessage) (any, error) {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return nil, fmt.Errorf("memory is disabled")
 	}
@@ -267,18 +304,26 @@ func (s *Service) memoryConfirm(params json.RawMessage) (any, error) {
 	// fixed in `say` and `health`, hiding one layer further in.
 	if it, err := st.Get(p.ID); err == nil {
 		id, content := it.ID, it.Content
-		go func() {
-			ctx, done := s.backgroundContext(30 * time.Second)
-			defer done()
-			s.embedOrRecord(ctx, st, id, content)
-		}()
+		// Its own store registration, not the handler's: this goroutine
+		// outlives the handler, and the handler's `defer release()` would
+		// otherwise let a disable close the database mid-embedding.
+		bgStore, bgRelease := s.useStore()
+		if bgStore != nil {
+			if !s.goBackground(30*time.Second, func(ctx context.Context) {
+				defer bgRelease()
+				s.embedOrRecord(ctx, bgStore, id, content)
+			}) {
+				bgRelease()
+			}
+		}
 	}
 	s.refreshPending()
 	return map[string]any{"confirmed": p.ID}, nil
 }
 
 func (s *Service) memoryCorrect(params json.RawMessage) (any, error) {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return nil, fmt.Errorf("memory is disabled")
 	}
@@ -299,15 +344,26 @@ func (s *Service) memoryCorrect(params json.RawMessage) (any, error) {
 	// A correction is a new row with new content, so it needs its own vector.
 	// Without this the corrected memory is keyword-only and invisible to
 	// semantic search, which is the opposite of what correcting it was for.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	s.embedOrRecord(ctx, st, it.ID, it.Content)
+	//
+	// In the background, like confirmation: this is a 30-second HTTP call to
+	// the model server and it was holding the shell's shared request socket.
+	bgStore, bgRelease := s.useStore()
+	if bgStore != nil {
+		id, content := it.ID, it.Content
+		if !s.goBackground(30*time.Second, func(ctx context.Context) {
+			defer bgRelease()
+			s.embedOrRecord(ctx, bgStore, id, content)
+		}) {
+			bgRelease()
+		}
+	}
 	s.broadcast()
 	return it, nil
 }
 
 func (s *Service) memoryForget(params json.RawMessage) (any, error) {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return nil, fmt.Errorf("memory is disabled")
 	}
@@ -334,7 +390,8 @@ func (s *Service) memoryForget(params json.RawMessage) (any, error) {
 }
 
 func (s *Service) memoryStats(_ json.RawMessage) (any, error) {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return map[string]any{"enabled": false}, nil
 	}
@@ -361,7 +418,8 @@ func (s *Service) memoryAudit(params json.RawMessage) (any, error) {
 	}
 	_ = json.Unmarshal(params, &p)
 
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return map[string]any{"enabled": false, "entries": []any{}}, nil
 	}
@@ -379,7 +437,8 @@ func (s *Service) memoryAudit(params json.RawMessage) (any, error) {
 // indefinitely, which is not what "expires" means to the person who set it.
 // Called from the health loop, which only runs while the assistant is on.
 func (s *Service) sweepExpired() {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return
 	}
@@ -407,7 +466,8 @@ func (s *Service) sweepExpired() {
 // memoryExport returns everything as JSON. Deliberately a separate, explicit
 // action, and the payload is plaintext -- the caller is told so.
 func (s *Service) memoryExport(_ json.RawMessage) (any, error) {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return nil, fmt.Errorf("memory is disabled")
 	}
@@ -426,7 +486,8 @@ func (s *Service) memoryExport(_ json.RawMessage) (any, error) {
 // can never introduce a standing instruction or an active memory: that would
 // make a file the user was handed a way to program their assistant.
 func (s *Service) memoryImport(params json.RawMessage) (any, error) {
-	st := s.store()
+	st, release := s.useStore()
+	defer release()
 	if st == nil {
 		return nil, fmt.Errorf("memory is disabled")
 	}

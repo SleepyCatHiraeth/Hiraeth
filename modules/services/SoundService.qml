@@ -61,7 +61,6 @@ Singleton {
         const now = Date.now();
         if (lastPlayed[eventKey] && now - lastPlayed[eventKey] < repeatCooldownMs)
             return;
-        lastPlayed[eventKey] = now;
 
         const event = Config.sound.events?.[eventKey];
         if (!event || event.muted)
@@ -75,6 +74,13 @@ Singleton {
             pendingEventKey = eventKey;
             return;
         }
+
+        // Recorded here, not on entry: marking the attempt before the deferred
+        // return above meant the retry that fires when theme discovery finishes
+        // was inside its own cooldown and was discarded. The cue that lost was
+        // whichever fired first at startup -- including the microphone-open
+        // cue, which is the one sound this shell has a duty to play.
+        lastPlayed[eventKey] = now;
 
         let theme = SoundThemes.resolveTheme(Config.sound.theme);
         if (!theme.available)

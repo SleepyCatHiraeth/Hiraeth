@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Conversation history.
@@ -60,14 +61,16 @@ func (c *conversation) messages() []map[string]string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	cutoff := time.Now().Add(-historyIdleFor)
-	fresh := c.turns[:0:0]
-	for _, t := range c.turns {
-		if t.at.After(cutoff) {
-			fresh = append(fresh, t)
-		}
+	// Idle window, not per-exchange age. Expiring each exchange by its own
+	// timestamp deleted the start of a long *active* conversation -- the user
+	// had not been silent at all, so nothing had ended. What the rule is
+	// actually for is "resumed after a gap is a new conversation", so the gap
+	// is measured from the LAST exchange, and the whole conversation goes at
+	// once when it has gone stale.
+	if len(c.turns) > 0 && time.Since(c.turns[len(c.turns)-1].at) >= historyIdleFor {
+		c.turns = nil
 	}
-	c.turns = fresh
+	fresh := c.turns
 
 	// Walk backwards so the ceiling drops the oldest, not the most relevant.
 	total := 0
@@ -116,6 +119,10 @@ func (c *conversation) forget() {
 
 // trimTo cuts from the front: the end of an answer is the part a follow-up
 // question is most likely to be about.
+//
+// Cuts on a rune boundary. Slicing at an arbitrary byte offset split multi-byte
+// characters, so a trimmed reply containing anything outside ASCII was replayed
+// to the model as invalid UTF-8.
 func trimTo(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -124,8 +131,11 @@ func trimTo(s string, n int) string {
 	if n <= len(ellipsis) {
 		return ""
 	}
-	// The marker counts against the budget: it is what the model reads.
-	return ellipsis + s[len(s)-(n-len(ellipsis)):]
+	cut := len(s) - (n - len(ellipsis))
+	for cut < len(s) && !utf8.RuneStart(s[cut]) {
+		cut++ // forward, so the result stays inside the budget
+	}
+	return ellipsis + s[cut:]
 }
 
 func (c *conversation) length() int {

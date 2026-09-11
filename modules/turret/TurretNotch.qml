@@ -29,7 +29,11 @@ Item {
     required property var screen
 
     readonly property bool onActiveScreen: screen && GlobalStates.turretScreenName === screen.name
-    readonly property bool active: TurretService.enabled && GlobalStates.turretVisible && onActiveScreen
+    // The lock screen covers this surface, so anything still animating under it
+    // is repainting where nobody can look. Visibility, not state, is what
+    // decides whether motion is worth its frames.
+    readonly property bool onScreenNow: onActiveScreen && !GlobalStates.lockscreenVisible
+    readonly property bool active: TurretService.enabled && GlobalStates.turretVisible && onScreenNow
 
     readonly property string state: TurretService.state
     readonly property color accent: TurretStateStyle.accent(state)
@@ -127,7 +131,7 @@ Item {
     transformOrigin: Item.Top
 
     SequentialAnimation {
-        running: root.reviewing && root.shapeSettled && Config.animDuration > 0
+        running: root.reviewing && root.shapeSettled && root.onScreenNow && Config.animDuration > 0
         loops: Animation.Infinite
         alwaysRunToEnd: false
 
@@ -175,8 +179,9 @@ Item {
                     accent: root.accent
                     spinning: TurretStateStyle.animated(root.state)
                     pulsing: TurretService.capturing
-                    // Nothing loops while the notch is closed or off-screen.
-                    live: root.visible && root.shapeSettled
+                    // Nothing loops while the notch is closed, on another
+                    // monitor, or behind the lock screen.
+                    live: root.visible && root.shapeSettled && root.onScreenNow
                 }
 
                 Text {

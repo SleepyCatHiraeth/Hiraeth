@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -59,25 +61,47 @@ func TestSayRefusesDuringATurn(t *testing.T) {
 	}
 }
 
-// Repair and stop shell out to `lms`, which takes tens of seconds. Stop is used
-// here because it refuses immediately when the server is not ours, so the test
-// exercises the handler's asynchrony without starting anything.
+// Repair and stop shell out to `lms`, which takes tens of seconds.
+//
+// The first version of this test used a service with startedByUs=false -- the
+// fast refusal path -- so it would have stayed green if the OWNED-server stop
+// became synchronous again, which is the case that actually blocks the shell.
+// It now stubs `lms` with a script that sleeps, and asserts the handler returns
+// while that script is still running.
 func TestHealthStopIsNotSynchronous(t *testing.T) {
-	s := &Service{state: StateIdle}
+	slow := filepath.Join(t.TempDir(), "lms")
+	if err := os.WriteFile(slow, []byte("#!/bin/sh\nsleep 10\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := exeLookPath
+	exeLookPath = func(string) (string, error) { return slow, nil }
+	// Restored after the background stop has been drained, not on defer: the
+	// worker reads this package variable, so putting it back while that
+	// goroutine still runs is itself a race.
+	restore := func() { exeLookPath = old }
+
+	s := &Service{state: StateIdle, stopHealth: make(chan struct{})}
 	s.cfg = defaultConfig()
+	// Ours, so the stop is really attempted rather than refused outright.
+	s.health.startedByUs = true
 
 	start := time.Now()
 	res, err := s.healthMethod(json.RawMessage(`{"stop":true}`))
+	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("health stop: %v", err)
 	}
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Errorf("handler blocked for %s; it must run in the background", elapsed)
+	if elapsed > 2*time.Second {
+		t.Errorf("handler blocked for %s while `lms` ran; it must return immediately", elapsed)
 	}
 	if m, ok := res.(map[string]any); !ok || m["accepted"] != true {
 		t.Fatalf("expected an accepted acknowledgement, got %#v", res)
 	}
+
+	// The work really is in flight: release waits for it rather than finding
+	// nothing registered.
 	s.release()
+	restore()
 }
 
 // A stream that ends without [DONE] or a finish_reason means the connection
@@ -309,4 +333,78 @@ func TestVoiceTestLeavesItsErrorVisible(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Errorf("a failed voice test must end in an error state, got %v", s.snapshot()["state"])
+}
+
+// The health loop parks on a channel while the assistant is off, so without a
+// shutdown signal it outlived the service: one leaked goroutine per instance.
+func TestCloseStopsTheHealthLoop(t *testing.T) {
+	s := &Service{
+		state:      StateIdle,
+		healthWake: make(chan struct{}, 1),
+		stopHealth: make(chan struct{}),
+	}
+	s.cfg = defaultConfig() // disabled: the loop parks immediately
+
+	done := make(chan struct{})
+	go func() {
+		s.startHealthLoop()
+		close(done)
+	}()
+	<-done
+	time.Sleep(50 * time.Millisecond) // let the loop reach its park
+
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-s.stopHealth:
+	default:
+		t.Error("Close must signal the health loop to stop")
+	}
+}
+
+// Only work started through backgroundContext was visible to shutdown, so a
+// disable on one IPC connection could close the memory database underneath a
+// synchronous handler running on another.
+func TestReleaseWaitsForMemoryHandlers(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("XDG_DATA_HOME", dir)
+
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig()
+	s.cfg.Enabled = true
+	s.cfg.MemoryEnabled = true
+
+	st, release := s.useStore()
+	if st == nil {
+		t.Fatal("expected a store")
+	}
+
+	released := make(chan struct{})
+	go func() {
+		s.release()
+		close(released)
+	}()
+
+	select {
+	case <-released:
+		t.Fatal("release returned while a memory handler still held the store")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	release()
+	select {
+	case <-released:
+	case <-time.After(5 * time.Second):
+		t.Fatal("release did not finish after the handler let go")
+	}
+
+	// And afterwards the store is refused rather than handed out closed.
+	s.mu.Lock()
+	mem := s.mem
+	s.mu.Unlock()
+	if mem != nil {
+		t.Error("release must close the store once nothing is using it")
+	}
 }

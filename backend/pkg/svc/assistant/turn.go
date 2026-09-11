@@ -278,7 +278,9 @@ func (t *turn) run() {
 		// In memory only, and only for a complete exchange: an interrupted
 		// half-answer is not something to refer back to.
 		s.convo.record(text, reply)
-		go s.capture(text, reply)
+		// Registered on this stack, not inside the goroutine: a disable landing
+		// between the two would otherwise see nothing to wait for.
+		s.goBackground(90*time.Second, func(context.Context) { s.capture(text, reply) })
 	}
 }
 

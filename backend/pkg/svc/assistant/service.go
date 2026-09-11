@@ -155,6 +155,9 @@ type Service struct {
 
 	// buffered so a wake never blocks the setter; see startHealthLoop.
 	healthWake chan struct{}
+	// closed once, by Close, to end the health loop. Without it the loop could
+	// park on healthWake forever and outlive the service that owns it.
+	stopHealth chan struct{}
 
 	subsMu sync.Mutex
 	subs   []*ipc.Subscriber
@@ -162,7 +165,12 @@ type Service struct {
 
 func NewService() *Service {
 	cfg, err := loadConfig()
-	s := &Service{cfg: cfg, state: StateIdle, healthWake: make(chan struct{}, 1)}
+	s := &Service{
+		cfg:        cfg,
+		state:      StateIdle,
+		healthWake: make(chan struct{}, 1),
+		stopHealth: make(chan struct{}),
+	}
 	if err != nil {
 		// Surfaced rather than swallowed: the user gets defaults this session
 		// and their file is left untouched for inspection.
@@ -486,7 +494,7 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 
 	// Returns immediately: speaking took up to 60s inside the handler, freezing
 	// every other shell module for the duration.
-	go func() {
+	started := s.goBackground(60*time.Second, func(ctx context.Context) {
 		defer func() {
 			s.mu.Lock()
 			s.speaking = false
@@ -500,9 +508,6 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 			}
 		}()
 
-		ctx, done := s.backgroundContext(60 * time.Second)
-		defer done()
-
 		t := &turn{svc: s, ctx: ctx, cancel: func() {}}
 		sp, err := t.startSpeaker()
 		if err != nil {
@@ -512,10 +517,10 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 		}
 		defer sp.close()
 
-		started := time.Now()
+		began := time.Now()
 		s.setState(StateSpeaking, nil)
 		if err := sp.say(p.Text); err != nil {
-			logWorker("voice-test", time.Since(started), err, sp.diagnostic())
+			logWorker("voice-test", time.Since(began), err, sp.diagnostic())
 			s.failKind(ErrTTS, err.Error())
 			return
 		}
@@ -523,12 +528,18 @@ func (s *Service) say(params json.RawMessage) (any, error) {
 		// A voice test that produced no sound must not report success: it is
 		// the one thing the test exists to tell the user.
 		if err := sp.err(); err != nil {
-			logWorker("voice-test", time.Since(started), err, sp.diagnostic())
+			logWorker("voice-test", time.Since(began), err, sp.diagnostic())
 			s.failKind(ErrTTS, err.Error())
 			return
 		}
-		logWorker("voice-test", time.Since(started), nil, "")
-	}()
+		logWorker("voice-test", time.Since(began), nil, "")
+	})
+	if !started {
+		s.mu.Lock()
+		s.speaking = false
+		s.mu.Unlock()
+		return nil, fmt.Errorf("the assistant is shutting down")
+	}
 
 	return map[string]any{"accepted": true, "async": true}, nil
 }
@@ -563,9 +574,7 @@ func (s *Service) healthMethod(params json.RawMessage) (any, error) {
 
 	if p.Stop || p.Repair {
 		stop := p.Stop
-		go func() {
-			ctx, done := s.backgroundContext(45 * time.Second)
-			defer done()
+		s.goBackground(45*time.Second, func(ctx context.Context) {
 			if stop {
 				if err := s.stopServer(ctx); err != nil {
 					logEvent("model server stop failed: %v", err)
@@ -580,7 +589,7 @@ func (s *Service) healthMethod(params json.RawMessage) (any, error) {
 				logEvent("model server failed to start")
 			}
 			s.setState(StateIdle, nil)
-		}()
+		})
 		ok, lastErr := s.healthSnapshot()
 		return map[string]any{
 			"accepted": true, "async": true,
@@ -666,15 +675,13 @@ func (s *Service) setConfig(params json.RawMessage) (any, error) {
 		ours := s.health.startedByUs
 		s.health.mu.Unlock()
 		if ours {
-			go func() {
-				ctx, done := s.backgroundContext(45 * time.Second)
-				defer done()
+			s.goBackground(45*time.Second, func(ctx context.Context) {
 				if err := s.stopServerForce(ctx); err != nil {
 					logEvent("could not stop the model server on disable: %v", err)
 					return
 				}
 				logEvent("model server stopped: assistant disabled")
-			}()
+			})
 		}
 	} else {
 		// Wake the parked health loop and probe immediately, or the panel

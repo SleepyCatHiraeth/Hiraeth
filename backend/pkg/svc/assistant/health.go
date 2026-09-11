@@ -169,6 +169,14 @@ func (s *Service) startHealthLoop() {
 		idle := time.NewTimer(time.Hour)
 		defer idle.Stop()
 		for {
+			// Shutdown first, so a daemon exit is not held up by a parked loop
+			// and a test does not leak one goroutine per constructed service.
+			select {
+			case <-s.stopHealth:
+				return
+			default:
+			}
+
 			s.mu.Lock()
 			enabled := s.cfg.Enabled
 			s.mu.Unlock()
@@ -179,7 +187,11 @@ func (s *Service) startHealthLoop() {
 				// on a laptop, for a service the user had deliberately
 				// disabled. Turning it on signals this channel, so nothing is
 				// lost by sleeping indefinitely.
-				<-s.healthWake
+				select {
+				case <-s.healthWake:
+				case <-s.stopHealth:
+					return
+				}
 				continue
 			}
 
@@ -197,6 +209,8 @@ func (s *Service) startHealthLoop() {
 			select {
 			case <-idle.C:
 			case <-s.healthWake:
+			case <-s.stopHealth:
+				return
 			}
 		}
 	}()

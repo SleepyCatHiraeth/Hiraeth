@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestConversationKeepsTheRecentPastOnly(t *testing.T) {
@@ -96,5 +97,65 @@ func TestBuildMessagesOrdersPersonaMemoryHistoryPrompt(t *testing.T) {
 	}
 	if !strings.HasPrefix(msgs[4]["content"], "now") {
 		t.Errorf("the new question must come last, got %q", msgs[4]["content"])
+	}
+}
+
+// Expiring each exchange by its own age deleted the start of a long ACTIVE
+// conversation. The rule is "resumed after a gap is a new conversation", so the
+// gap is measured from the last exchange.
+func TestConversationDoesNotExpireWhileActive(t *testing.T) {
+	var c conversation
+	c.record("first", "answer")
+	c.record("second", "answer")
+
+	// The first exchange is older than the idle window, but the conversation
+	// never went quiet.
+	c.mu.Lock()
+	c.turns[0].at = time.Now().Add(-historyIdleFor - time.Hour)
+	c.mu.Unlock()
+
+	if got := len(c.messages()); got != 4 {
+		t.Errorf("an active conversation must keep its start, got %d messages", got)
+	}
+}
+
+func TestConversationExpiresWhenTheLastExchangeIsStale(t *testing.T) {
+	var c conversation
+	c.record("first", "answer")
+	c.record("second", "answer")
+	c.mu.Lock()
+	for i := range c.turns {
+		c.turns[i].at = time.Now().Add(-historyIdleFor - time.Minute)
+	}
+	c.mu.Unlock()
+
+	if got := len(c.messages()); got != 0 {
+		t.Errorf("a conversation resumed after a long gap starts fresh, got %d", got)
+	}
+}
+
+// Slicing at an arbitrary byte offset split characters, so a trimmed reply
+// containing anything outside ASCII was replayed as invalid UTF-8.
+func TestTrimToCutsOnRuneBoundaries(t *testing.T) {
+	// Three-byte runes, so an arbitrary cut lands mid-character.
+	long := strings.Repeat("日", 200)
+	for _, n := range []int{10, 37, 100, 299} {
+		got := trimTo(long, n)
+		if !utf8.ValidString(got) {
+			t.Errorf("trimTo(%d) produced invalid UTF-8", n)
+		}
+		if len(got) > n {
+			t.Errorf("trimTo(%d) returned %d bytes, over budget", n, len(got))
+		}
+	}
+}
+
+func TestConversationCeilingKeepsValidUTF8(t *testing.T) {
+	var c conversation
+	c.record("question", strings.Repeat("日", historyChars))
+	for _, m := range c.messages() {
+		if !utf8.ValidString(m["content"]) {
+			t.Error("replayed history must be valid UTF-8")
+		}
 	}
 }

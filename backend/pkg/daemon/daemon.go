@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -82,16 +83,57 @@ func startLogging(p *paths.Paths) {
 		return
 	}
 	path := p.DaemonLog()
-	if fi, err := os.Stat(path); err == nil && fi.Size() > 4<<20 {
-		_ = os.Remove(path)
-	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return // keep the default logger rather than failing to start
 	}
+	// O_CREATE's mode applies only when the file is created, so a log left
+	// behind by an earlier build -- written before this ran, at the process
+	// umask -- kept its 0644 and stayed world-readable. Repair it on every
+	// start rather than only on the day it is created.
+	if err := f.Chmod(0o600); err != nil {
+		log.Printf("[ambxst] could not restrict log permissions: %v", err)
+	}
+
 	log.SetFlags(log.LstdFlags)
-	log.SetOutput(f)
+	log.SetOutput(&cappedLog{f: f, max: 4 << 20})
 	log.Printf("[ambxst] daemon starting, pid %d", os.Getpid())
+}
+
+// cappedLog keeps the daemon log bounded while the daemon runs.
+//
+// The size was checked once at startup, so a daemon left running for weeks --
+// which is the normal case for a desktop shell -- grew without limit. When the
+// cap is reached the file is truncated rather than rotated: this is a log for
+// reading after something went wrong this week, not an archive.
+type cappedLog struct {
+	mu   sync.Mutex
+	f    *os.File
+	n    int64
+	max  int64
+	init bool
+}
+
+func (c *cappedLog) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.init {
+		if fi, err := c.f.Stat(); err == nil {
+			c.n = fi.Size()
+		}
+		c.init = true
+	}
+	if c.n+int64(len(p)) > c.max {
+		if err := c.f.Truncate(0); err == nil {
+			if _, err := c.f.Seek(0, io.SeekStart); err == nil {
+				c.n = 0
+			}
+		}
+	}
+	n, err := c.f.Write(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // New wires every service into a freshly constructed server. The caller is
