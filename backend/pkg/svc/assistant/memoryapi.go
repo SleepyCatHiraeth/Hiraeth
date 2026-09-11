@@ -447,7 +447,15 @@ func (s *Service) memoryCompact(params json.RawMessage) (any, error) {
 	var p struct {
 		DryRun bool `json:"dry_run"`
 	}
-	_ = json.Unmarshal(params, &p)
+	// Decoded strictly. Ignoring the error meant `{"dry_run":"true"}` -- a
+	// string, so a decode failure -- fell through to the zero value and ran a
+	// real, irreversible compaction while reporting back "dry_run": false. A
+	// request meant to inspect must never delete because its input was mistyped.
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("compact: %w", err)
+		}
+	}
 
 	st, release := s.useStore()
 	defer release()

@@ -59,13 +59,19 @@ func (s *Store) Compact(p CompactPolicy) (CompactResult, error) {
 		return result, err
 	}
 	cutoff := time.Now().Add(-p.MaxAge).Unix()
+	// Candidates are excluded alongside quarantined items: both are waiting for
+	// a decision the user has not made yet. Listing one for review does not
+	// touch last_accessed_at and the notch holds a detached copy, so a sweep
+	// could delete the memory whose text was on screen and turn the user's
+	// "Keep" into "no memory" -- losing the item during the very review meant
+	// to decide its fate.
 	query := `SELECT id FROM memory
 	    WHERE user_confirmed = 0
 	      AND category != ?
-	      AND status != ?
+	      AND status NOT IN (?, ?)
 	      AND importance < ?
 	      AND COALESCE(last_accessed_at, created_at) < ?`
-	args := []any{CatInstruction, StatusQuarantined, p.MinImportance, cutoff}
+	args := []any{CatInstruction, StatusQuarantined, StatusCandidate, p.MinImportance, cutoff}
 	if p.RequireUnused {
 		query += ` AND last_accessed_at IS NULL`
 	}

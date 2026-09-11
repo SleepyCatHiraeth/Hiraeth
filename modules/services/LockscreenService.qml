@@ -50,7 +50,20 @@ Singleton {
     }
 
     function publish() {
-        BackendService.call("lock.set", {locked: GlobalStates.lockscreenVisible}, () => {});
+        const want = GlobalStates.lockscreenVisible;
+        BackendService.call("lock.set", {locked: want}, (result, error) => {
+            // A dropped report is the dangerous direction: the daemon would
+            // keep a stale value and the guard would answer from it. Retry once
+            // on the next tick rather than discarding the error.
+            if (error && want === GlobalStates.lockscreenVisible)
+                retry.restart();
+        });
+    }
+
+    property Timer retry: Timer {
+        interval: 500
+        repeat: false
+        onTriggered: root.publish()
     }
 
     // Published at startup as well as on change, because logind's LockedHint
@@ -62,9 +75,28 @@ Singleton {
     // showing a lockscreen.
     property Timer announce: Timer {
         running: true
-        interval: 0
+        // Not 0: a Timer with interval 0 never fires in Qt, which this codebase
+        // already learned once -- see the unlock timer in LockScreen.qml.
+        interval: 1
         repeat: false
         onTriggered: root.publish()
+    }
+
+    // Republished whenever the backend connection comes back.
+    //
+    // The daemon can restart without the shell restarting, and its lock service
+    // starts at false. Reporting only on transitions left that wrong until the
+    // next lock or unlock: a shell sitting locked through a daemon restart would
+    // have had reload allowed against it. A failed call is also retried here,
+    // since a write that fails after the socket was established is otherwise
+    // lost with no error surfaced.
+    property Connections backendWatcher: Connections {
+        target: BackendService
+
+        function onSocketAvailableChanged() {
+            if (BackendService.socketAvailable)
+                root.publish();
+        }
     }
 
     property IpcHandler ipc: IpcHandler {

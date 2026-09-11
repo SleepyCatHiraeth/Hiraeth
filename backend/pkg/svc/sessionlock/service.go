@@ -85,6 +85,23 @@ func (s *Service) state(json.RawMessage) (any, error) {
 	return map[string]any{"locked": s.Locked()}, nil
 }
 
+// CombineLockSignals decides whether the session must be treated as locked,
+// given the shell's answer (and whether it was available) and logind's.
+//
+// It lives here rather than in the CLI so it can be tested: the rule is the
+// whole safety property, and the first version of it was wrong -- it preferred
+// the shell's answer even when that answer was false, letting a freshly
+// restarted daemon override a logind hint that still said locked.
+//
+// Either source saying locked wins. A guard against stranding someone at a
+// locked screen is only worth having if it errs toward refusing.
+func CombineLockSignals(shellLocked, shellKnown, logindLocked bool) bool {
+	if shellKnown && shellLocked {
+		return true
+	}
+	return logindLocked
+}
+
 func (s *Service) Locked() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

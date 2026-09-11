@@ -78,7 +78,10 @@ Singleton {
         // An absolute-path override bypasses theme resolution entirely, so
         // it never needs to wait on SoundThemes' async availability check.
         if (!override && Config.sound.theme === "portal-turret" && !SoundThemes.availabilityChecked) {
-            if (!pendingEventKeys.includes(eventKey) && pendingEventKeys.length < 8)
+            // Duplicates are kept. Collapsing them made this an ordered SET,
+            // so listening -> error -> listening queued only the first two and
+            // the run ended on the error cue with the microphone still open.
+            if (pendingEventKeys.length < 8)
                 pendingEventKeys = pendingEventKeys.concat([eventKey]);
             return;
         }

@@ -92,9 +92,16 @@ Singleton {
         if (!data)
             return;
         const incoming = data.seq === undefined ? root.seq + 1 : data.seq;
+        // A sequence far BELOW ours is a new daemon, not a stale event: the
+        // counter restarts at zero, and treating that as stale left the UI
+        // frozen on pre-restart state until the new daemon caught up. Accept it
+        // and resynchronise.
+        const restarted = incoming + 1 < root.seq;
+        if (restarted)
+            root._seenFirstSnapshot = false;
         // Strictly newer. Equal sequence numbers were accepted, so a resent
         // snapshot could be treated as a fresh transition.
-        if (incoming <= root.seq && root._seenFirstSnapshot)
+        else if (incoming <= root.seq && root._seenFirstSnapshot)
             return;
         // Events can be dropped when a subscriber queue fills (see
         // pkg/ipc/server.go), and the backend's sequence number is what reveals

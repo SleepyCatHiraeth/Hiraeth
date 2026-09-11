@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
+
+	"ambxst/backend/pkg/svc/sessionlock"
 )
 
 // Restarting the shell while the session is locked strands the user.
@@ -32,10 +34,10 @@ import (
 // the daemon because it is the truth, logind because it still covers a lock
 // engaged by anything else on the system.
 func sessionLocked() bool {
-	if locked, ok := shellReportsLocked(); ok {
-		return locked
-	}
-	return logindReportsLocked()
+	// The rule itself lives in the sessionlock package so it can be tested;
+	// see CombineLockSignals for why it is an OR and not a preference.
+	shell, known := shellReportsLocked()
+	return sessionlock.CombineLockSignals(shell, known, logindReportsLocked())
 }
 
 // shellReportsLocked asks the running daemon. The second return is false when

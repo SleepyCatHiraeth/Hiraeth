@@ -221,3 +221,41 @@ func assertRowCount(t *testing.T, s *Store, query string, arg any, want int) {
 		t.Fatalf("row count = %d, want %d", got, want)
 	}
 }
+
+// A candidate is waiting for a decision the user has not made. The notch holds
+// a detached copy while showing it, and listing it does not touch
+// last_accessed_at, so a sweep could delete the memory whose text was on screen
+// and turn "Keep" into "no memory".
+func TestCompactLeavesCandidatesForReview(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	old := time.Now().Add(-365 * 24 * time.Hour).Unix()
+	it := &Item{
+		Category: CatFact, Content: "waiting for review", SourceType: "conversation",
+		Confidence: 0.2, Importance: 0.1, Sensitivity: "none", Language: "en",
+		TrustLevel: TrustDerived, Status: StatusCandidate,
+	}
+	if err := s.Put(it); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE memory SET created_at = ?, last_accessed_at = NULL WHERE id = ?`, old, it.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := s.Compact(DefaultCompactPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range res.Removed {
+		if id == it.ID {
+			t.Fatal("compaction deleted a memory that was awaiting the user's review")
+		}
+	}
+	if _, err := s.Get(it.ID); err != nil {
+		t.Errorf("the candidate should still exist: %v", err)
+	}
+}

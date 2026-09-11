@@ -377,14 +377,22 @@ func classifyError(err error) string {
 // can explain a missing piece instead of failing mid-turn. It deliberately does
 // not start anything.
 func (s *Service) check(_ json.RawMessage) (any, error) {
+	// One snapshot for the whole answer. This read s.cfg a dozen times without
+	// the lock, including from three goroutines, while setConfig writes it
+	// under one -- a data race, and a report that could describe files from the
+	// old stack directory beside a probe of the new endpoint.
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+
 	res := map[string]any{}
-	venv := filepath.Join(s.cfg.StackDir, ".venv", "bin", "python")
+	venv := filepath.Join(cfg.StackDir, ".venv", "bin", "python")
 
 	for label, path := range map[string]string{
 		"venv":  venv,
-		"stt":   filepath.Join(s.cfg.StackDir, "stt.py"),
-		"tts":   filepath.Join(s.cfg.StackDir, "tts.py"),
-		"voice": s.voiceModelPath(),
+		"stt":   filepath.Join(cfg.StackDir, "stt.py"),
+		"tts":   filepath.Join(cfg.StackDir, "tts.py"),
+		"voice": voiceModelPath(cfg),
 	} {
 		_, err := os.Stat(path)
 		res[label] = err == nil
@@ -413,7 +421,7 @@ func (s *Service) check(_ json.RawMessage) (any, error) {
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		t := pickCaptureTarget(ctx, s.cfg.CaptureTarget)
+		t := pickCaptureTarget(ctx, cfg.CaptureTarget)
 		mu.Lock()
 		target = t
 		mu.Unlock()
@@ -433,7 +441,7 @@ func (s *Service) check(_ json.RawMessage) (any, error) {
 	}()
 	go func() {
 		defer wg.Done()
-		err := probeLLM(ctx, s.cfg.Endpoint)
+		err := probeLLM(ctx, cfg.Endpoint)
 		mu.Lock()
 		llmErr = err
 		mu.Unlock()
@@ -444,11 +452,11 @@ func (s *Service) check(_ json.RawMessage) (any, error) {
 	if sources != nil {
 		res["sources"] = sources
 	}
-	res["playback_target"] = s.cfg.PlaybackTarget
+	res["playback_target"] = cfg.PlaybackTarget
 	if sinks != nil {
 		res["sinks"] = sinks
 	}
-	if err := checkEndpoint(s.cfg.Endpoint); err != nil {
+	if err := checkEndpoint(cfg.Endpoint); err != nil {
 		res["endpoint"] = false
 		res["endpoint_error"] = err.Error()
 	} else {
@@ -676,6 +684,14 @@ func (s *Service) setConfig(params json.RawMessage) (any, error) {
 	}
 
 	s.mu.Lock()
+	// Rechecked under the same lock that installs it. The busy test above
+	// happens before decoding and a disk write, and a turn can claim the slot
+	// inside that window -- so "settings are refused mid-turn" was true of the
+	// check and not of the write.
+	if s.turn != nil || s.speaking {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("busy: finish or cancel the current turn first")
+	}
 	s.cfg = next
 	s.mu.Unlock()
 	// Turning the assistant off must actually stop things, not just refuse new

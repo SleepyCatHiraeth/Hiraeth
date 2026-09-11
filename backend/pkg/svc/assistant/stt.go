@@ -36,6 +36,30 @@ type sttWorker struct {
 	out      *bufio.Scanner
 	stderr   *capped
 	lastUsed time.Time
+	// The settings this worker was started with. Keeping a worker warm across
+	// turns meant it also outlived the settings it was built from: changing the
+	// model or the vocabulary left the old worker transcribing with the old
+	// values until the idle reaper happened to collect it, so the turn used
+	// neither its own snapshot nor the live configuration.
+	builtWith sttFingerprint
+}
+
+// sttFingerprint is the part of the configuration that requires a new worker.
+// Anything not here can change without restarting one.
+type sttFingerprint struct {
+	stackDir string
+	model    string
+	threads  int
+	vocab    string
+}
+
+func fingerprintSTT(cfg Config) sttFingerprint {
+	return sttFingerprint{
+		stackDir: cfg.StackDir,
+		model:    cfg.STTModel,
+		threads:  cfg.STTThreads,
+		vocab:    cfg.STTVocab,
+	}
 }
 
 // transcribe sends one WAV path to the warm worker and waits for its answer.
@@ -117,8 +141,15 @@ func (s *Service) transcribeWarm(ctx context.Context, cfg Config, wav string) (s
 // timer, so a turn whose five-minute budget expired during Whisper model load
 // stayed occupied for up to another minute after it should have ended.
 func (w *sttWorker) ensure(ctx context.Context, cfg Config) error {
+	want := fingerprintSTT(cfg)
 	if w.cmd != nil {
-		return nil
+		if w.builtWith == want {
+			return nil
+		}
+		// Settings changed under the warm worker; replace it rather than
+		// transcribe with the old ones.
+		logEvent("transcriber settings changed, restarting it")
+		w.stopLocked()
 	}
 	python := filepath.Join(cfg.StackDir, ".venv", "bin", "python")
 	if _, err := os.Stat(python); err != nil {
@@ -196,6 +227,7 @@ func (w *sttWorker) ensure(ctx context.Context, cfg Config) error {
 	}
 
 	w.lastUsed = time.Now()
+	w.builtWith = want
 	logEvent("transcriber warm (model %s)", cfg.STTModel)
 	return nil
 }
@@ -218,6 +250,7 @@ func (w *sttWorker) stopLocked() {
 		go func() { _ = cmd.Wait() }()
 	}
 	w.cmd, w.in, w.out, w.stderr = nil, nil, nil, nil
+	w.builtWith = sttFingerprint{}
 }
 
 func (w *sttWorker) stop() {
