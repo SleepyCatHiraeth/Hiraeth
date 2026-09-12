@@ -369,7 +369,9 @@ Singleton {
             "image": options.image || "",
             "summary": options.summary || "",
             "time": options.time || Date.now(),
-            "urgency": options.urgency || NotificationUrgency.Normal,
+            // `||` would treat NotificationUrgency.Low, which is 0, as absent and
+            // silently promote it to Normal.
+            "urgency": options.urgency !== undefined && options.urgency !== null ? options.urgency : NotificationUrgency.Normal,
             "historyPriority": options.historyPriority || 0,
             "replaceKey": options.replaceKey || "",
             "soundEvent": options.soundEvent || "",
