@@ -172,11 +172,16 @@ PopupWindow {
     }
 
     function open() {
-        if (visible)
+        // Gate on the logical state, not on `visible`. A popup that is still
+        // playing its close animation is `visible` but not `isOpen`, and the
+        // old `if (visible) return` made that window swallow a reopen - a
+        // click right after a close did nothing.
+        if (isOpen)
             return;
 
-        // Debug positioning
-        console.log("BarPopup OPEN - position:", barPosition, "anchorItem:", anchorItem.width, "x", anchorItem.height, "rect.x:", anchor.rect.x, "rect.y:", anchor.rect.y);
+        // Cancel a pending hide so an interrupted close does not blank the
+        // window a frame after we just reopened it.
+        closeTimer.stop();
 
         // Group-aware mutual exclusion: ask Visibilities to close any
         // sibling popups already open in the same groupId, then
@@ -186,9 +191,13 @@ PopupWindow {
         // Set logical state immediately
         isOpen = true;
 
-        // Reset animation state
-        popupOpacity = 0;
-        popupScale = 0.9;
+        // Only reset the animation from scratch for a genuinely hidden popup.
+        // Reopening mid-close retargets the running Behaviors from wherever
+        // they are, which reads as the panel catching itself.
+        if (!visible) {
+            popupOpacity = 0;
+            popupScale = 0.9;
+        }
 
         // Show popup
         visible = true;
@@ -202,7 +211,7 @@ PopupWindow {
     }
 
     function close() {
-        if (!visible)
+        if (!isOpen)
             return;
 
         // Drop our registration so future opens in the same group
@@ -222,7 +231,7 @@ PopupWindow {
     }
 
     function toggle() {
-        if (visible) {
+        if (isOpen) {
             close();
         } else {
             open();

@@ -28,6 +28,7 @@ Singleton {
         property string urgency: "normal"
         property int historyPriority: 0
         property string replaceKey: ""
+        property string soundEvent: ""
         property var localActionHandlers: ({})
         property Timer timer
 
@@ -92,6 +93,7 @@ Singleton {
             "urgency": notif.urgency,
             "historyPriority": notif.historyPriority,
             "replaceKey": notif.replaceKey,
+            "soundEvent": notif.soundEvent,
             "cachedAppIcon": notif.cachedAppIcon,
             "cachedImage": notif.cachedImage,
             "isCached": notif.isCached
@@ -179,6 +181,7 @@ Singleton {
             "urgency": json.urgency,
             "historyPriority": json.historyPriority || 0,
             "replaceKey": json.replaceKey || "",
+            "soundEvent": json.soundEvent || "",
             "cachedAppIcon": json.cachedAppIcon || "",
             "cachedImage": json.cachedImage || "",
             "isCached": json.isCached || true  // Default to true for loaded notifications
@@ -369,6 +372,7 @@ Singleton {
             "urgency": options.urgency || NotificationUrgency.Normal,
             "historyPriority": options.historyPriority || 0,
             "replaceKey": options.replaceKey || "",
+            "soundEvent": options.soundEvent || "",
             "localActionHandlers": options.actionHandlers || {},
             "popup": !root.popupInhibited && options.popup !== false,
             "isCached": false

@@ -561,6 +561,19 @@ Item {
                                     bar: root,
                                     pluginService: PluginService
                                 })
+                                // Hand the pill-continuity radii to plugins that opt in.
+                                // Native bar widgets all receive startRadius/endRadius so
+                                // adjacent items form one continuous pill; plugins could not,
+                                // so every plugin rendered as an isolated rounded box inside
+                                // the group. Assigned after load and guarded on the property
+                                // existing, so plugins that do not declare them are untouched
+                                // (passing them through setSource would warn on those).
+                                onLoaded: {
+                                    if (item && item.startRadius !== undefined)
+                                        item.startRadius = root.innerRadius;
+                                    if (item && item.endRadius !== undefined)
+                                        item.endRadius = root.innerRadius;
+                                }
                             }
                         }
 
@@ -623,6 +636,16 @@ Item {
                                     bar: root,
                                     pluginService: PluginService
                                 })
+                                // Vertical plugins sit after PresetsButton, which already
+                                // closes its group with outerRadius, so each plugin is its
+                                // own standalone pill here - outer on both ends, which is
+                                // also exactly what they rendered before this was passed.
+                                onLoaded: {
+                                    if (item && item.startRadius !== undefined)
+                                        item.startRadius = root.outerRadius;
+                                    if (item && item.endRadius !== undefined)
+                                        item.endRadius = root.outerRadius;
+                                }
                             }
                         }
 

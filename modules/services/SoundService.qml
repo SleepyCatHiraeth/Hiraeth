@@ -154,7 +154,16 @@ Singleton {
             // meant every enum-passing caller silently fell through to the
             // generic notification sound. Enum: Low=0, Normal=1, Critical=2.
             const urgency = String(notif?.urgency);
-            const eventKey = (urgency === "critical" || urgency === "2") ? "critical"
+            const requestedEvent = typeof notif?.soundEvent === "string" ? notif.soundEvent : "";
+            // "none" opts a notification out of sound entirely. Informational
+            // diagnostics - a missing udev permission, an unexpected device -
+            // should appear in the shade without chirping; without this sentinel
+            // they fall through to the urgency map and play `critical`.
+            if (requestedEvent === "none")
+                return;
+            const theme = SoundThemes.resolveTheme(Config.sound.theme);
+            const eventKey = requestedEvent && Object.prototype.hasOwnProperty.call(theme.events, requestedEvent) ? requestedEvent
+                : (urgency === "critical" || urgency === "2") ? "critical"
                 : (urgency === "low" || urgency === "0") ? "low" : "notification";
             root.play(eventKey);
         }
