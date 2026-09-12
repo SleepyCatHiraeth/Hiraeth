@@ -38,7 +38,15 @@ func detachAttr() *syscall.SysProcAttr {
 
 func runUpdate() {
 	fmt.Println("Updating Ambxst...")
-	cmd := exec.Command("sh", "-c", "curl -fsSL get.axeni.de/ambxst | sh")
+	// https, explicitly. The URL had no scheme, so curl defaulted to http and
+	// -L followed whatever came back -- the installer was fetched in plaintext
+	// and piped straight into a shell. On any untrusted network the update
+	// button was remote code execution, and the update banner in the dashboard
+	// reaches this same path.
+	//
+	// This is still curl-to-shell, which deserves a signature or a checksum;
+	// removing the plaintext leg is the part that costs one word.
+	cmd := exec.Command("sh", "-c", "curl -fsSL https://get.axeni.de/ambxst | sh")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {

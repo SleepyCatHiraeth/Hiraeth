@@ -94,11 +94,25 @@ func (s *Service) ensureDB() error {
 	return err
 }
 
+// query runs one statement, passing the SQL on STDIN rather than in argv.
+//
+// It used to be `sqlite3 <db> <sql>`, which put the whole statement -- API key
+// ciphertext included -- into argv[2]. /proc/<pid>/cmdline is world-readable and
+// this machine mounts /proc without hidepid, so any local process could read a
+// key out of the child's command line while it ran, bypassing the 0600 on the
+// database entirely.
+//
+// This is the same defect already fixed twice on the AI path (bec5aab4,
+// eb7caf16) by moving secrets onto stdin. The keystore write path was missed
+// both times, which is what a secret reaching a process boundary in two
+// different subsystems looks like.
 func (s *Service) query(args ...string) (string, error) {
 	s.lock <- struct{}{}
 	defer func() { <-s.lock }()
-	cmd := exec.Command("sqlite3", s.db, args[0])
+	cmd := exec.Command("sqlite3", s.db)
 	cmd.Args = append(cmd.Args, args[1:]...)
+	// sqlite3 reads statements from stdin and treats EOF as the end of input.
+	cmd.Stdin = strings.NewReader(args[0] + "\n")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
