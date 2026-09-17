@@ -34,6 +34,7 @@ QtObject {
     property bool _initialized: false
     property bool _freezing: false
     property int _pendingFrames: 0
+    property bool recognitionPending: false
 
     function initialize() {
         if (_initialized) return;
@@ -235,13 +236,16 @@ QtObject {
     // OCR / QR reuse the region selection overlay; results land in the
     // clipboard on the backend side and surface as internal notifications.
     function _runRecognition(kind, x, y, w, h) {
-        root.captureMode = "normal";
+        root.recognitionPending = true;
         var method = kind === "qr" ? "ocr.barcode" : "ocr.text";
         var params = { x: x, y: y, width: w, height: h };
         if (kind === "ocr") {
             params.langs = root.ocrLangs();
         }
         BackendService.call(method, params, (result, error) => {
+            root.recognitionPending = false;
+            root.captureMode = "normal";
+            root.releaseFrozenFrames();
             if (error) {
                 Notifications.notifyInternal({
                     summary: kind === "qr" ? "QR Scan Error" : "OCR Error",

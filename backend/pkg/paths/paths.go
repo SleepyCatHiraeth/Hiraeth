@@ -118,6 +118,20 @@ func (p *Paths) ClipboardImageCacheDir() string {
 	return filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "ambxst", "clipboard-img")
 }
 
+// ScreenshotFrameDir is the tmpfs directory holding the freeze-preview
+// frames the screenshot tool displays. A frame is a full copy of the
+// screen, so it belongs beside the clipboard caches under the 0700
+// runtime directory rather than in world-traversable /tmp, and it is
+// wiped when the session ends. Empty when XDG_RUNTIME_DIR is unset, in
+// which case the caller falls back to the system temp directory.
+func (p *Paths) ScreenshotFrameDir() string {
+	runtime := os.Getenv("XDG_RUNTIME_DIR")
+	if runtime == "" {
+		return ""
+	}
+	return filepath.Join(runtime, "ambxst", "frames")
+}
+
 func (p *Paths) KeysDB() string {
 	return filepath.Join(p.DataDir, "keys.db")
 }

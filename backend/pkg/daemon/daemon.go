@@ -59,6 +59,7 @@ type Daemon struct {
 	powerprof   *powerprofile.Service
 	nightlight  *nightlight.Service
 	recorder    *recordersvc.Service
+	screenshot  *screenshot.Service
 	assistant   *assistantsvc.Service
 	sessionLock *sessionlock.Service
 	mods        *mods.Manager
@@ -230,6 +231,7 @@ func New() (*Daemon, error) {
 
 	shotSvc := screenshot.NewService(d.paths)
 	shotSvc.Register(d.srv)
+	d.screenshot = shotSvc
 
 	recSvc := recordersvc.NewService(d.paths)
 	recSvc.Register(d.srv)
@@ -464,6 +466,9 @@ func (d *Daemon) shutdown() {
 	}
 	if d.recorder != nil {
 		d.recorder.Close()
+	}
+	if d.screenshot != nil {
+		d.screenshot.Close()
 	}
 	// The assistant owns the microphone and four worker process groups. Without
 	// this, a reload during capture or speech left pw-record holding the mic

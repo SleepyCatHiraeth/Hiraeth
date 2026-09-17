@@ -2,6 +2,7 @@ package screenshot
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -38,6 +39,10 @@ func (s *Service) Register(srv *ipc.Server) {
 	})
 }
 
+func (s *Service) Close() {
+	capture.ReleaseSession()
+}
+
 type frameParams struct {
 	Output string `json:"output"`
 	Cursor bool   `json:"cursor"`
@@ -60,13 +65,16 @@ func (s *Service) frame(params json.RawMessage) (any, error) {
 		return nil, err
 	}
 
-	outPath := filepath.Join(os.TempDir(), fmt.Sprintf("ambxst_frame_%s.png", p.Output))
-	if err := writePNG(result, outPath); err != nil {
+	outPath, err := writeTempPNG(s.frameDir(), result)
+	if err != nil {
 		closer()
 		return nil, err
 	}
 
-	capture.StoreSessionFrame(p.Output, result, closer)
+	capture.StoreSessionFrame(p.Output, result, func() {
+		closer()
+		_ = os.Remove(outPath)
+	})
 
 	return map[string]any{
 		"path":   outPath,
@@ -188,6 +196,35 @@ func writePNG(result *screenshot.CaptureResult, outPath string) error {
 	}
 	defer f.Close()
 	return screenshot.EncodeBufferPNG(f, result.Buffer, result.Format, nil)
+}
+
+// frameDir resolves the directory freeze frames are written to, creating
+// it when needed. It falls back to the system temp directory only when
+// XDG_RUNTIME_DIR is unset or unusable; os.CreateTemp keeps the file
+// itself at 0600 either way.
+func (s *Service) frameDir() string {
+	dir := s.paths.ScreenshotFrameDir()
+	if dir == "" {
+		return ""
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return ""
+	}
+	return dir
+}
+
+func writeTempPNG(dir string, result *screenshot.CaptureResult) (string, error) {
+	f, err := os.CreateTemp(dir, "ambxst_frame_*.png")
+	if err != nil {
+		return "", err
+	}
+	path := f.Name()
+	err = errors.Join(screenshot.EncodeBufferPNG(f, result.Buffer, result.Format, nil), f.Close())
+	if err != nil {
+		_ = os.Remove(path)
+		return "", err
+	}
+	return path, nil
 }
 
 func (s *Service) saveCapture(result *screenshot.CaptureResult, filename string) (string, int, int, error) {
