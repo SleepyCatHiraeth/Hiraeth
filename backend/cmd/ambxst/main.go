@@ -69,6 +69,16 @@ func main() {
 			os.Exit(1)
 		}
 		mustCall("ui.run", map[string]any{"command": cmd})
+	case "toggle":
+		cmd := ""
+		if len(args) > 1 {
+			cmd = args[1]
+		}
+		if cmd == "" {
+			fmt.Println("Error: No command specified for toggle")
+			os.Exit(1)
+		}
+		mustCall("ui.toggle", map[string]any{"command": cmd})
 	case "lock":
 		mustCall("ui.run", map[string]any{"command": "lockscreen"})
 	case "reload":
@@ -89,14 +99,10 @@ func main() {
 		os.Exit(runThumbs(args[1:], 140, true))
 	case "dthumbs":
 		os.Exit(runThumbs(args[1:], 64, false))
-	case "mpvipc":
-		os.Exit(runMpvIpc(args[1:]))
 	case "ipc":
 		os.Exit(runIpc(args[1:]))
 	case "chatlist":
 		os.Exit(runChatList(args[1:]))
-	case "writeshader":
-		os.Exit(runWriteShader(args[1:]))
 	case "wallpaper":
 		os.Exit(runWallpaper(args[1:]))
 	case "preset":
@@ -426,6 +432,7 @@ Commands:
     refresh                          Refresh local/dev profile (for developers)
     lock                             Activate lockscreen
     run <command>                    Send a UI command to the shell
+    toggle <command>                 Toggle a shell feature (e.g. bar)
     reload                           Restart Ambxst
     quit                             Stop Ambxst
     screen [on|off]                  Control DPMS
@@ -441,7 +448,6 @@ Commands:
     lockwall <wallpaper> <data>      Extract lockscreen frame from video/GIF
     thumbs <config> <cache> [fall]   Generate wallpaper thumbnails (140x140)
     dthumbs <dir> <cache>            Generate desktop thumbnails (64x64)
-    mpvipc <socket|--all> <json>     Send a command to mpvpaper
     ipc call <method> <json>         Send a raw JSON-RPC call to the daemon
     wallpaper <file>                Set wallpaper (with optional flags)
         -scheme <name>              Use a specific matugen color scheme

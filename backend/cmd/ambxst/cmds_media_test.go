@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,32 +27,5 @@ func TestFailedThumbnailIsRetriedOnlyAfterSourceChanges(t *testing.T) {
 	}
 	if !needsThumbnail(source, thumb) {
 		t.Fatal("changed failed source should be retried")
-	}
-}
-
-func TestSendMpvIpc(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "mpv.sock")
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer listener.Close()
-	received := make(chan string, 1)
-	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		line, _ := bufio.NewReader(conn).ReadString('\n')
-		received <- line
-	}()
-
-	const payload = `{"command":["set_property","time-pos",0]}`
-	if err := sendMpvIpc(socket, payload); err != nil {
-		t.Fatal(err)
-	}
-	if got := <-received; got != payload+"\n" {
-		t.Fatalf("unexpected payload %q", got)
 	}
 }

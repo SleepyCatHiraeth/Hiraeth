@@ -518,16 +518,16 @@ Singleton {
                     }
                 }
                 if (!found) {
-                    pushSystemMessage("Model '" + args + "' not found.");
+                    pushSystemMessage(I18n.t("ai.model_not_found").replace("%1", args));
                 } else {
-                    pushSystemMessage("Switched to model: " + currentModel.name);
+                    pushSystemMessage(I18n.t("ai.switched_to_model").replace("%1", currentModel.name));
                 }
             } else {
                 modelSelectionRequested();
             }
             return "handled";
         case "/help":
-            pushSystemMessage("🤖 **Assistant Commands**\n\n" + "**`/new`**\n" + "Starts a fresh conversation context.\n\n" + "**`/model [name]`**\n" + "Switches the active AI model.\n" + "• **List models:** Type `/model` without arguments.\n" + "• **Switch:** Type `/model gemini` or `/model mistral`.\n\n" + "**`/help`**\n" + "Shows this help message.\n\n" + "💡 **Tips:**\n" + "• **Edit:** Click the pen icon on any message to modify it.\n" + "• **Regenerate:** Click the refresh icon to get a new response.\n" + "• **Copy:** Use the copy button to grab code or text.");
+            pushSystemMessage(I18n.t("ai.help_message"));
             return "handled";
         }
 
@@ -717,7 +717,7 @@ Singleton {
 
         let apiKey = getApiKey(model);
         if (!apiKey && model.requires_key) {
-            lastError = "API Key missing for " + model.name + ". Add it in Settings or set " + (model.key_id || "the environment variable") + ".";
+            lastError = I18n.t("ai.api_key_missing").replace("%1", model.name).replace("%2", model.key_id || I18n.t("ai.env_variable"));
             isLoading = false;
 
             let errChat = Array.from(currentChat);
@@ -957,14 +957,14 @@ Singleton {
                     // No streaming data received — might be non-streaming response or error
                     if (!root.currentChat[target].content) {
                         let newChat = Array.from(root.currentChat);
-                        newChat[target].content = root.responseBuffer !== "" ? root.responseBuffer : "No response received from the API.";
+                        newChat[target].content = root.responseBuffer !== "" ? root.responseBuffer : I18n.t("ai.no_response");
                         root.currentChat = newChat;
                     }
 
                     root.saveCurrentChat();
                 }
             } else {
-                root.lastError = "Network Request Failed: " + curlStderr.text;
+                root.lastError = I18n.t("ai.network_failed").replace("%1", curlStderr.text);
 
                 // Update the placeholder message with error
                 if (target >= 0) {
@@ -1003,7 +1003,7 @@ Singleton {
 
             let output = cmdStdout.text + "\n" + cmdStderr.text;
             if (output.trim() === "")
-                output = "Command executed successfully (no output).";
+                output = I18n.t("ai.cmd_no_output");
 
             let newChat = Array.from(root.currentChat);
             newChat.push({
@@ -1243,7 +1243,7 @@ Singleton {
                                 let m = aiModelFactory.createObject(root, {
                                     name: item.displayName || id,
                                     icon: Qt.resolvedUrl("../../../assets/aiproviders/google.svg"),
-                                    description: item.description || "Google Gemini Model",
+                                    description: item.description || I18n.t("ai.desc_google"),
                                     endpoint: "https://generativelanguage.googleapis.com/v1beta",
                                     model: id,
                                     provider: "gemini",
@@ -1299,7 +1299,7 @@ Singleton {
                                 let m = aiModelFactory.createObject(root, {
                                     name: id,
                                     icon: Qt.resolvedUrl("../../../assets/aiproviders/openai.svg"),
-                                    description: "OpenAI Model",
+                                    description: I18n.t("ai.desc_openai"),
                                     endpoint: "https://api.openai.com",
                                     model: id,
                                     provider: "openai",
@@ -1346,7 +1346,7 @@ Singleton {
                             let m = aiModelFactory.createObject(root, {
                                 name: id,
                                 icon: Qt.resolvedUrl("../../../assets/aiproviders/mistral.svg"),
-                                description: "Mistral Model",
+                                description: I18n.t("ai.desc_mistral"),
                                 endpoint: "https://api.mistral.ai/v1",
                                 model: id,
                                 provider: "mistral",
@@ -1392,7 +1392,7 @@ Singleton {
                             let m = aiModelFactory.createObject(root, {
                                 name: id,
                                 icon: Qt.resolvedUrl("../../../assets/aiproviders/groq.svg"),
-                                description: "Groq Model",
+                                description: I18n.t("ai.desc_groq"),
                                 endpoint: "https://api.groq.com/openai/v1",
                                 model: id,
                                 provider: "groq",
@@ -1438,7 +1438,7 @@ Singleton {
                             let m = aiModelFactory.createObject(root, {
                                 name: item.display_name || id,
                                 icon: Qt.resolvedUrl("../../../assets/aiproviders/anthropic.svg"),
-                                description: item.description || "Anthropic Model",
+                                description: item.description || I18n.t("ai.desc_anthropic"),
                                 endpoint: "https://api.anthropic.com/v1/messages",
                                 model: id,
                                 provider: "anthropic",
@@ -1473,7 +1473,7 @@ Singleton {
                             let m = aiModelFactory.createObject(root, {
                                 name: item.name,
                                 icon: Qt.resolvedUrl("../../../assets/aiproviders/ollama.svg"),
-                                description: "Local Ollama Model",
+                                description: I18n.t("ai.desc_ollama"),
                                 endpoint: "http://127.0.0.1:11434",
                                 model: item.name,
                                 provider: "ollama",

@@ -9,5 +9,6 @@ var data = {
     "autoHideWithWindows": false,
     "noMediaDisplay": "userHost",
     "customText": "Ambxst",
-    "hoverToDashboard": true
+    "hoverToDashboard": true,
+    "disableHoverExpansion": true
 }

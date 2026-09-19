@@ -15,7 +15,7 @@ var ambxstBindNames = []string{
 
 var systemBindNames = []string{
 	"overview", "powermenu", "config", "lockscreen", "tools",
-	"screenshot", "screenrecord", "lens", "reload", "quit",
+	"screenshot", "screenrecord", "lens", "reload", "quit", "bar",
 }
 
 var reportedUnknownBinds sync.Map
@@ -310,6 +310,10 @@ func writeLayerRules(b *strings.Builder, in Input) {
 		{namespace: "selection", noAnim: true},
 		{namespace: "fabric", blur: true, ignoreAlphaValue: "0.4"},
 		{namespace: "^ambxst(:.*)?$", blur: true, blurPopups: true, noAnim: true, ignoreAlpha: in.Compositor.Blur.ExplicitIgnoreAlpha, ignoreAlphaValue: ambxstAlpha},
+		// Niri-only: puts the wallpaper surface into the overview backdrop
+		// (behind the workspace previews and between workspaces) instead of
+		// being scaled into every preview cell. Other generators skip it.
+		{namespace: "^ambxst:wallpaper$", placeWithinBackdrop: true},
 	}
 	for _, r := range rules {
 		writeLayerRule(b, r)
@@ -317,12 +321,13 @@ func writeLayerRules(b *strings.Builder, in Input) {
 }
 
 type layerRule struct {
-	namespace        string
-	noAnim           bool
-	blur             bool
-	blurPopups       bool
-	ignoreAlpha      bool
-	ignoreAlphaValue string
+	namespace           string
+	noAnim              bool
+	blur                bool
+	blurPopups          bool
+	ignoreAlpha         bool
+	ignoreAlphaValue    string
+	placeWithinBackdrop bool
 }
 
 func writeLayerRule(b *strings.Builder, r layerRule) {
@@ -346,6 +351,9 @@ func writeLayerRule(b *strings.Builder, r layerRule) {
 	}
 	if r.ignoreAlphaValue != "" {
 		fmt.Fprintf(b, "ignore_alpha_value = %s\n", r.ignoreAlphaValue)
+	}
+	if r.placeWithinBackdrop {
+		b.WriteString("place_within_backdrop = true\n")
 	}
 }
 

@@ -194,23 +194,23 @@ FocusScope {
     property var slashCommands: [
         {
             name: "model",
-            description: "Switch AI model"
+            description: I18n.t("ai.cmd_switch_model")
         },
         {
             name: "help",
-            description: "Show help"
+            description: I18n.t("ai.cmd_show_help")
         },
         {
             name: "new",
-            description: "Start new chat"
+            description: I18n.t("ai.cmd_start_new_chat")
         },
         {
             name: "key",
-            description: "Set API key"
+            description: I18n.t("ai.cmd_set_api_key")
         },
         {
             name: "prompt",
-            description: "Set system prompt"
+            description: I18n.t("ai.cmd_set_system_prompt")
         }
     ]
 
@@ -729,7 +729,7 @@ FocusScope {
                                 spacing: 8
 
                                 Text {
-                                    text: "Chat History"
+                                    text: I18n.t("ai.chat_history")
                                     color: Colors.overSurface
                                     font.family: Config.theme.font
                                     font.pixelSize: 18
@@ -963,7 +963,7 @@ FocusScope {
                             spacing: 8
 
                             Text {
-                                text: "Hello, <font color='" + Styling.srItem("overprimary") + "'>" + mainChatArea.username + "</font>."
+                                text: I18n.t("ai.hello_user", mainChatArea.username)
                                 font.family: Config.theme.font
                                 font.pixelSize: 32
                                 font.weight: Font.Bold
@@ -1308,7 +1308,7 @@ FocusScope {
                                                         }
 
                                                         Text {
-                                                            text: "Run Command"
+                                                            text: I18n.t("ai.run_command")
                                                             color: Styling.srItem("overprimary")
                                                             font.family: Config.theme.font
                                                             font.weight: Font.Bold
@@ -1338,7 +1338,7 @@ FocusScope {
                                                             spacing: 8
 
                                                             Button {
-                                                                text: "Reject"
+                                                                text: I18n.t("ai.reject")
                                                                 highlighted: true
                                                                 flat: true
                                                                 onClicked: Ai.rejectCommand(index)
@@ -1359,7 +1359,7 @@ FocusScope {
                                                             }
 
                                                             Button {
-                                                                text: "Approve"
+                                                                text: I18n.t("ai.approve")
                                                                 highlighted: true
                                                                 flat: true
                                                                 onClicked: Ai.approveCommand(index)
@@ -1382,14 +1382,14 @@ FocusScope {
 
                                                         Text {
                                                             visible: modelData.functionApproved === true
-                                                            text: "Command Approved"
+                                                            text: I18n.t("ai.command_approved")
                                                             color: Colors.success
                                                             font.pixelSize: 12
                                                         }
 
                                                         Text {
                                                             visible: modelData.functionApproved === false && !modelData.functionPending
-                                                            text: "Command Rejected"
+                                                            text: I18n.t("ai.command_rejected")
                                                             color: Colors.error
                                                             font.pixelSize: 12
                                                         }
@@ -1731,7 +1731,7 @@ FocusScope {
                                             id: inputField
                                             focus: true
                                             activeFocusOnTab: true
-                                            placeholderText: Ai.isLoading ? "AI is responding…" : mainChatArea.isWelcome ? "Ask AI or type /help..." : "Message AI..."
+                                            placeholderText: Ai.isLoading ? "AI is responding…" : mainChatArea.isWelcome ? I18n.t("ai.ask_or_help") : I18n.t("ai.message")
                                             placeholderTextColor: Colors.outline
                                             font.pixelSize: 14
                                             color: Colors.overBackground

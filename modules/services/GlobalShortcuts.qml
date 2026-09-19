@@ -58,7 +58,13 @@ QtObject {
             case "dashboard-controls": toggleSettings(); break;
 
             // System
-            case "overview": toggleSimpleModule("overview"); break;
+            case "overview":
+                if (AxctlService.compositorName === "niri") {
+                    AxctlService.dispatch("overview toggle");
+                } else {
+                    toggleSimpleModule("overview");
+                }
+                break;
             case "powermenu": toggleSimpleModule("powermenu"); break;
             case "tools": toggleSimpleModule("tools"); break;
             case "config": toggleSettings(); break;
@@ -106,13 +112,27 @@ QtObject {
 
     // Commands sent via `ambxst run <cmd>` go through the Go daemon now.
     // The daemon pushes a "ui.command" event on the "ui" service stream;
-    // route it into the same runner.
+    // route it into the same runner. `ambxst toggle <target>` pushes a
+    // separate "ui.toggle" event with its own state-flipping switch.
     Component.onCompleted: {
         BackendService.addSubscription(["ui"], (service, data) => {
-            if (service === "ui.command" && typeof data === "string" && data !== "") {
+            if (typeof data !== "string" || data === "")
+                return;
+            if (service === "ui.command") {
                 root.run(data);
+            } else if (service === "ui.toggle") {
+                root.toggle(data);
             }
         });
+    }
+
+    function toggle(target) {
+        console.log("IPC toggle command received:", target);
+        switch (target) {
+            case "bar": GlobalStates.barPinToggled(); break;
+
+            default: console.warn("Unknown toggle target:", target);
+        }
     }
 
     function toggleSettings(screenName) {

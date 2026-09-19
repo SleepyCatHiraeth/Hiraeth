@@ -890,6 +890,7 @@ Singleton {
             property int iconSize: 40
             property int spacingVertical: 16
             property string textColor: "overBackground"
+            property bool blurWallpaperOnOverview: true
         }
     }
 
@@ -1051,6 +1052,7 @@ Singleton {
                 property bool chi_sim: false
                 property bool chi_tra: false
                 property bool kor: false
+                property bool rus: false
             }
             property JsonObject pomodoro: JsonObject {
                 property int workTime: 1500
@@ -1063,6 +1065,7 @@ Singleton {
                 // items always stay in the local share.
                 property bool tmpfs: false
             }
+            property string language: "auto"
         }
     }
 
@@ -1464,7 +1467,7 @@ Singleton {
             }
 
             // Check system binds
-            const systemKeys = ["overview", "powermenu", "config", "lockscreen", "tools", "screenshot", "screenrecord", "lens", "reload", "quit"];
+            const systemKeys = ["overview", "powermenu", "config", "lockscreen", "tools", "screenshot", "screenrecord", "lens", "reload", "quit", "bar"];
             for (const key of systemKeys) {
                 if (!current.ambxst.system[key] && adapter.ambxst.system && adapter.ambxst.system[key]) {
                     console.log("Adding missing system bind:", key);
@@ -1653,6 +1656,11 @@ Singleton {
                     property string key: "B"
                     property var action: ({ "id": "ambxst.reload", "args": {} })
                 }
+                property JsonObject bar: JsonObject {
+                    property list<string> modifiers: ["SUPER", "SHIFT"]
+                    property string key: "B"
+                    property var action: ({ "id": "ambxst.bar", "args": {} })
+                }
                 property JsonObject quit: JsonObject {
                     property list<string> modifiers: ["SUPER", "CTRL", "ALT"]
                     property string key: "B"
@@ -1684,6 +1692,7 @@ Singleton {
                     "screenrecord": { "modifiers": ["SUPER", "SHIFT"], "key": "R", "action": { "id": "ambxst.screenrecord", "args": {} } },
                     "lens": { "modifiers": ["SUPER", "SHIFT"], "key": "A", "action": { "id": "ambxst.lens", "args": {} } },
                     "reload": { "modifiers": ["SUPER", "ALT"], "key": "B", "action": { "id": "ambxst.reload", "args": {} } },
+                    "bar": { "modifiers": ["SUPER", "SHIFT"], "key": "B", "action": { "id": "ambxst.bar", "args": {} } },
                     "quit": { "modifiers": ["SUPER", "CTRL", "ALT"], "key": "B", "action": { "id": "ambxst.quit", "args": {} } }
                 }
             }

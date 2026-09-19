@@ -377,6 +377,8 @@ func TestRenderLayerRules(t *testing.T) {
 		`namespace = "fabric"`,
 		`ignore_alpha_value = 0.4`,
 		`ignore_alpha_value = 0.20`,
+		`namespace = "^ambxst:wallpaper$"`,
+		`place_within_backdrop = true`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in layer rules:\n%s", want, out)
@@ -481,5 +483,18 @@ func TestRenderGameModeKeepsColorsAndStructure(t *testing.T) {
 	}
 	if withMode == withoutMode {
 		t.Error("gameMode render should differ from the plain render")
+	}
+}
+
+func TestRenderSystemBarBind(t *testing.T) {
+	in := sampleInput()
+	in.Keybinds.System["bar"] = Keybind{
+		Modifiers: []string{"SUPER", "SHIFT"},
+		Key:       "B",
+		Action:    Action{ID: "ambxst.bar"},
+	}
+	out := Render(in, false)
+	if !strings.Contains(out, "ambxst toggle bar") {
+		t.Errorf("system bar bind missing from rendered TOML:\n%s", out)
 	}
 }

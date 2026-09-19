@@ -47,7 +47,6 @@ declare -A BINARY_CHECK=(
   ["jq"]="jq"
   ["playerctl"]="playerctl"
   ["wtype"]="wtype"
-  ["mpvpaper"]="mpvpaper"
   ["gradia"]="gradia"
   ["zenity"]="zenity"
   ["gpu-screen-recorder"]="gpu-screen-recorder"
@@ -123,7 +122,8 @@ install_dependencies() {
       tesseract-langpack-chi_sim tesseract-langpack-chi_tra tesseract-langpack-kor tesseract-langpack-lat
       google-roboto-fonts google-roboto-mono-fonts dejavu-sans-fonts liberation-fonts
       google-noto-fonts-common google-noto-cjk-fonts google-noto-emoji-fonts
-      mpvpaper matugen R-CRAN-phosphoricons adw-gtk3-theme quickshell unzip curl
+      gstreamer1 gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugin-libav
+      matugen R-CRAN-phosphoricons adw-gtk3-theme quickshell unzip curl
     )
 
     log_info "Installing dependencies..."
@@ -170,7 +170,8 @@ install_dependencies() {
       tesseract-data-chi_sim tesseract-data-chi_tra tesseract-data-kor tesseract-data-lat
       ttf-roboto ttf-roboto-mono ttf-dejavu ttf-liberation noto-fonts noto-fonts-cjk noto-fonts-emoji
       ttf-nerd-fonts-symbols
-      matugen gpu-screen-recorder wl-clip-persist mpvpaper gradia
+      matugen gpu-screen-recorder wl-clip-persist gradia
+      qt6-multimedia-gstreamer gst-plugins-bad
       quickshell ttf-phosphor-icons ttf-league-gothic adw-gtk-theme
     )
 

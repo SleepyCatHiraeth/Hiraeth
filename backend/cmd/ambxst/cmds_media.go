@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
-	"time"
 )
 
 var mediaVideoExts = map[string]bool{
@@ -115,34 +113,6 @@ func needsThumbnail(filePath, thumbPath string) bool {
 		return true
 	}
 	return fi.ModTime().After(ti.ModTime())
-}
-
-func sendMpvIpc(socketPath, payload string) error {
-	conn, err := net.DialTimeout("unix", socketPath, 500*time.Millisecond)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	_, err = fmt.Fprintln(conn, payload)
-	return err
-}
-
-func runMpvIpc(args []string) int {
-	if len(args) != 2 {
-		fmt.Fprintln(os.Stderr, "Usage: ambxst mpvipc <socket|--all> <json>")
-		return 1
-	}
-	sockets := []string{args[0]}
-	if args[0] == "--all" {
-		sockets, _ = filepath.Glob("/tmp/ambxst_mpv_socket_*")
-	}
-	for _, socket := range sockets {
-		if err := sendMpvIpc(socket, args[1]); err != nil {
-			fmt.Fprintf(os.Stderr, "MPV IPC failed for %s: %v\n", socket, err)
-			return 1
-		}
-	}
-	return 0
 }
 
 func generateThumb(filePath, thumbPath string, size int) error {
