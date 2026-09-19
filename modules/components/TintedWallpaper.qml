@@ -17,7 +17,11 @@ Item {
 
     property real pendingSeekMs: -1
 
-    readonly property var player: videoPlayerLoader.status === Loader.Ready ? videoPlayerLoader.item.player : null
+    // Guard on `item`, not on `status`: when the loader deactivates on a wallpaper
+    // switch the item is cleared while the status still reads Ready, and
+    // dereferencing it there threw, which left the surface with no player at all
+    // and painted it black.
+    readonly property var player: videoPlayerLoader.item ? videoPlayerLoader.item.player : null
     readonly property real videoPosition: player ? player.position : 0
 
     function applyPendingSeek() {
@@ -56,7 +60,10 @@ Item {
         id: videoPlayerLoader
         active: root.isVideo
         sourceComponent: videoPlayerComponent
-        onLoaded: root.player.play()
+        onLoaded: {
+            if (root.player)
+                root.player.play();
+        }
     }
 
     Component {
