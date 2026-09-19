@@ -5,7 +5,32 @@ import Quickshell.Io
 QtObject {
     id: root
     property var colors
-    property string wallpaperPath: wallpaperConfig.adapter.currentWall
+
+    // SDDM has one background for the whole greeter, while the desktop can carry
+    // a different wallpaper per screen. Follow the largest screen: that is the one
+    // the login prompt itself is drawn on, and it is what "main screen" means to a
+    // user with a wide primary and a smaller secondary. Falls back to the shared
+    // wallpaper when no per-screen choice exists.
+    readonly property string mainScreenName: {
+        var best = "";
+        var bestArea = -1;
+        const screens = Quickshell.screens || [];
+        for (var i = 0; i < screens.length; i++) {
+            const area = screens[i].width * screens[i].height;
+            if (area > bestArea) {
+                bestArea = area;
+                best = screens[i].name;
+            }
+        }
+        return best;
+    }
+
+    property string wallpaperPath: {
+        const perScreen = wallpaperConfig.adapter.perScreenWallpapers;
+        if (mainScreenName && perScreen && perScreen[mainScreenName])
+            return perScreen[mainScreenName];
+        return wallpaperConfig.adapter.currentWall;
+    }
 
     function generate() {
         if (!colors)
@@ -58,7 +83,9 @@ QtObject {
 
         adapter: JsonAdapter {
             property string currentWall: ""
+            property var perScreenWallpapers: ({})
             onCurrentWallChanged: root.generate()
+            onPerScreenWallpapersChanged: root.generate()
         }
     }
 
