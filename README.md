@@ -1,80 +1,114 @@
-<p align="center">
-  <img src="./assets/hiraeth/logo-mono.png" alt="Hiraeth" style="width: 40%;" align="center" />
-  <br>
-  <br>
-  A personal fork of <a href="https://github.com/Axenide/Ambxst"><b>Ambxst</b></a>, carrying a local-first
-  voice assistant, a plugin host, a system sound engine, and a pile of security fixes.
+<div align="center">
+
+<img src="./assets/hiraeth/logo-color.png" alt="Hiraeth" width="46%" />
+
+### A personal fork of [**Ambxst**](https://github.com/Axenide/Ambxst)
+
+A local-first voice assistant, a plugin host, a system sound engine,<br/>
+and a pile of security fixes — on top of Axenide's Wayland shell.
+
+<p>
+  <img src="https://img.shields.io/badge/fork_of-Axenide%2FAmbxst-F6A8C4?style=for-the-badge&labelColor=0d1117" alt="Fork of Axenide/Ambxst" />
+  <img src="https://img.shields.io/badge/upstream-1.3.6-F6A8C4?style=for-the-badge&labelColor=0d1117" alt="Upstream 1.3.6" />
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-F6A8C4?style=for-the-badge&labelColor=0d1117" alt="AGPL-3.0" />
+  <img src="https://img.shields.io/badge/compositor-Hyprland-F6A8C4?style=for-the-badge&labelColor=0d1117" alt="Hyprland" />
 </p>
 
-<p align="center">
-  <img src="https://img.shields.io/badge/fork%20of-Axenide%2FAmbxst-1f6feb?style=for-the-badge&labelColor=000000" alt="Fork of Axenide/Ambxst">
-  <img src="https://img.shields.io/badge/license-AGPL--3.0-8957e5?style=for-the-badge&labelColor=000000" alt="AGPL-3.0">
-  <img src="https://img.shields.io/badge/upstream-1.3.6-2ea043?style=for-the-badge&labelColor=000000" alt="Upstream 1.3.6">
-</p>
+</div>
 
 ---
 
-## About this fork
+> [!NOTE]
+> **All credit for Ambxst goes to [Axenide](https://github.com/Axenide).** This fork only adds to it,
+> tracks its releases, and keeps its AGPL-3.0 licence. Upstream's own README is preserved in full
+> below the divider — start there for installation and general use.
 
-Everything below the divider is upstream's own README and is the place to start for
-installation and general use. **All credit for Ambxst itself goes to [Axenide](https://github.com/Axenide)**
-— this fork only adds to it, tracks its releases, and keeps its AGPL-3.0 licence.
+## What this fork adds
 
-Merged up to **upstream 1.3.6**, including the QtMultimedia wallpaper backend and the runtime
-translations. Roughly eighty commits sit on top of it.
+| | |
+|---|---|
+| **Turret** | A local-first voice assistant with its own pipeline in the Go backend: wake word, STT biased toward domain vocabulary, a Kokoro TTS engine with selectable voices, and a tool layer reaching email drafting. The conversation survives restarts and the transcriber stays warm between turns. The model is loopback-only — nothing leaves the machine. |
+| **Controlled memory** | Opt-in, with retrieval, hard policy gates, and a review surface in the notch. Memories can be inspected, expired, adjusted and compacted. Secrets are refused outright rather than stored and flagged. |
+| **Plugin host** | Discovery, manifest validation, persisted enable state and a defined trust boundary, with extension points for bar and dashboard widgets. Two plugins ship against it: AI Overview Control and a Corsair mouse battery readout. |
+| **System sounds** | A `sound.json` data model with theme resolution and a playback service, hooked into notifications, boot, shutdown, login, Bluetooth connect/disconnect and battery-low. |
+| **Assistant web search** | An iterative tool loop, so a turn can fetch and cite live results instead of answering from the model alone. |
+| **Wallpaper transitions** | Preload-before-swap: the incoming image is decoded at a shared size across every monitor, then a two-layer dissolve drives the visible swap — the screen never passes through black and the fade does not trail on the larger display. |
+| **Palette fixes** | Repaired ANSI entries anchor on their canonical hue instead of the widest free gap, so a terminal asking for yellow gets yellow. Matugen runs once with `--prefer saturation` rather than twice, which removed a regeneration loop. |
+| **Encrypted clipboard** | Separate pinned and unpinned stores, with image blobs handled apart from text. |
+| **Per-screen polish** | Each screen keeps its own wallpaper, its own lockscreen video and its own preloaded lock frame; SDDM follows the largest screen, since the greeter has only one background. |
 
-### What this fork adds
+### Security fixes
 
-**Turret — a local-first voice assistant.** Its own pipeline in the Go backend: wake word, STT
-biased toward domain vocabulary, a Kokoro TTS engine with selectable voices, and a tool layer that
-reaches email drafting. It keeps a conversation that survives restarts and a transcriber that stays
-warm between turns. The model is loopback-only; nothing leaves the machine.
+API keys kept out of `argv` on every path that leaked them through `curl`, `sqlite3` or a shell · the
+shell tool gated off by default · an IPC unlock bypass removed from the lockscreen · screenshot freeze
+frames kept private and short-lived · updates fetched over HTTPS.
 
-**Controlled assistant memory.** Opt-in, with retrieval, hard policy gates, and a review surface in
-the notch. Memories can be inspected, expired, adjusted and compacted. Secrets are refused outright
-rather than stored and flagged.
+## Build and run
 
-**A plugin host.** Discovery, manifest validation, persisted enable state, and a defined trust
-boundary, with extension points for bar and dashboard widgets. Two plugins ship against it: AI
-Overview Control and a Corsair mouse battery readout.
+Requires the upstream dependencies plus `qt6-multimedia` and a Qt multimedia backend
+(`qt6-multimedia-ffmpeg` or `qt6-multimedia-gstreamer`) for video and GIF wallpapers.
 
-**A system sound engine.** A `sound.json` data model with theme resolution and a playback service,
-hooked into notifications, boot, shutdown, login, Bluetooth connect/disconnect and battery-low. Two
-themes, including a full Portal Turret set — whose audio is *not* distributed here, for obvious
-licensing reasons.
+```bash
+make build                  # Go backend
+make run                    # backend + shell
+qs -p shell.qml             # shell only
+./ambxst                    # daemon with supervision
+make qml-lint               # takes a few minutes; exits 0 when clean
+```
 
-**Web search for the assistant.** An iterative tool loop, so a turn can fetch and cite live results
-instead of answering from the model alone.
+Replacing a running install needs an atomic rename — `cp` fails with *Text file busy*:
 
-**A reworked wallpaper transition.** Preload-before-swap: the incoming image is decoded at a shared
-size across every monitor, then a two-layer dissolve drives the visible swap, so the screen never
-passes through black and the fade does not trail on the larger display.
+```bash
+cp ambxst ~/.local/bin/ambxst.new && mv -f ~/.local/bin/ambxst.new ~/.local/bin/ambxst
+setsid -f ~/.local/bin/ambxst
+```
 
-**Palette generation fixes.** Repaired ANSI entries anchor on their canonical hue instead of the
-widest free gap, so a terminal asking for yellow gets yellow. Matugen runs once with
-`--prefer saturation` rather than twice, which removed a regeneration loop.
+## Branches
 
-**Encrypted clipboard storage.** Separate pinned and unpinned stores, with image blobs handled
-apart from text.
+| Branch | Purpose |
+|---|---|
+| `feature/corsair-battery-redesign` | The working branch, and the one to read. |
+| `integration/<version>` | Where each upstream release is merged and verified before the working branch moves onto it. |
+| `safety/local-customizations-2026-08-31` | Preservation point from before the first upstream merge. |
+| `main` | Mirror of upstream. |
 
-**Security fixes.** API keys kept out of `argv` on every path that used to leak them through `curl`,
-`sqlite3` or a shell; the shell tool gated off by default; an IPC unlock bypass removed from the
-lockscreen; screenshot freeze frames kept private and short-lived; updates fetched over HTTPS.
+<details>
+<summary><b>Tracking upstream</b></summary>
 
-**Branding.** Monochrome Hiraeth marks in place of the Ambxst logo on personal surfaces.
+<br/>
 
-### Branches
+`origin` is this fork; `upstream` is `Axenide/Ambxst` with its push URL deliberately set to the
+literal string `DISABLED`, so nothing can be pushed there by accident.
 
-`feature/corsair-battery-redesign` is the working branch and the one to read. `integration/<version>`
-branches are where each upstream release is merged and verified before the working branch moves
-onto it; `safety/local-customizations-2026-08-31` is a preservation point from before the first
-upstream merge.
+```bash
+git fetch upstream --tags
+git switch -c integration/<version>
+git merge --no-commit --no-ff <version-tag>
+```
 
-### Notes
+Two traps, both learned the hard way, neither of which produces a conflict or a failing check:
 
-The example wallpaper directory is deliberately limited to upstream's own images — the local
-wallpaper library is third-party art and is not published here. `1.3.6` dropped mpvpaper in favour
-of QtMultimedia, so `ambxst mpvipc` no longer exists.
+- **A resolution that drops a branch of a conditional still compiles and lints.** After resolving a
+  conflict inside a function body, diff the resolved function against both sides and confirm every
+  path still assigns what it used to.
+- **A new setting lives in two objects** — its default in `config/defaults/<module>.js` and its
+  property on that module's `JsonAdapter` in `config/Config.qml`. When both sides append to the same
+  object, git keeps one and drops the other silently. Check both, or a settings toggle will write to
+  a property that does not exist and `ConfigValidator` will strip it on every save.
+
+</details>
+
+## Notes
+
+The example wallpaper directory carries only upstream's own images — the local wallpaper library is
+third-party art and is not published here. Since 1.3.6 dropped mpvpaper for QtMultimedia, `ambxst
+mpvipc` no longer exists. The niri-specific work upstream added is inert on this machine, which runs
+Hyprland.
+
+<div align="center">
+<br/>
+<img src="./assets/hiraeth/shark-color.png" alt="" width="15%" />
+</div>
 
 ---
 
