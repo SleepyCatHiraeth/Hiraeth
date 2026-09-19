@@ -1138,6 +1138,12 @@ PanelWindow {
                 return;
             }
 
+            // gif/video play on VideoWallpaper's own surface, so there is
+            // nothing for us to decode first.
+            if (displayedSource !== "" && Config.animDuration > 0) {
+                transitionAnimation.restart();
+            }
+            displayedSource = source;
         }
 
         SequentialAnimation {

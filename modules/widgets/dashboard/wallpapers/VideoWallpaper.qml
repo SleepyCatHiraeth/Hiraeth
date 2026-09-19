@@ -97,7 +97,7 @@ Item {
     Connections {
         target: GlobalStates
         function onVideoSyncTickChanged() {
-            player.seek(0);
+            player.setPosition(0);
             if (player.playbackState !== MediaPlayer.PlayingState)
                 player.play();
         }
