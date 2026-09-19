@@ -684,6 +684,7 @@ Singleton {
             property string noMediaDisplay: "userHost"
             property string customText: "Ambxst"
             property bool hoverToDashboard: true
+            property bool disableHoverExpansion: true
         }
     }
 
