@@ -7,9 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 var mediaVideoExts = map[string]bool{
@@ -71,12 +73,6 @@ func runLockWall(args []string) int {
 
 	lockscreenDir := filepath.Join(dataPath, "lockscreen")
 	os.MkdirAll(lockscreenDir, 0o755)
-	entries, _ := os.ReadDir(lockscreenDir)
-	for _, e := range entries {
-		if !e.IsDir() {
-			os.Remove(filepath.Join(lockscreenDir, e.Name()))
-		}
-	}
 
 	output := filepath.Join(lockscreenDir, filepath.Base(wallpaper)+".jpg")
 	out, err := exec.Command("ffmpeg", "-y", "-i", wallpaper,
@@ -85,7 +81,44 @@ func runLockWall(args []string) int {
 		fmt.Fprintf(os.Stderr, "Failed to extract frame: %s\n%s\n", err, out)
 		return 1
 	}
+	pruneLockWallCache(lockscreenDir, lockWallCacheSize)
 	return 0
+}
+
+// One frame per screen has to survive: each screen can carry its own video
+// wallpaper, and the lockscreen paints the frame while its player is still
+// decoding. Emptying the directory on every extraction left exactly one frame
+// alive, so the other screen had nothing to show. Keep the newest few instead,
+// which bounds the directory without needing to know every screen's choice.
+const lockWallCacheSize = 12
+
+func pruneLockWallCache(dir string, keep int) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	type frame struct {
+		path string
+		mod  time.Time
+	}
+	frames := make([]frame, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		frames = append(frames, frame{filepath.Join(dir, e.Name()), info.ModTime()})
+	}
+	if len(frames) <= keep {
+		return
+	}
+	sort.Slice(frames, func(i, j int) bool { return frames[i].mod.After(frames[j].mod) })
+	for _, f := range frames[keep:] {
+		os.Remove(f.path)
+	}
 }
 
 // --- thumbnail generation (shared by thumbs/dthumbs) ---

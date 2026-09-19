@@ -474,6 +474,15 @@ PanelWindow {
         GlobalStates.videoSyncTick++;
     }
 
+    // The lockscreen paints this frame while its own player is still decoding, so it
+    // has to exist before the lock happens, and it has to exist per screen. Extract it
+    // when the screen's wallpaper changes rather than at lock time.
+    onEffectiveWallpaperChanged: {
+        const kind = getFileType(effectiveWallpaper);
+        if (kind === "video" || kind === "gif")
+            generateLockscreenFrame(effectiveWallpaper);
+    }
+
     Component.onCompleted: {
         if (currentScreenName)
             GlobalStates.screenWallpapers[currentScreenName] = wallpaper;

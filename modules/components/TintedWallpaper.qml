@@ -7,6 +7,9 @@ import qs.config
 Item {
     id: root
     property string source: ""
+    // Still frame for a video/gif source, extracted when the wallpaper was chosen.
+    // Painted underneath the player so the surface is never blank while decoding.
+    property string posterSource: ""
     property real radius: 0
     property bool tintEnabled: false
 
@@ -34,12 +37,42 @@ Item {
         }
     }
 
+    // Whether this surface wants video on screen. `play()` issued while the media
+    // is still loading is dropped by the backend, and a single fire-and-forget call
+    // leaves the player parked in Stopped with a sink attached and nothing drawn --
+    // which screen that hits is a race, so one monitor would play and the other stay
+    // black. Hold the intent and re-issue until the player actually reports Playing.
+    property bool wantPlaying: false
+    readonly property bool playbackReady: player
+        && player.mediaStatus >= MediaPlayer.LoadedMedia
+        && player.mediaStatus !== MediaPlayer.InvalidMedia
+
+    function ensurePlaying() {
+        if (!wantPlaying || !playbackReady)
+            return;
+        if (player.playbackState !== MediaPlayer.PlayingState)
+            player.play();
+    }
+
+    Timer {
+        id: playRetry
+        interval: 250
+        repeat: true
+        running: root.wantPlaying && root.isVideo
+            && (!root.player || root.player.playbackState !== MediaPlayer.PlayingState)
+        onTriggered: {
+            root.applyPendingSeek();
+            root.ensurePlaying();
+        }
+    }
+
     function videoPlayAt(ms) {
         if (!root.isVideo)
             return;
         pendingSeekMs = ms;
+        wantPlaying = true;
         if (player) {
-            player.play();
+            ensurePlaying();
             applyPendingSeek();
         }
     }
@@ -50,8 +83,8 @@ Item {
     }
 
     function videoPlay() {
-        if (player)
-            player.play();
+        wantPlaying = true;
+        ensurePlaying();
     }
 
     // Idle media objects cost real time to build and tear down, so they
@@ -61,8 +94,8 @@ Item {
         active: root.isVideo
         sourceComponent: videoPlayerComponent
         onLoaded: {
-            if (root.player)
-                root.player.play();
+            root.wantPlaying = true;
+            root.ensurePlaying();
         }
     }
 
@@ -80,10 +113,18 @@ Item {
                 id: videoPlayer
                 loops: MediaPlayer.Infinite
                 audioOutput: mutedAudio
-                videoOutput: videoLoader.status === Loader.Ready ? videoLoader.item : null
+                // Bind straight to `item`. Gating on `status` means the false branch
+                // never reads `item`, so the binding registers no dependency on it:
+                // once the output appears without a further status change the sink
+                // stays null, the player decodes into nothing, and the surface that
+                // lost the race renders blank.
+                videoOutput: videoLoader.item
                 source: root.source
 
-                onMediaStatusChanged: applyPendingSeek()
+                onMediaStatusChanged: {
+                    applyPendingSeek();
+                    root.ensurePlaying();
+                }
             }
 
             AudioOutput {
@@ -181,8 +222,10 @@ Item {
             mipmap: true
             id: rawImage
             anchors.fill: parent
-            visible: !root.isVideo
-            source: root.isVideo ? "" : root.source
+            visible: true
+            source: root.isVideo
+                ? (root.posterSource ? "file://" + root.posterSource : "")
+                : root.source
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             smooth: true
@@ -205,6 +248,18 @@ Item {
             anchors.fill: parent
             active: root.isVideo
             sourceComponent: videoOutputComponent
+
+            // Reveal only once frames are actually flowing; until then the poster
+            // below is what the user sees, instead of black.
+            opacity: root.player && root.player.playbackState === MediaPlayer.PlayingState ? 1 : 0
+
+            Behavior on opacity {
+                enabled: Config.animDuration > 0
+                NumberAnimation {
+                    duration: Config.animDuration
+                    easing.type: Easing.OutCubic
+                }
+            }
         }
     }
 }

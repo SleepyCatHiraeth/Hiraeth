@@ -27,6 +27,7 @@ WlSessionLockSurface {
     // Always transparent - blur background handles the visuals
     color: "transparent"
 
+
     // Wallpaper background con Blur integrado
     TintedWallpaper {
         id: wallpaperBackground
@@ -41,6 +42,10 @@ WlSessionLockSurface {
         }
 
         source: wallpaperPath ? "file://" + wallpaperPath : ""
+        posterSource: {
+            var wp = root.screen ? GlobalStates.wallpaperForScreen(root.screen.name) : GlobalStates.wallpaperManager;
+            return wp && wallpaperPath ? wp.getLockscreenFramePath(wallpaperPath) : "";
+        }
 
         onSourceChanged: {
             if (startAnim)
