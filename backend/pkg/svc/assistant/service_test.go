@@ -114,6 +114,47 @@ func TestHealthStopIsNotSynchronous(t *testing.T) {
 	restore()
 }
 
+func TestModelPreloadRechecksResidencyAndBoundsResources(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	t.Setenv("TURRET_TEST_LOAD_LOG", log)
+	t.Setenv("TURRET_TEST_LOADED", "[]")
+	lms := filepath.Join(dir, "lms")
+	script := `#!/bin/sh
+if [ "$1" = ps ]; then
+    printf '%s\n' "$TURRET_TEST_LOADED"
+else
+    printf '%s\n' "$*" >> "$TURRET_TEST_LOAD_LOG"
+fi
+`
+	if err := os.WriteFile(lms, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	s := &Service{}
+	cfg := defaultConfig()
+	cfg.MemoryEnabled = true
+	// The server reports empty twice, as it would after idle expiry.
+	s.ensureModelsLoaded(context.Background(), cfg)
+	s.ensureModelsLoaded(context.Background(), cfg)
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat := "load " + cfg.Model + " --ttl 120 -y --context-length 8192 --parallel 1\n"
+	embed := "load " + cfg.EmbedModel + " --ttl 120 -y --gpu off\n"
+	if string(data) != chat+embed+chat+embed {
+		t.Fatalf("unexpected model loads: %s", data)
+	}
+	resident, _ := json.Marshal([]map[string]string{{"modelKey": cfg.Model}, {"identifier": cfg.EmbedModel}})
+	t.Setenv("TURRET_TEST_LOADED", string(resident))
+	s.ensureModelsLoaded(context.Background(), cfg)
+	after, err := os.ReadFile(log)
+	if err != nil || string(after) != string(data) {
+		t.Fatalf("resident models were reloaded: %s (%v)", after, err)
+	}
+}
+
 // A stream that ends without [DONE] or a finish_reason means the connection
 // dropped mid-answer. Accepting it made a half-answer look like a whole one.
 func TestStreamChatReportsATruncatedReply(t *testing.T) {
@@ -554,5 +595,44 @@ func TestEnsureServerRefusesWhileDisabled(t *testing.T) {
 	s.cfg = defaultConfig() // disabled
 	if s.ensureServer(context.Background()) {
 		t.Error("ensureServer must not start anything while the assistant is off")
+	}
+}
+
+// "Start everything" must honour the master switch for the same reason
+// ensureServer does: it is the transcriber's Whisper model, not only the model
+// server, that the switch exists to not spend. A startRuntime that reached the
+// transcriber while off would load a model behind a UI showing "Off".
+func TestStartRuntimeRefusesWhileDisabled(t *testing.T) {
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig() // disabled
+	s.cfg.StackDir = fakeStack(t, "#!/bin/sh\nexit 0\n")
+
+	if err := s.startRuntime(context.Background()); err == nil {
+		t.Fatal("startRuntime must not start anything while the assistant is off")
+	}
+	s.stt.mu.Lock()
+	running := s.stt.cmd != nil
+	s.stt.mu.Unlock()
+	if running {
+		t.Error("the transcriber must not be started while the assistant is off")
+	}
+}
+
+// Stopping is allowed while nothing is running, and must not panic on a worker
+// that was never started or a turn that does not exist. The panel's "Stop
+// everything" is reachable in exactly that state.
+func TestStopRuntimeIsSafeWhenNothingRuns(t *testing.T) {
+	s := &Service{state: StateIdle}
+	s.cfg = defaultConfig()
+	s.cfg.StackDir = fakeStack(t, "#!/bin/sh\nexit 0\n")
+
+	if err := s.stopRuntime(context.Background()); err != nil {
+		t.Fatalf("stopRuntime on an idle assistant: %v", err)
+	}
+	s.stt.mu.Lock()
+	running := s.stt.cmd != nil
+	s.stt.mu.Unlock()
+	if running {
+		t.Error("no transcriber should be left running")
 	}
 }

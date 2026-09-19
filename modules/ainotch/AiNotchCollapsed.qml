@@ -1,6 +1,7 @@
 import QtQuick
 import qs.modules.services
 import qs.modules.theme
+import qs.modules.turret
 import qs.config
 
 // Resting content of the AI notch: one ring per provider showing how much of
@@ -16,6 +17,17 @@ Item {
     property bool hovered: false
 
     readonly property bool busy: Ai.isLoading
+
+    // The turret's voice state takes over the notch while a spoken turn is
+    // running. This is the whole point of folding its notch into this one:
+    // listening, thinking and speaking are states worth seeing without opening
+    // anything, and there is now one place to see them.
+    //
+    // TurretStateStyle is a pure lookup table, so the colours and glyphs here
+    // are the same ones the old turret notch used -- not a second set that
+    // could drift.
+    readonly property bool turretBusy: TurretService.busy
+    readonly property string turretState: TurretService.state
 
     // AiUsage owns the reading: it prefers the AI Overview Control plugin's own
     // published snapshot and only polls the helper itself when the plugin has
@@ -49,7 +61,7 @@ Item {
     Column {
         anchors.centerIn: parent
         spacing: 10
-        visible: root.showUsage
+        visible: root.showUsage && !root.turretBusy
 
         Repeater {
             model: root.showUsage ? root.usageProviders : []
@@ -69,7 +81,7 @@ Item {
     Column {
         anchors.centerIn: parent
         spacing: 6
-        visible: !root.showUsage
+        visible: !root.showUsage && !root.turretBusy
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -95,6 +107,40 @@ Item {
         }
     }
 
+    // Turret face: the state glyph over the state dot, both driven by the same
+    // lookup table the turret notch used.
+    Column {
+        anchors.centerIn: parent
+        spacing: 5
+        visible: root.turretBusy
+
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: TurretStateStyle.glyph(root.turretState)
+            font.family: Icons.font
+            font.pixelSize: 18
+            color: TurretStateStyle.accent(root.turretState)
+
+            Behavior on color {
+                enabled: Config.animDuration > 0
+                ColorAnimation {
+                    duration: Config.animDuration
+                }
+            }
+        }
+
+        TurretStateDot {
+            anchors.horizontalCenter: parent.horizontalCenter
+            accent: TurretStateStyle.accent(root.turretState)
+            // The microphone pulse is a privacy indicator, not decoration: it
+            // means the mic is OPEN and it outranks the busy halo.
+            pulsing: TurretService.capturing
+            spinning: TurretStateStyle.animated(root.turretState)
+            // Nothing animates off-screen, the same gate the rings use.
+            live: root.visible
+        }
+    }
+
     // Streaming indicator, shown in both states: below the glyph when there is
     // nothing else, tucked under the rings when there is.
     Rectangle {
@@ -105,7 +151,7 @@ Item {
         height: 5
         radius: 2.5
         color: Colors.overSurface
-        opacity: root.busy ? 1 : 0
+        opacity: (root.busy && !root.turretBusy) ? 1 : 0
 
         Behavior on opacity {
             enabled: Config.animDuration > 0
@@ -116,7 +162,7 @@ Item {
         }
 
         SequentialAnimation on scale {
-            running: root.visible && root.busy && Config.animDuration > 0
+            running: root.visible && root.busy && !root.turretBusy && Config.animDuration > 0
             loops: Animation.Infinite
             alwaysRunToEnd: true
             NumberAnimation {

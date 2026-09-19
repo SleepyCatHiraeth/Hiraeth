@@ -88,6 +88,13 @@ type Config struct {
 	// made here: which output the user can actually hear is not inferable, and
 	// guessing wrong sends speech to a device they are not listening to.
 	PlaybackTarget string `json:"playback_target"`
+
+	// Web access for the research tools. Off at defaults, and it is the one
+	// setting that changes what leaves this machine: with it on, a search
+	// query and the pages chosen from the results are fetched from the public
+	// internet. The MODEL endpoint stays loopback either way -- httpclient.go
+	// enforces that and is unaffected by this flag.
+	WebEnabled bool `json:"web_enabled"`
 }
 
 func defaultConfig() Config {
@@ -99,7 +106,7 @@ func defaultConfig() Config {
 		// Loopback only. checkEndpoint refuses anything else, so a config edit
 		// cannot quietly turn this into a cloud assistant.
 		Endpoint: "http://127.0.0.1:1234/v1",
-		Model:    "qwen/qwen3-14b",
+		Model:    "qwen3-4b-instruct-2507",
 		// Chosen by the user on 2026-09-10 after listening to eight candidates.
 		// am_onyx is the other pick and is one setting away.
 		TTSEngine:  "kokoro",
@@ -188,6 +195,7 @@ func (s *Service) Register(srv *ipc.Server) {
 		Name: "assistant",
 		Methods: map[string]ipc.HandlerFunc{
 			"toggle":  s.toggle,
+			"ask":     s.ask,
 			"release": s.keyReleased,
 			"cancel":  s.cancel,
 			"state":   s.stateMethod,
@@ -255,6 +263,7 @@ func (s *Service) snapshot() map[string]any {
 		"seq":              s.seq,
 		"enabled":          s.cfg.Enabled,
 		"memory_enabled":   s.cfg.MemoryEnabled,
+		"web_enabled":      s.cfg.WebEnabled,
 		"pending_memories": s.pendingMemories,
 		"llm_reachable":    s.healthReachableLocked(),
 		"llm_error":        s.healthErrLocked(),
@@ -304,6 +313,28 @@ func (s *Service) broadcast() {
 
 // toggle is the single entry point the keybind drives. Press once to listen,
 // press again to stop listening and answer; press during an answer to interrupt.
+// ask runs a turn from typed text instead of the microphone.
+//
+// `speak` defaults to false: the panel's chat is read, not heard, and a reply
+// spoken aloud for every typed message would be the wrong default in a room
+// with other people in it. Callers that want the voice pass it explicitly.
+func (s *Service) ask(params json.RawMessage) (any, error) {
+	var p struct {
+		Text  string `json:"text"`
+		Speak bool   `json:"speak"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, err
+	}
+	if err := s.startTextTurn(p.Text, p.Speak); err != nil {
+		return nil, err
+	}
+	// The reply itself arrives over the state broadcast as it streams, the
+	// same way a spoken turn's does. Nothing is returned here but the
+	// acknowledgement that a turn was claimed.
+	return map[string]any{"accepted": true}, nil
+}
+
 func (s *Service) toggle(_ json.RawMessage) (any, error) {
 	s.mu.Lock()
 	active := s.turn
@@ -637,17 +668,17 @@ func (s *Service) healthMethod(params json.RawMessage) (any, error) {
 		stop := p.Stop
 		started := s.goBackground(45*time.Second, func(ctx context.Context) {
 			if stop {
-				if err := s.stopServer(ctx); err != nil {
-					logEvent("model server stop failed: %v", err)
+				if err := s.stopRuntime(ctx); err != nil {
+					logEvent("assistant runtime stop failed: %v", err)
 				} else {
-					logEvent("model server stopped")
+					logEvent("assistant runtime stopped: model server and transcriber released")
 				}
 				return
 			}
-			if s.ensureServer(ctx) {
-				logEvent("model server started")
+			if err := s.startRuntime(ctx); err != nil {
+				logEvent("assistant runtime failed to start: %v", err)
 			} else {
-				logEvent("model server failed to start")
+				logEvent("assistant runtime started: model server and transcriber warm")
 			}
 			s.setState(StateIdle, nil)
 		})
@@ -699,6 +730,12 @@ func (s *Service) setConfig(params json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("busy: finish or cancel the current turn first")
 	}
 	next := s.cfg
+	// Captured before the patch is applied, so an off-to-on transition can be
+	// told apart from a settings change made while already on. Every setConfig
+	// with the assistant on reaches the same branch below, and starting the
+	// runtime there unconditionally would launch the model server every time
+	// the user nudged the voice or the speed.
+	wasEnabled := next.Enabled
 	s.mu.Unlock()
 
 	if err := json.Unmarshal(params, &next); err != nil {
@@ -765,6 +802,24 @@ func (s *Service) setConfig(params json.RawMessage) (any, error) {
 		// reports "server not running" until the first tick after switch-on.
 		s.wakeHealth()
 		go s.refreshHealth(true)
+
+		// Switching the master switch on is a deliberate act, so it brings the
+		// runtime up the same way the panel's "Start everything" does. Nothing
+		// autostarts: `enabled` is still false after a reboot, and the server
+		// and transcriber come up only because the user just asked for them.
+		//
+		// Backgrounded for the same reason the panel's button is: starting the
+		// model server takes tens of seconds and must not hold the IPC socket.
+		if !wasEnabled {
+			s.goBackground(45*time.Second, func(ctx context.Context) {
+				if err := s.startRuntime(ctx); err != nil {
+					logEvent("assistant runtime failed to start on switch-on: %v", err)
+					return
+				}
+				logEvent("assistant runtime started on switch-on: model server and transcriber warm")
+				s.setState(StateIdle, nil)
+			})
+		}
 		if next.MemoryEnabled {
 			// Enabling must surface anything already waiting, not just what
 			// arrives afterwards.

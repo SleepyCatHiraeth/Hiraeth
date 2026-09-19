@@ -2056,6 +2056,20 @@ Item {
                                 }
                             }
                         }
+
+                        ToggleRow {
+                            // ToggleRow carries a label only, so the nuance --
+                            // that spoken turns always speak regardless -- lives
+                            // here rather than in a subtitle the row cannot show.
+                            label: "Speak Typed Replies"
+                            checked: Config.ai.turretSpeak ?? false
+                            onToggled: value => {
+                                if (value !== Config.ai.turretSpeak) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.turretSpeak = value;
+                                }
+                            }
+                        }
                     }
                 }
             }

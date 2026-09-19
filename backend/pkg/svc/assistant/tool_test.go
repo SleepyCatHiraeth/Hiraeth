@@ -205,10 +205,43 @@ func TestSystemStatusIsReadOnlyAndNeedsNoApproval(t *testing.T) {
 	}
 }
 
-// Tools are declared, not advertised: nothing here reaches the model yet.
-func TestToolsAreNotExposedToTheModel(t *testing.T) {
-	if strings.Contains(systemPrompt, "tool") && !strings.Contains(systemPrompt, "cannot") {
-		t.Error("the system prompt appears to advertise tools; that is a separate, reviewed change")
+// Tools ARE advertised now, so the old guard ("nothing here reaches the model
+// yet") is obsolete. What still has to hold is the boundary it was protecting:
+// the prompt may tell the model it has tools, but must never imply it can run
+// shell commands or edit files, because it cannot and never should.
+func TestPromptDescribesToolsWithoutClaimingShellAccess(t *testing.T) {
+	if !strings.Contains(systemPrompt, "tools") {
+		t.Error("tools are offered on every turn; the prompt must not deny having them")
+	}
+	if !strings.Contains(systemPrompt, "cannot run shell commands") {
+		t.Error("the prompt must still deny shell and file access")
+	}
+	// The contradiction that shipped: the prompt told the model it could take
+	// no action at all while the tool loop was offering it tools, so it
+	// answered "I can't search the web" with web search switched on.
+	for _, banned := range []string{
+		"cannot run commands, read files, or take any action",
+		"say plainly that you cannot do it yet",
+	} {
+		if strings.Contains(systemPrompt, banned) {
+			t.Errorf("the prompt still contains a blanket refusal that contradicts the tool loop: %q", banned)
+		}
+	}
+}
+
+func TestPromptKeepsCharacterHonestAndSpoken(t *testing.T) {
+	for _, want := range []string{
+		"two or three spoken sentences",
+		"at most one brief character beat",
+		"Never use markdown",
+		"Truth, safety, and refusal clarity always outrank character",
+		`say "I don't know"`,
+		"Never invent tool results, memories, perceptions, actions, or shared experiences",
+		"give the reason in the first sentence",
+	} {
+		if !strings.Contains(systemPrompt, want) {
+			t.Errorf("the persona prompt lost %q", want)
+		}
 	}
 }
 
@@ -226,5 +259,28 @@ func TestToolsListReportsApprovalRequirements(t *testing.T) {
 		if _, ok := entry["requires_approval"].(bool); !ok {
 			t.Errorf("entry %v does not say whether it needs approval", entry["name"])
 		}
+	}
+}
+
+// The model has no clock and the turn pipeline offers it no tools, so the date
+// and time have to arrive as a fact in the prompt or "what time is it" has no
+// answer the model can reach.
+func TestPromptCarriesTheClock(t *testing.T) {
+	now := time.Date(2026, time.September, 13, 18, 25, 0, 0, time.UTC)
+	got := promptNow(now)
+
+	for _, want := range []string{"Sunday, 13 September 2026", "18:25"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the prompt does not carry %q:\n%s", want, got)
+		}
+	}
+	// The persona and the boundaries must survive the addition.
+	if !strings.Contains(got, systemPrompt) {
+		t.Error("promptNow dropped the system prompt")
+	}
+	// Same guard as TestToolsAreNotExposedToTheModel: a clock is a fact, not a
+	// tool, and must not start advertising one.
+	if strings.Contains(got, "tool") && !strings.Contains(got, "cannot") {
+		t.Error("the clock line appears to advertise tools")
 	}
 }

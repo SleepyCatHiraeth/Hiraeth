@@ -123,7 +123,11 @@ func (s *Store) Retrieve(q Query) ([]Result, error) {
 	for _, it := range pool {
 		v := vec[it.ID]
 		l := lex[it.ID]
-		if v <= 0 && l <= 0 {
+		// Confirmed profile facts provide continuity even when the question
+		// does not repeat the user's name. They still pass the same consent,
+		// expiry, confidence, category, diversity and token-budget gates.
+		profile := it.Category == CatProfile && it.UserConfirmed
+		if v <= 0 && l <= 0 && !profile {
 			continue // matched nothing at all
 		}
 		age := float64(now - it.UpdatedAt)
@@ -132,6 +136,9 @@ func (s *Store) Retrieve(q Query) ([]Result, error) {
 			recency = 0
 		}
 		score := 0.45*v + 0.20*l + 0.15*it.Importance + 0.10*recency + 0.10*it.Confidence
+		if profile {
+			score += 1 // reserve the existing bounded profile slots before topical notes
+		}
 		results = append(results, Result{Item: it, Score: score, Vec: v, Lex: l})
 	}
 

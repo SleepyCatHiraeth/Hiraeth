@@ -1208,6 +1208,11 @@ Singleton {
             property bool notchAutoHideWithWindows: false
             property bool notchUsageEnabled: true
             property list<string> notchUsageProviders: []
+            // Speak the turret's replies aloud when it answers a TYPED message.
+            // Off by default: a reply spoken for every typed line is the wrong
+            // default in a room with other people in it. Voice turns are
+            // unaffected and always speak.
+            property bool turretSpeak: false
         }
     }
 

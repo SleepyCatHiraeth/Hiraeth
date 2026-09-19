@@ -50,6 +50,10 @@ Singleton {
     // runs, and the notch stays hidden.
     property bool enabled: false
     property bool memoryEnabled: false
+    // Mirrors assistant.web_enabled. The settings panel states a security
+    // property that depends on it, so it has to arrive with every state event
+    // rather than being read once.
+    property bool webEnabled: false
     property var reviewQueue: []
 
     property int subHandle: -1
@@ -64,8 +68,11 @@ Singleton {
             root.failed("The turret assistant is off. Turn it on in Settings.");
             return;
         }
-        if (!GlobalStates.turretVisible)
-            GlobalStates.toggleTurret();
+        // No notch to open any more: the AI notch on the right shows the
+        // voice state, and it is always on screen. Push-to-talk deliberately
+        // does NOT force the side panel open -- the notch animating through
+        // listening and thinking is the feedback, and popping a full panel
+        // over the user's work every time they hold a key is not.
         BackendService.call("assistant.toggle", {}, (result, error) => {
             if (error)
                 root.failed(String(error));
@@ -127,6 +134,7 @@ Singleton {
         root.lastErrorKind = data.error_kind || "";
         root.enabled = data.enabled === true;
         root.memoryEnabled = data.memory_enabled === true;
+        root.webEnabled = data.web_enabled === true;
         root.llmReachable = data.llm_reachable !== false;
         root.llmError = data.llm_error || "";
         root.embedError = data.embed_error || "";

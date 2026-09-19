@@ -47,6 +47,23 @@ PanelWindow {
     property string mpvShaderPath: ""
     property bool mpvShaderReady: false
 
+    // Every wallpaper window decodes at one shared size, so the file is
+    // decoded once and every window's preload reaches Ready in the same
+    // tick. Decoding per screen size instead makes the larger monitor
+    // finish late and its fade visibly trails the smaller one.
+    readonly property size decodeSize: {
+        var w = 0;
+        var h = 0;
+        const screens = Quickshell.screens || [];
+        for (var i = 0; i < screens.length; i++) {
+            if (screens[i].width > w)
+                w = screens[i].width;
+            if (screens[i].height > h)
+                h = screens[i].height;
+        }
+        return Qt.size(w > 0 ? w : wallpaper.width, h > 0 ? h : wallpaper.height);
+    }
+
     readonly property var optimizedPalette: ["background", "overBackground", "shadow", "surface", "surfaceBright", "surfaceDim", "surfaceContainer", "surfaceContainerHigh", "surfaceContainerHighest", "surfaceContainerLow", "surfaceContainerLowest", "primary", "secondary", "tertiary", "red", "lightRed", "green", "lightGreen", "blue", "lightBlue", "yellow", "lightYellow", "cyan", "lightCyan", "magenta", "lightMagenta"]
 
     // Sync state from the primary wallpaper manager to secondary instances
@@ -1220,9 +1237,83 @@ PanelWindow {
         }
     }
 
+    // One wallpaper image layer. Two of these are stacked so a change can
+    // dissolve, and the tint shader has to sit on each of them - hence a
+    // component rather than a second copy of the Image block.
+    component WallLayer: Image {
+        id: layerImage
+
+        property var paletteTexture: null
+        property real paletteSize: 0
+        property bool tint: false
+
+        mipmap: true
+        fillMode: Image.PreserveAspectCrop
+        asynchronous: true
+        smooth: true
+        // Must match the preloader's sourceSize exactly, or this is a cache
+        // miss and decodes all over again.
+        sourceSize.width: wallpaper.decodeSize.width
+        sourceSize.height: wallpaper.decodeSize.height
+
+        layer.enabled: tint
+        layer.effect: ShaderEffect {
+            property var paletteTexture: layerImage.paletteTexture
+            property real paletteSize: layerImage.paletteSize
+            property real texWidth: layerImage.width
+            property real texHeight: layerImage.height
+
+            vertexShader: "palette.vert.qsb"
+            fragmentShader: "palette.frag.qsb"
+        }
+    }
+
     component WallpaperImage: Item {
         property string source
-        property string previousSource
+        // What is actually on screen. It lags `source` until the incoming
+        // image has decoded, so the outgoing frame stays up instead of the
+        // window going black mid-transition.
+        property string displayedSource
+
+        function commitSource() {
+            displayedSource = source;
+        }
+
+        // Hand the decoded wallpaper to the layers below, which dissolve
+        // between the outgoing and incoming frame themselves. Nothing is
+        // animated on this item for stills - dimming the whole thing and
+        // cutting the image at the dim point is what made the change look
+        // abrupt.
+        function startTransition() {
+            commitSource();
+        }
+
+        // Decode the incoming wallpaper off screen before it is shown.
+        // Image clears its texture as soon as `source` changes and draws
+        // nothing until the decode finishes, which at this screen's
+        // sourceSize takes longer than one leg of the animation - the
+        // change then reads as an instant pop rather than a fade, and the
+        // bigger the monitor the worse it gets. Preloading at the same
+        // sourceSize puts the pixmap in QQuickPixmapCache, so the visible
+        // swap below is a cache hit.
+        Image {
+            id: preloader
+            visible: false
+            asynchronous: true
+            cache: true
+            sourceSize.width: wallpaper.decodeSize.width
+            sourceSize.height: wallpaper.decodeSize.height
+            source: (wallImage.source && getFileType(wallImage.source) === 'image') ? "file://" + wallImage.source : ""
+
+            onStatusChanged: {
+                if (status === Image.Ready) {
+                    wallImage.startTransition();
+                } else if (status === Image.Error) {
+                    console.warn("Wallpaper preload failed, showing it anyway:", source);
+                    wallImage.commitSource();
+                }
+            }
+        }
 
         Process {
             id: killMpvpaperProcess
@@ -1234,22 +1325,25 @@ PanelWindow {
             }
         }
 
-        // Trigger animation when source changes
         onSourceChanged: {
-            if (previousSource !== "" && source !== previousSource) {
-                if (Config.animDuration > 0) {
-                    transitionAnimation.restart();
-                }
+            if (!source) {
+                displayedSource = "";
+                return;
             }
-            previousSource = source;
 
-            // Kill mpvpaper if switching to a static image
-            if (source) {
-                var fileType = getFileType(source);
-                if (fileType === 'image') {
-                    killMpvpaperProcess.running = true;
-                }
+            if (getFileType(source) === 'image') {
+                // Kill mpvpaper if switching to a static image. The swap
+                // itself waits for `preloader` to finish decoding.
+                killMpvpaperProcess.running = true;
+                return;
             }
+
+            // gif/video render through mpvpaper on its own surface, so
+            // there is nothing for us to decode first.
+            if (displayedSource !== "" && Config.animDuration > 0) {
+                transitionAnimation.restart();
+            }
+            displayedSource = source;
         }
 
         SequentialAnimation {
@@ -1270,6 +1364,13 @@ PanelWindow {
                     duration: Config.animDuration
                     easing.type: Easing.OutCubic
                 }
+            }
+
+            // Swap at the dimmest point. The pixmap is already decoded, so
+            // this is a cache hit and the fade back in carries the new
+            // wallpaper.
+            ScriptAction {
+                script: wallImage.commitSource()
             }
 
             ParallelAnimation {
@@ -1293,10 +1394,10 @@ PanelWindow {
         Loader {
             anchors.fill: parent
             sourceComponent: {
-                if (!parent.source)
+                if (!parent.displayedSource)
                     return null;
 
-                var fileType = getFileType(parent.source);
+                var fileType = getFileType(parent.displayedSource);
                 if (fileType === 'image') {
                     return staticImageComponent;
                 } else if (fileType === 'gif' || fileType === 'video') {
@@ -1305,7 +1406,7 @@ PanelWindow {
                 return staticImageComponent; // fallback
             }
 
-            property string sourceFile: parent.source
+            property string sourceFile: parent.displayedSource
         }
 
         Component {
@@ -1352,27 +1453,127 @@ PanelWindow {
                     recursive: false
                 }
 
-                Image {
-                    mipmap: true
-                    id: rawImage
-                    anchors.fill: parent
-                    source: parent.sourceFile ? "file://" + parent.sourceFile : ""
-                    fillMode: Image.PreserveAspectCrop
-                    asynchronous: true
-                    smooth: true
-                    sourceSize.width: wallpaper.width
-                    sourceSize.height: wallpaper.height
-                    layer.enabled: parent.tint
-                    layer.effect: ShaderEffect {
-                        property var paletteTexture: paletteTextureSource
-                        property real paletteSize: staticImageRoot.optimizedPalette.length
-                        property real texWidth: rawImage.width
-                        property real texHeight: rawImage.height
+                // Two stacked layers. The incoming wallpaper fades in on top
+                // of the outgoing one, which is only dropped once the fade
+                // has finished, so the screen never passes through black and
+                // the image is never cut mid-animation. Its pixmap is already
+                // decoded by the preloader, so the incoming layer is Ready
+                // before the fade starts.
+                property bool frontIsA: true
+                readonly property Image frontLayer: frontIsA ? layerA : layerB
+                readonly property Image backLayer: frontIsA ? layerB : layerA
 
-                        vertexShader: "palette.vert.qsb"
-                        fragmentShader: "palette.frag.qsb"
+                WallLayer {
+                    id: layerA
+                    anchors.fill: parent
+                    tint: staticImageRoot.tint
+                    paletteTexture: paletteTextureSource
+                    paletteSize: staticImageRoot.optimizedPalette.length
+                }
+
+                WallLayer {
+                    id: layerB
+                    anchors.fill: parent
+                    opacity: 0
+                    tint: staticImageRoot.tint
+                    paletteTexture: paletteTextureSource
+                    paletteSize: staticImageRoot.optimizedPalette.length
+                }
+
+                SequentialAnimation {
+                    id: dissolve
+                    property Item incoming: null
+                    property Item outgoing: null
+
+                    ParallelAnimation {
+                        NumberAnimation {
+                            target: dissolve.incoming
+                            property: "opacity"
+                            from: 0.0
+                            to: 1.0
+                            duration: Config.animDuration * 2
+                            easing.type: Easing.InOutQuad
+                        }
+                        NumberAnimation {
+                            target: dissolve.incoming
+                            property: "scale"
+                            from: 1.02
+                            to: 1.0
+                            duration: Config.animDuration * 2
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+
+                    ScriptAction {
+                        script: staticImageRoot.retireOutgoing()
                     }
                 }
+
+                // Free the frame we just faded away from. Dropping its source
+                // releases the texture; keeping it would hold a second
+                // full-screen pixmap per screen for nothing.
+                function retireOutgoing() {
+                    if (!dissolve.outgoing)
+                        return;
+                    dissolve.outgoing.opacity = 0;
+                    dissolve.outgoing.scale = 1.0;
+                    dissolve.outgoing.source = "";
+                    dissolve.outgoing = null;
+                }
+
+                function show(path) {
+                    if (!path)
+                        return;
+
+                    // A change arriving mid-dissolve snaps that fade to its
+                    // end before starting the next one. Stopping it and
+                    // leaving the half-faded layer in place would make it the
+                    // next dissolve's backdrop, so the incoming wallpaper
+                    // would fade in over a partly transparent frame and the
+                    // animation would read as a muddy flicker. Clicking
+                    // through a folder lands here constantly.
+                    if (dissolve.running) {
+                        dissolve.stop();
+                        if (dissolve.incoming) {
+                            dissolve.incoming.opacity = 1.0;
+                            dissolve.incoming.scale = 1.0;
+                        }
+                        retireOutgoing();
+                    }
+
+                    // Resolved after the fixup above, which changes which
+                    // layer is front and which is free.
+                    const incoming = backLayer;
+                    const outgoing = frontLayer;
+                    // Idempotent: both onSourceFileChanged and
+                    // Component.onCompleted can deliver the same path at
+                    // startup, and that must not dissolve the wallpaper into
+                    // itself.
+                    if (outgoing.source.toString() === "file://" + path)
+                        return;
+
+                    incoming.source = "file://" + path;
+                    incoming.z = 1;
+                    outgoing.z = 0;
+                    frontIsA = !frontIsA;
+
+                    if (!outgoing.source.toString() || Config.animDuration <= 0) {
+                        // Nothing to dissolve from - first wallpaper of the
+                        // session, or animations turned off.
+                        incoming.opacity = 1.0;
+                        incoming.scale = 1.0;
+                        outgoing.opacity = 0;
+                        outgoing.source = "";
+                        return;
+                    }
+
+                    dissolve.incoming = incoming;
+                    dissolve.outgoing = outgoing;
+                    dissolve.restart();
+                }
+
+                onSourceFileChanged: show(sourceFile)
+                Component.onCompleted: show(sourceFile)
             }
         }
 

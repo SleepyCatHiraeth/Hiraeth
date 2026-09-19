@@ -113,7 +113,6 @@ PopupWindow {
 
         onCleared: {
             if (root.closeOnFocusLost && root.isOpen) {
-                root.isOpen = false;
                 root.closedExternally();
                 root.close();
             }

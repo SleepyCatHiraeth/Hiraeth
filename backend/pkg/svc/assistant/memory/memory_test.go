@@ -206,6 +206,39 @@ func TestDeleteIsReal(t *testing.T) {
 
 // --- Retrieval ------------------------------------------------------------
 
+func TestConfirmedProfileSurvivesUnrelatedQuestionsWithinGates(t *testing.T) {
+	s := openTest(t)
+	name := active("The user's name is Hiraeth.", CatProfile)
+	pending := active("Unreviewed profile.", CatProfile)
+	pending.Status = StatusCandidate
+	pending.UserConfirmed = false
+	expired := active("Expired profile.", CatProfile)
+	expired.ExpiresAt = time.Now().Unix() - 1
+	unconfirmed := active("Unconfirmed profile.", CatProfile)
+	unconfirmed.UserConfirmed = false
+	low := active("Low confidence profile.", CatProfile)
+	low.Confidence = 0.1
+	for _, item := range []*Item{name, pending, expired, unconfirmed, low} {
+		if err := s.Put(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q := Query{Text: "weather tomorrow", Limit: 1}
+	got, err := s.Retrieve(q)
+	if err != nil || len(got) != 1 || got[0].Item.ID != name.ID {
+		t.Fatalf("confirmed profile missing or unsafe profile selected: %v (%v)", got, err)
+	}
+	q.EnabledCats = map[string]bool{CatProfile: false}
+	if got, err := s.Retrieve(q); err != nil || len(got) != 0 {
+		t.Fatalf("disabled profile escaped category gate: %v (%v)", got, err)
+	}
+	q.EnabledCats = nil
+	q.TokenBudget = 1
+	if got, err := s.Retrieve(q); err != nil || len(got) != 0 {
+		t.Fatalf("profile escaped token budget: %v (%v)", got, err)
+	}
+}
+
 func TestRetrievalRanksAndCaps(t *testing.T) {
 	s := openTest(t)
 	for i := 0; i < 12; i++ {

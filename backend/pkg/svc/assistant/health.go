@@ -25,14 +25,11 @@ import (
 
 type health struct {
 	mu        sync.Mutex
+	modelsMu  sync.Mutex // serialize residency checks and loads to avoid duplicate instances
 	reachable bool
 	checkedAt time.Time
 	lastErr   string
 	starting  bool
-	// Set once the chat and embedding models have been explicitly loaded, so
-	// the check is not a subprocess on every turn. Cleared when the server
-	// stops, because a new server has loaded nothing.
-	modelsReady bool
 	// Ownership: only a server this assistant started may be stopped by it.
 	startedByUs bool
 }
@@ -86,6 +83,65 @@ func (s *Service) refreshHealthCtx(ctx context.Context, force bool) bool {
 		s.broadcast()
 	}
 	return ok
+}
+
+// startRuntime brings up everything a turn would otherwise have to pay for
+// mid-turn: the model server, then the warm transcriber and its Whisper model.
+//
+// Both are what the master switch exists to not spend, so neither is started
+// here unless the assistant is already on -- ensureServer enforces that, and
+// the transcriber is only reached once it has.
+func (s *Service) startRuntime(ctx context.Context) error {
+	if !s.ensureServer(ctx) {
+		_, lastErr := s.healthSnapshot()
+		if lastErr != "" {
+			return fmt.Errorf("model server did not start: %s", lastErr)
+		}
+		return fmt.Errorf("model server did not start")
+	}
+
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+
+	// ensure() requires the worker lock and records lastUsed itself, so a
+	// warmed worker is not collected by the idle reaper on the next tick.
+	w := &s.stt
+	w.mu.Lock()
+	err := w.ensure(ctx, cfg)
+	w.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("transcriber: %w", err)
+	}
+	return nil
+}
+
+// stopRuntime gives back what startRuntime took. It is the resource half of
+// disabling the assistant, without flipping the master switch: the assistant
+// stays on and keeps its memory store, but holds no model and no VRAM.
+//
+// A turn in flight is aborted first. Stopping the server underneath a running
+// turn would fail it anyway, and less cleanly.
+func (s *Service) stopRuntime(ctx context.Context) error {
+	s.mu.Lock()
+	active := s.turn
+	s.mu.Unlock()
+	if active != nil {
+		active.abort()
+	}
+	s.stt.stop()
+
+	// A model server the user started themselves is theirs and is left
+	// running -- the same rule the master switch follows on disable. Skipping
+	// it is not a failed stop: the transcriber and its model are released
+	// either way, and reporting an error here would claim otherwise.
+	s.health.mu.Lock()
+	ours := s.health.startedByUs
+	s.health.mu.Unlock()
+	if !ours {
+		return nil
+	}
+	return s.stopServerForce(ctx)
 }
 
 // ensureServer brings the model server up if it is down.
@@ -227,13 +283,11 @@ func loadedModels(ctx context.Context, lms string) map[string]bool {
 // eviction. Loading is skipped when a model is already resident, because
 // `lms load` would otherwise start a second copy of it.
 func (s *Service) ensureModelsLoaded(ctx context.Context, cfg Config) {
-	s.health.mu.Lock()
-	done := s.health.modelsReady
-	s.health.mu.Unlock()
-	if done {
-		return
-	}
-
+	s.health.modelsMu.Lock()
+	defer s.health.modelsMu.Unlock()
+	// Explicit loads avoid JIT eviction between recall and generation. They
+	// expire after two idle minutes; recheck residency on each turn because
+	// an earlier successful load is not evidence that a model is still here.
 	lms := lmsPath()
 	if lms == "" {
 		return
@@ -252,7 +306,15 @@ func (s *Service) ensureModelsLoaded(ctx context.Context, cfg Config) {
 			continue
 		}
 		started := time.Now()
-		cmd := exec.CommandContext(ctx, lms, "load", key, "-y")
+		args := []string{"load", key, "--ttl", "120", "-y"}
+		if key == cfg.Model {
+			// One interactive turn at a time; avoid allocating the model's
+			// full advertised context or multiple parallel generation slots.
+			args = append(args, "--context-length", "8192", "--parallel", "1")
+		} else {
+			args = append(args, "--gpu", "off")
+		}
+		cmd := exec.CommandContext(ctx, lms, args...)
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		if err := cmd.Run(); err != nil {
 			logEvent("could not preload %s: %v", key, err)
@@ -260,10 +322,6 @@ func (s *Service) ensureModelsLoaded(ctx context.Context, cfg Config) {
 		}
 		logEvent("preloaded %s in %s", key, time.Since(started).Round(time.Millisecond))
 	}
-
-	s.health.mu.Lock()
-	s.health.modelsReady = true
-	s.health.mu.Unlock()
 }
 
 // waitForStart blocks while another caller brings the server up.
@@ -449,7 +507,6 @@ func (s *Service) stopServerForce(ctx context.Context) error {
 
 	s.health.mu.Lock()
 	s.health.startedByUs = false
-	s.health.modelsReady = false
 	s.health.mu.Unlock()
 	s.refreshHealth(true)
 	return nil

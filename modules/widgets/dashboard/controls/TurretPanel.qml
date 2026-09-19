@@ -145,17 +145,21 @@ Item {
                 icon: TurretService.llmReachable ? Icons.shieldCheck : Icons.alert
                 accent: TurretService.llmReachable ? Colors.primary : Colors.criticalText
 
+                // Both stay visible regardless of whether the model server is
+                // reachable. The server is only half of what runs: the warm
+                // transcriber holds a Whisper model of its own, and a start or
+                // stop that covered only the server left the other half in
+                // whatever state the last turn had put it in.
                 Button {
-                    visible: !TurretService.llmReachable
-                    text: "Start server"
+                    text: "Start everything"
                     onClicked: TurretService.repairServer(() => { if (root && root.alive) root.reload(); })
                 }
 
-                // Explicit release of the ~650 MB the daemon holds plus any
-                // resident model, rather than waiting for the idle TTL.
+                // Explicit release of the ~650 MB the daemon holds, any
+                // resident model, and the warm transcriber, rather than
+                // waiting for the idle TTL.
                 Button {
-                    visible: TurretService.llmReachable
-                    text: "Stop & free memory"
+                    text: "Stop everything"
                     onClicked: TurretService.stopServer(() => { if (root && root.alive) root.reload(); })
                 }
             }
@@ -165,8 +169,15 @@ Item {
             TurretSettingCard {
                 Layout.fillWidth: true
                 visible: TurretService.enabled
-                title: "Local only"
-                subtitle: "The model endpoint is rejected unless it is loopback. Nothing is sent off this machine."
+                title: TurretService.webEnabled ? "Local model, web research on" : "Local only"
+                // This card states a security property, so it has to track the
+                // web switch. While web access is on, "nothing is sent off this
+                // machine" is false: search queries and the pages chosen from
+                // the results leave it. The model endpoint is loopback either
+                // way -- that part never changes.
+                subtitle: TurretService.webEnabled
+                          ? "The model still runs here and the endpoint must be loopback. Web search is on, so your search terms and the pages it opens do leave this machine."
+                          : "The model endpoint is rejected unless it is loopback. Nothing is sent off this machine."
                 icon: Icons.lock
                 accent: Colors.primary
             }
@@ -306,7 +317,58 @@ Item {
                 }
             }
 
+            TurretSectionLabel { text: "Web research"; visible: TurretService.enabled }
+
+            TurretSettingCard {
+                Layout.fillWidth: true
+                visible: TurretService.enabled
+                title: "Let it search the web"
+                subtitle: TurretService.webEnabled
+                          ? "Wikipedia, Stack Overflow and Hacker News. It can open pages from those results. Your search terms leave this machine."
+                          : "Off. It answers only from what it already knows and what it remembers."
+                icon: Icons.globe
+                accent: TurretService.webEnabled ? Colors.warning : Colors.overSurface
+
+                Switch {
+                    checked: TurretService.webEnabled
+                    onToggled: root.apply("web_enabled", checked)
+                }
+            }
+
             TurretSectionLabel { text: "Memory"; visible: TurretService.enabled }
+
+            // Pending-memory review. This lived in the turret notch until that
+            // notch was folded into the AI side panel on 2026-09-13; deleting
+            // it left `confirmMemory` and `reviewQueue` with no consumer, so a
+            // memory the assistant wanted to keep could never be accepted.
+            //
+            // The principle it was built on still holds: a save the user cannot
+            // see is not a controlled save. Keep and Discard stay one click
+            // apart, with the text shown in full.
+            Repeater {
+                model: TurretService.enabled && TurretService.memoryEnabled
+                       ? TurretService.reviewQueue : []
+
+                delegate: TurretSettingCard {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    tall: true
+                    title: "Keep this?"
+                    subtitle: modelData.content ?? ""
+                    icon: Icons.robot
+                    accent: Colors.primary
+
+                    Button {
+                        text: "Keep"
+                        onClicked: TurretService.confirmMemory(modelData.id)
+                    }
+
+                    Button {
+                        text: "Discard"
+                        onClicked: TurretService.forgetMemory(modelData.id, () => {})
+                    }
+                }
+            }
 
             TurretSettingCard {
                 Layout.fillWidth: true

@@ -27,7 +27,7 @@ import (
 // assistant is switched off or has been idle long enough that the ~250MB it
 // holds is worth more than the second it saves.
 
-const sttIdleTimeout = 10 * time.Minute
+const sttIdleTimeout = 2 * time.Minute
 
 type sttWorker struct {
 	mu       sync.Mutex

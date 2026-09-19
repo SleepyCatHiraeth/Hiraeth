@@ -15,5 +15,6 @@ var data = {
     "notchHoverToOpen": false,
     "notchAutoHideWithWindows": false,
     "notchUsageEnabled": true,
-    "notchUsageProviders": []
+    "notchUsageProviders": [],
+    "turretSpeak": false
 }

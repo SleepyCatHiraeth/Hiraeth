@@ -90,16 +90,119 @@ Singleton {
         }
     }
 
+    // The sidebar can be opened before StateService reports initialised, in
+    // which case _restore has not run and persistenceReady is still false --
+    // so a selection made in that window was silently dropped. Opening the
+    // panel is late enough that state is available in practice; this is the
+    // backstop for the case where the signal was missed entirely.
+    function ensureRestored() {
+        root._restore();
+        if (!root.persistenceReady && StateService.initialized)
+            restoreModel();
+    }
+
     // Lazy init: trigger fetchAvailableModels/reloadHistory/createNewChat
     // when AI sidebar is opened for the first time.
     property bool _aiInitialized: false
     function _ensureInit() {
         if (_aiInitialized) return;
         _aiInitialized = true;
+        // Order matters: registering the turret first would leave
+        // models.length === 1, and the fetch below is guarded on the list being
+        // empty -- which silently skipped discovery of every cloud model.
+        ensureRestored();
         if (models.length === 0)
             fetchAvailableModels();
+        registerTurretModel();
         reloadHistory();
         createNewChat();
+    }
+
+    // The turret's reply streams in over the assistant state broadcast, which
+    // TurretService already mirrors. Nothing new is transported here: partial
+    // text lands in `response` exactly as it does for a spoken turn, and this
+    // copies it into the streaming message the chat is already rendering.
+    Connections {
+        target: TurretService
+        enabled: root.turretActive
+
+        function onResponseChanged() {
+            const owner = root.activeRequest;
+            if (!owner)
+                return;
+            const target = root.streamTargetIndex(owner, root.currentChatId, root.currentChat);
+            if (target < 0)
+                return;
+            let chat = Array.from(root.currentChat);
+            chat[target] = Object.assign({}, chat[target], {
+                content: TurretService.response
+            });
+            root.currentChat = chat;
+        }
+
+        // The turn ends when the backend leaves its busy states. `busy` is
+        // false for idle, error and cancelled, which are exactly the three
+        // ways a turn can stop -- so this needs no state-name list of its own
+        // that could drift from the backend's.
+        function onBusyChanged() {
+            if (TurretService.busy)
+                return;
+            const owner = root.activeRequest;
+            if (!owner)
+                return;
+
+            if (TurretService.lastError) {
+                root.failRequest(owner.seq, TurretService.lastError);
+                return;
+            }
+
+            const target = root.streamTargetIndex(owner, root.currentChatId, root.currentChat);
+            root.activeRequest = null;
+            root.isLoading = false;
+            // An empty reply is a failed turn, not an answer. Leaving the
+            // blank bubble in place would look like the assistant chose to
+            // say nothing.
+            if (target >= 0 && !root.currentChat[target].content) {
+                let chat = Array.from(root.currentChat);
+                chat.splice(target, 1);
+                root.currentChat = chat;
+            }
+        }
+    }
+
+    // A spoken turn lands in the same conversation as a typed one. Without
+    // this the panel would show only what was typed, and the voice would be a
+    // second, invisible conversation happening beside it.
+    Connections {
+        target: TurretService
+        enabled: root.turretActive
+
+        function onTranscriptChanged() {
+            const text = TurretService.transcript;
+            if (!text)
+                return;
+            // Only for a turn this panel did not start: a typed turn already
+            // pushed its user message, and the backend echoes the prompt back
+            // as the transcript.
+            if (root.activeRequest)
+                return;
+
+            let chat = Array.from(root.currentChat);
+            chat.push({
+                role: "user",
+                content: text
+            });
+            chat.push({
+                role: "assistant",
+                content: "",
+                model: root.currentModel ? root.currentModel.name : "Turret (local)"
+            });
+            root.currentChat = chat;
+
+            root.requestSeq += 1;
+            root.activeRequest = root.requestOwner(root.requestSeq, root.currentChatId, chat.length - 1, null, root.currentModel);
+            root.isLoading = true;
+        }
     }
 
     // Trigger lazy init when AI sidebar is opened
@@ -358,6 +461,16 @@ Singleton {
         for (let i = 0; i < models.length; i++) {
             if (models[i].name === modelName) {
                 currentModel = models[i];
+                // Persist here rather than relying on onCurrentModelChanged.
+                // That handler only writes once `isRestored` is true, and
+                // `isRestored` only became true when a previously saved model
+                // was found -- so on a profile that had never saved one, the
+                // selection could never be written and the picker reset on
+                // every reload. An explicit choice is always worth saving.
+                root.savedModelId = models[i].model;
+                root.isRestored = true;
+                if (root.persistenceReady)
+                    StateService.set("lastAiModel", models[i].model);
                 return true;
             }
         }
@@ -555,6 +668,51 @@ Singleton {
             lastError = "No AI model available.";
             isLoading = false;
             return false;
+        }
+
+        // The turret answers over IPC, and keeps its own conversation history
+        // in the daemon -- so only the newest user message is sent, not the
+        // whole chat. Replaying the log here would double every exchange.
+        if (model.provider === turretProvider) {
+            let prompt = "";
+            for (let i = currentChat.length - 1; i >= 0; i--) {
+                if (currentChat[i].role === "user") {
+                    prompt = currentChat[i].content;
+                    break;
+                }
+            }
+            if (!prompt) {
+                lastError = "Nothing to ask.";
+                isLoading = false;
+                return false;
+            }
+
+            let turretChat = Array.from(currentChat);
+            turretChat.push({
+                role: "assistant",
+                content: "",
+                model: model.name
+            });
+            currentChat = turretChat;
+
+            requestSeq += 1;
+            activeRequest = requestOwner(requestSeq, currentChatId, turretChat.length - 1, null, model);
+            isLoading = true;
+            responseBuffer = "";
+
+            const seq = requestSeq;
+            BackendService.call("assistant.ask", {
+                text: prompt,
+                speak: Config.ai?.turretSpeak ?? false
+            }, (result, error) => {
+                // A refusal (assistant off, busy, remote endpoint) arrives as
+                // the callback's second argument and must clear the spinner.
+                // The streamed reply itself does not come back here at all --
+                // it arrives on the TurretService subscription.
+                if (error)
+                    root.failRequest(seq, String(error));
+            });
+            return true;
         }
 
         let apiKey = getApiKey(model);
@@ -879,6 +1037,12 @@ Singleton {
 
     function saveCurrentChat() {
         if (currentChat.length === 0)
+            return;
+        // The turret's own history is memory-only by design -- history.go says
+        // "Nothing here is written to disk, ever." Routing its turns through
+        // this chat must not quietly start writing local voice conversations
+        // to ~/.local/share/ambxst/chats.
+        if (turretActive)
             return;
 
         let filename = chatDir + "/" + currentChatId + ".json";
@@ -1396,14 +1560,46 @@ Singleton {
 
             tryRestore();
 
-            if (!currentModel && models.length > 0) {
+            // Once every fetch has landed, the model list is as complete as it
+            // is going to get, so restore is settled either way. Leaving
+            // isRestored false here was half of the reset-on-reload defect:
+            // a saved id that matched nothing kept persistence switched off
+            // for the whole session.
+            if (!currentModel && models.length > 0)
                 currentModel = models[0];
-                isRestored = true;
-            } else if (!isRestored && currentModel) {
-                isRestored = true;
-            }
+            isRestored = true;
         }
     }
+
+    // The local turret assistant, as one more entry in the model picker.
+    //
+    // It needs no key and no endpoint of its own: the Go daemon owns the
+    // endpoint and enforces that it stays on loopback, so putting a URL here
+    // would be a second source of truth that could disagree with it. The
+    // `turret` provider is the signal to makeRequest() to go over IPC instead
+    // of curl -- there is deliberately no ApiStrategy for it, because the
+    // strategies are an HTTP contract (endpoint, headers, body, parse) and
+    // none of those apply.
+    readonly property string turretProvider: "turret"
+
+    function registerTurretModel() {
+        for (let i = 0; i < models.length; i++) {
+            if (models[i].provider === turretProvider)
+                return;
+        }
+        let m = aiModelFactory.createObject(root, {
+            name: "Turret (local)",
+            description: "Runs on this machine. Own memory and voice, nothing leaves the device.",
+            endpoint: "",
+            model: "turret",
+            provider: turretProvider,
+            requires_key: false
+        });
+        if (m)
+            mergeModels([m]);
+    }
+
+    readonly property bool turretActive: currentModel && currentModel.provider === turretProvider
 
     function mergeModels(newModels) {
         let updatedList = [];

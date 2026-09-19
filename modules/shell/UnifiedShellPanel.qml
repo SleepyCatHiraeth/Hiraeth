@@ -185,12 +185,6 @@ PanelWindow {
                 item: dockContent.visible ? dockContent.dockHitbox : null
             },
             Region {
-                // Turret assistant notch. Only claims input while it has
-                // something clickable (a memory review card, or a cancellable
-                // turn), so an idle notch stays click-through.
-                item: turretNotch.interactive ? turretNotch.hitbox : null
-            },
-            Region {
                 item: (assistantSidebar.active || assistantSidebar.hitbox.visible) ? assistantSidebar.hitbox : null
             },
             Region {
@@ -287,12 +281,6 @@ PanelWindow {
             anchors.fill: parent
             screen: unifiedPanel.targetScreen
             z: 4
-        }
-
-        TurretNotch {
-            id: turretNotch
-            screen: unifiedPanel.targetScreen
-            z: 5
         }
 
         AssistantSidebar {

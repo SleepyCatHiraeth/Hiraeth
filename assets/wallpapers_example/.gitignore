@@ -1,2 +1,8 @@
 current.wall
 *.mp4
+
+# Local wallpaper library is third-party art: never publish it.
+# Only upstream's own examples stay tracked.
+*
+!.gitignore
+!ambxst-*.png

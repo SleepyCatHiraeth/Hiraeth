@@ -49,6 +49,11 @@ type turn struct {
 
 	// When listening began, for the push-to-talk release rule below.
 	startedAt time.Time
+
+	// A typed turn answers in text only: no synthesiser, no playback, and no
+	// StateSpeaking, because nothing is spoken. The reply still streams to the
+	// frontend through s.response exactly as a voice turn's does.
+	silent bool
 }
 
 func (s *Service) startTurn() error {
@@ -149,6 +154,80 @@ func (s *Service) startTurn() error {
 	s.setState(StateListening, nil)
 
 	go t.run()
+	return nil
+}
+
+// startTextTurn runs a turn from typed text. Same slot, same budget, same
+// brain -- it simply never opens a microphone.
+//
+// It is a sibling of startTurn rather than a branch inside it because the two
+// differ in their whole first half: no capture-target discovery, no pw-record,
+// no WAV, no transcription. They converge at think(), which is where all the
+// behaviour worth sharing lives.
+//
+// speak is false for panel chat. When true the reply is also spoken, which is
+// what makes this usable as "type instead of talk" without losing the voice.
+func (s *Service) startTextTurn(prompt string, speak bool) error {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return fmt.Errorf("nothing to ask")
+	}
+
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+
+	// The endpoint check is the local-only guarantee and applies to every path
+	// that reaches the model, typed or spoken.
+	if err := checkEndpoint(cfg.Endpoint); err != nil {
+		return err
+	}
+	// Only a spoken reply needs the Python stack. A silent turn talks to the
+	// model server and nothing else, so it must not be blocked by a missing
+	// venv it will never use.
+	if speak {
+		venv := filepath.Join(cfg.StackDir, ".venv", "bin", "python")
+		if _, err := os.Stat(venv); err != nil {
+			return fmt.Errorf("%w: %s missing", errNoStack, venv)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), turnBudget)
+	t := &turn{
+		svc:    s,
+		ctx:    ctx,
+		cancel: cancel,
+		silent: !speak,
+		// Never written to, but closing it keeps abort() -> endCapture()
+		// safe: it runs stopOnce and closes this channel whatever started
+		// the turn.
+		recDone: make(chan struct{}),
+	}
+
+	// Same claim as the voice path, for the same reasons: the check and the
+	// install happen under one lock, and the master switch is re-read here
+	// rather than trusted from preflight.
+	s.mu.Lock()
+	if s.turn != nil || s.speaking {
+		s.mu.Unlock()
+		cancel()
+		return fmt.Errorf("busy: finish or cancel the current turn first")
+	}
+	if !s.cfg.Enabled {
+		s.mu.Unlock()
+		cancel()
+		return fmt.Errorf("the turret assistant is off; turn it on in Settings")
+	}
+	t.cfg = cfg
+	t.startedAt = time.Now()
+	s.turn = t
+	s.transcript = ""
+	s.response = ""
+	s.lastErr = ""
+	s.lastErrKind = ""
+	s.mu.Unlock()
+
+	go t.think(prompt)
 	return nil
 }
 
@@ -264,6 +343,20 @@ func (t *turn) run() {
 		t.finish(StateIdle, func() { s.lastErr = "nothing heard" })
 		return
 	}
+	t.think(text)
+}
+
+// think is everything after the prompt is known: retrieval, generation, and
+// the bookkeeping that follows a complete exchange.
+//
+// Both entry points share it. The voice path reaches it with text from the
+// transcriber; the typed path reaches it directly, having never opened a
+// microphone. Keeping it in one place is what makes a typed turn get the same
+// memory recall, the same conversation history and the same extraction as a
+// spoken one, rather than a second pipeline that drifts from this one.
+func (t *turn) think(text string) {
+	s := t.svc
+
 	s.setState(StateThinking, func() { s.transcript = text })
 
 	// A stopped model server is the most likely reason a turn fails, and it is
@@ -371,11 +464,18 @@ func (t *turn) transcribe() (string, error) {
 func (t *turn) answer(prompt, memCtx string) error {
 	s := t.svc
 
-	speaker, err := t.startSpeaker()
-	if err != nil {
-		return fmt.Errorf("speech output: %w", err)
+	// nil for a typed turn. Every use below is guarded rather than routed
+	// through a no-op speaker, so a silent turn provably starts no tts.py and
+	// no playback process at all.
+	var speaker *speaker
+	if !t.silent {
+		sp, err := t.startSpeaker()
+		if err != nil {
+			return fmt.Errorf("speech output: %w", err)
+		}
+		speaker = sp
+		defer speaker.close()
 	}
-	defer speaker.close()
 
 	spoke := false
 	var sayErr error
@@ -385,11 +485,20 @@ func (t *turn) answer(prompt, memCtx string) error {
 	// transitions.
 	answerStart := time.Now()
 
-	err = streamChat(t.ctx, t.cfg, prompt, memCtx, s.convo.messages(), func(sentence string) {
+	// The tool loop replaces the single streamChat call. When the model asks
+	// for nothing, this behaves exactly as before -- one generation, streamed
+	// sentence by sentence -- so a plain question keeps the fast path.
+	msgs := toAnyMessages(buildMessages(promptNow(time.Now()), memCtx, s.convo.messages(), prompt))
+	err := t.answerWithTools(msgs, func(sentence string) {
 		if !spoke {
 			spoke = true
 			logWorker("llm-first-speech", time.Since(answerStart), nil, "")
-			s.setState(StateSpeaking, nil)
+			// A typed turn stays in StateThinking while it streams. Reporting
+			// "speaking" with the speaker switched off would drive the notch
+			// to a speaker glyph for an answer nobody can hear.
+			if !t.silent {
+				s.setState(StateSpeaking, nil)
+			}
 		}
 		full.WriteString(sentence)
 		full.WriteString(" ")
@@ -398,7 +507,7 @@ func (t *turn) answer(prompt, memCtx string) error {
 		s.seq++
 		s.mu.Unlock()
 		s.broadcast()
-		if sayErr == nil {
+		if speaker != nil && sayErr == nil {
 			sayErr = speaker.say(sentence)
 		}
 	})
@@ -408,13 +517,15 @@ func (t *turn) answer(prompt, memCtx string) error {
 	if sayErr != nil {
 		return sayErr
 	}
-	speaker.finish()
-	// A synthesiser or playback process that died mid-answer means the user
-	// heard part of a reply, or none of it. Reporting that turn as a success
-	// let the exchange into conversation history and into memory extraction as
-	// though it had been spoken.
-	if err := speaker.err(); err != nil {
-		return err
+	if speaker != nil {
+		speaker.finish()
+		// A synthesiser or playback process that died mid-answer means the user
+		// heard part of a reply, or none of it. Reporting that turn as a success
+		// let the exchange into conversation history and into memory extraction as
+		// though it had been spoken.
+		if err := speaker.err(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
