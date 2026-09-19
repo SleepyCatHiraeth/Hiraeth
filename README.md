@@ -8,9 +8,9 @@ A local-first voice assistant, a plugin host, a system sound engine,<br/>
 and a pile of security fixes — on top of Axenide's Wayland shell.
 
 <p>
-  <img src="https://img.shields.io/badge/fork_of-Axenide%2FAmbxst-F6A8C4?style=for-the-badge&labelColor=0d1117" alt="Fork of Axenide/Ambxst" />
-  <img src="https://img.shields.io/badge/upstream-1.3.6-F6A8C4?style=for-the-badge&labelColor=0d1117" alt="Upstream 1.3.6" />
-  <img src="https://img.shields.io/badge/license-AGPL--3.0-F6A8C4?style=for-the-badge&labelColor=0d1117" alt="AGPL-3.0" />
+  <img src="https://img.shields.io/badge/fork_of-Axenide%2FAmbxst-63AEE7?style=for-the-badge&labelColor=0d1117" alt="Fork of Axenide/Ambxst" />
+  <img src="https://img.shields.io/badge/upstream-1.3.6-63AEE7?style=for-the-badge&labelColor=0d1117" alt="Upstream 1.3.6" />
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-63AEE7?style=for-the-badge&labelColor=0d1117" alt="AGPL-3.0" />
   <img src="https://img.shields.io/badge/compositor-Hyprland-F6A8C4?style=for-the-badge&labelColor=0d1117" alt="Hyprland" />
 </p>
 
