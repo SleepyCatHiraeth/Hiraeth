@@ -1,4 +1,84 @@
 <p align="center">
+  <img src="./assets/hiraeth/logo-mono.png" alt="Hiraeth" style="width: 40%;" align="center" />
+  <br>
+  <br>
+  A personal fork of <a href="https://github.com/Axenide/Ambxst"><b>Ambxst</b></a>, carrying a local-first
+  voice assistant, a plugin host, a system sound engine, and a pile of security fixes.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/fork%20of-Axenide%2FAmbxst-1f6feb?style=for-the-badge&labelColor=000000" alt="Fork of Axenide/Ambxst">
+  <img src="https://img.shields.io/badge/license-AGPL--3.0-8957e5?style=for-the-badge&labelColor=000000" alt="AGPL-3.0">
+  <img src="https://img.shields.io/badge/upstream-1.3.6-2ea043?style=for-the-badge&labelColor=000000" alt="Upstream 1.3.6">
+</p>
+
+---
+
+## About this fork
+
+Everything below the divider is upstream's own README and is the place to start for
+installation and general use. **All credit for Ambxst itself goes to [Axenide](https://github.com/Axenide)**
+— this fork only adds to it, tracks its releases, and keeps its AGPL-3.0 licence.
+
+Merged up to **upstream 1.3.6**, including the QtMultimedia wallpaper backend and the runtime
+translations. Roughly eighty commits sit on top of it.
+
+### What this fork adds
+
+**Turret — a local-first voice assistant.** Its own pipeline in the Go backend: wake word, STT
+biased toward domain vocabulary, a Kokoro TTS engine with selectable voices, and a tool layer that
+reaches email drafting. It keeps a conversation that survives restarts and a transcriber that stays
+warm between turns. The model is loopback-only; nothing leaves the machine.
+
+**Controlled assistant memory.** Opt-in, with retrieval, hard policy gates, and a review surface in
+the notch. Memories can be inspected, expired, adjusted and compacted. Secrets are refused outright
+rather than stored and flagged.
+
+**A plugin host.** Discovery, manifest validation, persisted enable state, and a defined trust
+boundary, with extension points for bar and dashboard widgets. Two plugins ship against it: AI
+Overview Control and a Corsair mouse battery readout.
+
+**A system sound engine.** A `sound.json` data model with theme resolution and a playback service,
+hooked into notifications, boot, shutdown, login, Bluetooth connect/disconnect and battery-low. Two
+themes, including a full Portal Turret set — whose audio is *not* distributed here, for obvious
+licensing reasons.
+
+**Web search for the assistant.** An iterative tool loop, so a turn can fetch and cite live results
+instead of answering from the model alone.
+
+**A reworked wallpaper transition.** Preload-before-swap: the incoming image is decoded at a shared
+size across every monitor, then a two-layer dissolve drives the visible swap, so the screen never
+passes through black and the fade does not trail on the larger display.
+
+**Palette generation fixes.** Repaired ANSI entries anchor on their canonical hue instead of the
+widest free gap, so a terminal asking for yellow gets yellow. Matugen runs once with
+`--prefer saturation` rather than twice, which removed a regeneration loop.
+
+**Encrypted clipboard storage.** Separate pinned and unpinned stores, with image blobs handled
+apart from text.
+
+**Security fixes.** API keys kept out of `argv` on every path that used to leak them through `curl`,
+`sqlite3` or a shell; the shell tool gated off by default; an IPC unlock bypass removed from the
+lockscreen; screenshot freeze frames kept private and short-lived; updates fetched over HTTPS.
+
+**Branding.** Monochrome Hiraeth marks in place of the Ambxst logo on personal surfaces.
+
+### Branches
+
+`feature/corsair-battery-redesign` is the working branch and the one to read. `integration/<version>`
+branches are where each upstream release is merged and verified before the working branch moves
+onto it; `safety/local-customizations-2026-08-31` is a preservation point from before the first
+upstream merge.
+
+### Notes
+
+The example wallpaper directory is deliberately limited to upstream's own images — the local
+wallpaper library is third-party art and is not published here. `1.3.6` dropped mpvpaper in favour
+of QtMultimedia, so `ambxst mpvipc` no longer exists.
+
+---
+
+<p align="center">
 <img src="./assets/ambxst/ambxst-logo-color.svg" alt="Ambxst Logo" style="width: 50%;" align="center" />
   <br>
   <br>
