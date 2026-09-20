@@ -256,6 +256,13 @@ Singleton {
     property bool isLoading: false
     property string lastError: ""
     property string responseBuffer: ""
+    // The first error a stream parser reported, and a bounded tail of the raw
+    // bytes. A provider that refuses mid-stream, or answers an error document
+    // instead of an event stream, says why in one of these two -- and neither
+    // survived to the exit handler before.
+    property string streamError: ""
+    property string rawTail: ""
+    readonly property int rawTailLimit: 2000
 
     // Current Chat
     property var currentChat: []
@@ -657,6 +664,25 @@ Singleton {
         return true;
     }
 
+    // Why a request failed, in the order the answer is most likely to be
+    // useful: the provider's own words first, then curl's, then a bare exit
+    // code. Before this the handler reported only `curlStderr`, which is empty
+    // on every failure the provider reports in the response body.
+    function describeRequestFailure(exitCode, stderrText) {
+        if (streamError !== "")
+            return I18n.t("ai.request_failed").replace("%1", streamError);
+
+        const body = rawTail.trim();
+        if (body !== "")
+            return I18n.t("ai.request_failed").replace("%1", body);
+
+        const err = (stderrText || "").trim();
+        if (err !== "")
+            return I18n.t("ai.network_failed").replace("%1", err);
+
+        return I18n.t("ai.network_failed").replace("%1", "curl exit " + exitCode);
+    }
+
     // A request that never started still has to say so. `lastError` alone is
     // not enough: the user message is already in the conversation by the time
     // makeRequest() runs, so a silent refusal leaves a question sitting there
@@ -870,7 +896,14 @@ Singleton {
             for (const header of payload.headers)
                 cfg += "header = " + quoted(header) + "\n";
             curlProcess.pendingCurlConfig = cfg;
-            curlProcess.command = ["curl", "-s", "--no-buffer", "-N",
+            // --fail-with-body, not plain -s. Without it curl exits 0 on an
+            // HTTP 401, 429 or 500: the handler below saw a clean exit with no
+            // SSE content and wrote "no response received", which is how an
+            // expired key and a rate limit both came out looking like the
+            // model had simply chosen to say nothing. -S keeps curl's own
+            // diagnostic on stderr; the body still reaches stdout, where the
+            // provider's actual explanation lives.
+            curlProcess.command = ["curl", "-sS", "--fail-with-body", "--no-buffer", "-N",
                 "--connect-timeout", "15", "--max-time", "300", "-K", "-"];
         }
 
@@ -922,7 +955,18 @@ Singleton {
                 // one the model selector happens to point at now.
                 let result = owner.strategy.parseStreamChunk(data);
 
+                // Keep a bounded tail of whatever actually arrived. On a
+                // failed request this is the provider's error document, which
+                // is the only place the real reason ("quota exceeded", "model
+                // not found") is written down.
+                if (root.rawTail.length < root.rawTailLimit)
+                    root.rawTail += data + "\n";
+
                 if (result.error) {
+                    // First error wins: a stream that fails usually goes on to
+                    // emit noise, and the first line is the diagnosis.
+                    if (root.streamError === "")
+                        root.streamError = result.error;
                     root.lastError = result.error;
                     return;
                 }
@@ -954,9 +998,15 @@ Singleton {
             root.activeRequest = null;
             root.isLoading = false;
 
-            if (exitCode === 0) {
+            // A clean exit is not the same as a successful turn. A provider can
+            // refuse mid-stream and still close the connection tidily, so the
+            // parser's own error counts as a failure even at exit code 0.
+            const failure = exitCode !== 0 || root.streamError !== "";
+
+            if (!failure) {
                 if (target >= 0) {
-                    // No streaming data received — might be non-streaming response or error
+                    // Nothing streamed: a non-streaming response body, which
+                    // the buffer already holds, or genuinely nothing.
                     if (!root.currentChat[target].content) {
                         let newChat = Array.from(root.currentChat);
                         newChat[target].content = root.responseBuffer !== "" ? root.responseBuffer : I18n.t("ai.no_response");
@@ -966,17 +1016,34 @@ Singleton {
                     root.saveCurrentChat();
                 }
             } else {
-                root.lastError = I18n.t("ai.network_failed").replace("%1", curlStderr.text);
+                root.lastError = root.describeRequestFailure(exitCode, curlStderr.text);
 
-                // Update the placeholder message with error
                 if (target >= 0) {
                     let errChat = Array.from(root.currentChat);
-                    errChat[target].content = "Error: " + root.lastError;
+                    const partial = errChat[target].content;
+                    // The failure is the shell reporting, not the assistant
+                    // speaking, so it takes the system role and renders as a
+                    // notice. A reply that had already started streaming is
+                    // kept above it rather than overwritten -- a truncated
+                    // answer is still worth reading.
+                    if (partial) {
+                        errChat.splice(target + 1, 0, {
+                            role: "system",
+                            content: root.lastError
+                        });
+                    } else {
+                        errChat[target] = {
+                            role: "system",
+                            content: root.lastError
+                        };
+                    }
                     root.currentChat = errChat;
                 }
             }
 
             root.responseBuffer = "";
+            root.streamError = "";
+            root.rawTail = "";
         }
     }
 

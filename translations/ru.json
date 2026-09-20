@@ -38,6 +38,7 @@
   "ai.panel_title": "AI и API-ключи",
   "ai.refresh_models": "Обновить?",
   "ai.reject": "Отклонить",
+  "ai.request_failed": "Запрос не выполнен: %1",
   "ai.run_command": "Выполнить команду",
   "ai.search_models": "Поиск моделей...",
   "ai.switched_to_model": "Модель переключена: %1",

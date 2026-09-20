@@ -218,4 +218,42 @@ assert(src.includes("owner.strategy.parseStreamChunk"), "the stream parses with 
 assert(src.includes("root.streamTargetIndex(owner, root.currentChatId, root.currentChat)"), "the stream writes through the ownership check");
 assert(!/newChat\[newChat\.length - 1\]\.content = root\.responseBuffer/.test(src), "the stream no longer writes into the last message of whatever chat is current");
 
+// ---------------------------------------------------------------------------
+// Request failure reporting
+// ---------------------------------------------------------------------------
+
+console.log("failure reporting:");
+
+// A clean curl exit used to be taken as a successful turn. It is not: with
+// plain `-s`, an HTTP 401 or 429 exits 0 with an error document on stdout, and
+// the handler wrote "no response received" over it.
+assert(/"--fail-with-body"/.test(src), "curl fails the request on an HTTP error status");
+assert(/"-sS"/.test(src) && !/"curl", "-s",/.test(src), "curl still reports its own diagnostics on stderr");
+assert(/"-K", "-"/.test(src), "headers still go through stdin, never argv");
+
+const exitBody = src.slice(src.indexOf("id: curlProcess"));
+assert(/exitCode !== 0 \|\| root\.streamError !== ""/.test(exitBody), "a parser error counts as a failure even at exit code 0");
+assert(/role: "system"/.test(exitBody), "a failed request is reported as a notice, not as something the assistant said");
+
+// describeRequestFailure() picks the most useful of three sources. Run the real
+// one against a stub context rather than restating its order here.
+function reasonWith(state) {
+    const ctx = Object.assign({
+        streamError: "",
+        rawTail: "",
+        I18n: {t: key => key + ": %1"}
+    }, state);
+    const make = new Function("ctx", "with (ctx) { " + extractFunction("describeRequestFailure") + " return describeRequestFailure; }");
+    return make(ctx);
+}
+
+assert(reasonWith({streamError: "quota exceeded"})(22, "curl: (22) 429") === "ai.request_failed: quota exceeded",
+    "the provider's own parsed error is preferred over curl's");
+assert(reasonWith({rawTail: '{"error":"model not found"}\n'})(22, "curl: (22) 404") === 'ai.request_failed: {"error":"model not found"}',
+    "the provider's error body is preferred over curl's exit message");
+assert(reasonWith({})(6, "curl: (6) Could not resolve host") === "ai.network_failed: curl: (6) Could not resolve host",
+    "a transport failure falls back to curl's diagnostic");
+assert(reasonWith({})(7, "   ") === "ai.network_failed: curl exit 7",
+    "a silent failure still names the exit code rather than reporting nothing");
+
 console.log("\nAi request lifecycle: all checks passed");

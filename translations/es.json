@@ -38,6 +38,7 @@
   "ai.panel_title": "AI y claves API",
   "ai.refresh_models": "¿Actualizar?",
   "ai.reject": "Rechazar",
+  "ai.request_failed": "La solicitud falló: %1",
   "ai.run_command": "Ejecutar comando",
   "ai.search_models": "Buscar modelos...",
   "ai.switched_to_model": "Modelo cambiado: %1",
