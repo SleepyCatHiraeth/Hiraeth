@@ -1,5 +1,6 @@
 import QtQuick
 import qs.config
+import qs.modules.theme
 
 // Comportamiento estándar para animaciones de elementos que aparecen en el notch
 Item {
@@ -14,18 +15,18 @@ Item {
     visible: opacity > 0
 
     Behavior on scale {
-        enabled: Config.animDuration > 0
+        enabled: Motion.enabled
         NumberAnimation {
-            duration: Config.animDuration
+            duration: Motion.normal
             easing.type: Easing.OutBack
             easing.overshoot: 1.2
         }
     }
 
     Behavior on opacity {
-        enabled: Config.animDuration > 0
+        enabled: Motion.enabled
         NumberAnimation {
-            duration: Config.animDuration
+            duration: Motion.normal
             easing.type: Easing.OutQuart
         }
     }

@@ -121,9 +121,13 @@ assert.equal(queue.attachmentReadProcess.filePath, '/second');
 assert.equal(queue.attachmentReadProcess.mimeType, 'image/jpeg');
 
 // Exercise the actual static clipboard script with a harmless hostile argument.
-const clipboardCommand = sidebarSource.match(/command: (\["bash", "-c", "set -o pipefail;[^\n]+)/)[1];
+const clipboardCommand = sidebarSource.match(/command: (\["bash", "-c", "set -o pipefail;[\s\S]*?\])/)[1];
 const mimeType = 'image/png$(printf injected)" with spaces';
-const args = vm.runInNewContext(clipboardCommand, {mimeType});
+const args = vm.runInNewContext(clipboardCommand, {mimeType, mainChatArea: {maxAttachmentBytes: 8 * 1024 * 1024}, String});
+// Bounded like a file attachment: an oversize paste must be refused before it
+// has been buffered and base64'd in full.
+assert.ok(/head -c "\$2"/.test(args[2]), 'the clipboard read is bounded');
+assert.equal(args[5], '8388611');
 const result = spawnSync(args[0], ['-c', 'wl-paste() { printf "%s" "$2"; }; ' + args[2], ...args.slice(3)], {encoding: 'utf8'});
 assert.equal(result.status, 0, result.stderr);
 assert.equal(Buffer.from(result.stdout.trim(), 'base64').toString(), mimeType);

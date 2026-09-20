@@ -104,6 +104,21 @@ function flareCorners(edge) {
     }
 }
 
+// Keep the filament on the body's inner face, opposite the bezel. This is the
+// only coordinate that mirrors between the two side edges.
+function filamentGeometry(edge, width, height, thickness, inset) {
+    switch (edge) {
+    case "right":
+        return {x: inset, y: 0, width: thickness, height: height};
+    case "left":
+        return {x: width - inset - thickness, y: 0, width: thickness, height: height};
+    case "top":
+        return {x: 0, y: height - inset - thickness, width: width, height: thickness};
+    default:
+        return {x: 0, y: inset, width: width, height: thickness};
+    }
+}
+
 // Canvas 2D transform mapping canonical space onto item coordinates.
 // Canonical space is written for the right edge: `u` runs across from the far
 // side (so the bezel lands at u == depth) and `v` runs along. Writing the

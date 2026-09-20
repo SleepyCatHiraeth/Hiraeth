@@ -92,38 +92,27 @@ FocusScope {
 
     readonly property bool expanded: root.active
     readonly property bool showAsNotch: notchEnabled && !expanded
+    readonly property bool activeCollapsed: Ai.isLoading && !root.expanded
     readonly property int collapsedDepth: Config.showBackground ? 44 : 40
-    readonly property int collapsedLength: Math.max(1, Math.min(height, Math.max(64, Config.ai?.notchLength ?? 180)))
+    readonly property int idleCollapsedLength: Math.max(1, Math.min(height, Math.max(64, Config.ai?.notchLength ?? 180)))
+    readonly property int collapsedLength: Math.min(height, Math.round(idleCollapsedLength * (activeCollapsed ? 1.35 : 1)))
 
     property real dragWidth: -1
     readonly property int effectiveWidth: Math.max(1, Math.min(width - sidebarMargin - 8, Math.max(300, Math.min(800, dragWidth >= 0 ? dragWidth : GlobalStates.assistantWidth))))
     readonly property real expansionProgress: notchEnabled
         ? Math.max(0, Math.min(1, (sidebarContainer.width - collapsedDepth) / Math.max(1, effectiveWidth + sidebarMargin - collapsedDepth)))
         : (revealed ? 1 : 0)
+    readonly property real morphTravelProgress: Math.max(0, Math.min(1, (effectiveWidth - 300) / 500))
+    readonly property int morphDuration: Motion.enabled
+        ? Math.round(Motion.fast + morphTravelProgress * (Motion.normal * 1.5 - Motion.fast))
+        : 0
 
     readonly property string notchEdge: GlobalStates.assistantPosition === "left" ? "left" : "right"
 
     // Same rest/open radii the top notch uses, so both surfaces round by the
     // same amounts as they open.
-    property int notchFlareSize: (frameWrapped || !showAsNotch) ? 0 : Styling.radius(4)
-    property int notchBodyRadius: frameWrapped ? 0 : (showAsNotch ? Styling.radius(4) : Styling.radius(0))
-
-    Behavior on notchFlareSize {
-        enabled: Motion.enabled
-        NumberAnimation {
-            duration: Motion.normal
-            easing.type: Easing.OutQuart
-        }
-    }
-
-    Behavior on notchBodyRadius {
-        enabled: Motion.enabled
-        NumberAnimation {
-            duration: Motion.normal
-            easing.type: root.expanded ? Easing.OutBack : Easing.OutQuart
-            easing.overshoot: root.expanded ? 1.2 : 1.0
-        }
-    }
+    readonly property int notchFlareSize: frameWrapped ? 0 : Math.round(Styling.radius(4) * (1 - expansionProgress))
+    readonly property int notchBodyRadius: Math.round(Styling.radius(4) + ((frameWrapped ? 0 : Styling.radius(0)) - Styling.radius(4)) * expansionProgress)
 
     // Hover, with the top notch's 1000 ms grace so the notch does not flicker
     // shut while the pointer crosses the gap to it.
@@ -398,7 +387,7 @@ FocusScope {
             enabled: Motion.enabled && root.dragWidth < 0
             NumberAnimation {
                 id: widthAnimation
-                duration: Motion.normal
+                duration: root.morphDuration
                 easing.type: root.expanded ? Easing.OutBack : Easing.OutQuart
                 easing.overshoot: root.expanded ? 1.2 : 1.0
             }
@@ -408,7 +397,7 @@ FocusScope {
             enabled: Motion.enabled
             NumberAnimation {
                 id: heightAnimation
-                duration: Motion.normal
+                duration: root.morphDuration
                 easing.type: Easing.OutQuart
             }
         }
@@ -441,13 +430,14 @@ FocusScope {
 
             AiNotchCollapsed {
                 anchors.fill: parent
+                edge: root.notchEdge
                 hovered: root.notchHovered
 
                 // Driven by how notch-shaped the container currently is, not by
                 // a Behavior of its own. A timed fade puts the glyph on screen
                 // while the panel is still full width, so it reads as an icon
                 // floating in the middle of the desktop.
-                opacity: root.showAsNotch ? Math.max(0, Math.min(1, (root.collapsedDepth * 2 - sidebarContainer.width) / root.collapsedDepth)) : 0
+                opacity: root.notchEnabled ? Math.max(0, 1 - root.expansionProgress * 4) : 0
                 visible: opacity > 0.01
             }
 
@@ -748,7 +738,12 @@ FocusScope {
                             id: clipboardImageProcess
                             property string mimeType: ""
                             property string chatId: ""
-                            command: ["bash", "-c", "set -o pipefail; wl-paste --type \"$1\" | /usr/bin/base64 -w 0", "ambxst-clipboard", mimeType]
+                            // Bounded the same way a file attachment is. Without the
+                            // head the whole clipboard was base64'd into a
+                            // StdioCollector and only then measured, so an oversize
+                            // image was paid for in full before being refused.
+                            command: ["bash", "-c", "set -o pipefail; wl-paste --type \"$1\" | head -c \"$2\" | /usr/bin/base64 -w 0",
+                                "ambxst-clipboard", mimeType, String(mainChatArea.maxAttachmentBytes + 3)]
                             stdout: StdioCollector {
                                 onStreamFinished: {
                                     if (clipboardImageProcess.chatId !== Ai.currentChatId)
@@ -758,7 +753,7 @@ FocusScope {
                                         let ext = clipboardImageProcess.mimeType.split("/")[1] || "png";
                                         mainChatArea.addAttachment(clipboardImageProcess.mimeType, data, "clipboard." + ext);
                                     } else {
-                                        Ai.pushSystemMessage("Clipboard image read returned no data.");
+                                        Ai.pushSystemMessage(I18n.t("ai.clipboard_empty"));
                                     }
                                 }
                             }
@@ -768,7 +763,7 @@ FocusScope {
                             onExited: exitCode => {
                                 if (exitCode !== 0) {
                                     let err = clipboardImageStderr.text.trim();
-                                    Ai.pushSystemMessage("Clipboard image read failed: " + (err.length > 0 ? err : "unknown error"));
+                                    Ai.pushSystemMessage(I18n.t("ai.clipboard_failed").replace("%1", err.length > 0 ? err : I18n.t("ai.unknown_error")));
                                 }
                             }
                         }
@@ -888,7 +883,7 @@ FocusScope {
                                 keyNavigationEnabled: true
                                 currentIndex: -1
                                 highlightFollowsCurrentItem: true
-                                highlightMoveDuration: Motion.fast
+                                highlightMoveDuration: Motion.enabled ? Motion.fast : 0
 
                                 // Selecting a message stops the view chasing the
                                 // reply still arriving; Escape gives up the

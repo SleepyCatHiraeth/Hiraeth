@@ -231,3 +231,90 @@ func TestImportIsIdempotentAndTidiesUpWhenItFinishes(t *testing.T) {
 		t.Fatalf("a second import should find nothing to do: %d %v", n, err)
 	}
 }
+
+func TestDatabaseIsNotWorldReadable(t *testing.T) {
+	_, dbPath, _ := openTemp(t)
+	info, err := os.Stat(dbPath)
+	if err != nil {
+		t.Fatalf("stat db: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("chats.db is %v, want 0600", info.Mode().Perm())
+	}
+}
+
+// A previous run can import a file and then fail to remove it. Importing it
+// again must not overwrite a conversation that has since moved on.
+func TestReimportDoesNotOverwriteNewerMessages(t *testing.T) {
+	root := t.TempDir()
+	svc := newServiceIn(t, root)
+	path := filepath.Join(svc.paths.ChatsLegacyDir(), "1.json")
+	if err := os.WriteFile(path, []byte(sample), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(svc.paths.ChatsDB(), svc.paths.ChatsKeyFile())
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.Close()
+	svc.store = store
+
+	if n, _ := svc.importLegacy(); n != 1 {
+		t.Fatal("first import should move the chat")
+	}
+
+	// The conversation continues, and the stale plaintext reappears.
+	extended := `[{"role":"user","content":"what is my gpu"},{"role":"assistant","content":"a 9070 XT"},{"role":"user","content":"and the cpu"}]`
+	if err := store.Save("1", []byte(extended)); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if err := os.MkdirAll(svc.paths.ChatsLegacyDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(sample), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, _ := svc.importLegacy(); n != 0 {
+		t.Fatal("a conflicting plaintext file must not be counted as imported")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("it must be kept as evidence, not deleted")
+	}
+
+	got, err := store.Load("1")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	var parsed []json.RawMessage
+	json.Unmarshal(got, &parsed)
+	if len(parsed) != 3 {
+		t.Fatalf("the newer conversation was overwritten: %d messages", len(parsed))
+	}
+}
+
+// An already-imported file that is still identical is simply removed.
+func TestReimportRemovesAnIdenticalLeftover(t *testing.T) {
+	root := t.TempDir()
+	svc := newServiceIn(t, root)
+	path := filepath.Join(svc.paths.ChatsLegacyDir(), "1.json")
+	os.WriteFile(path, []byte(sample), 0o600)
+
+	store, err := Open(svc.paths.ChatsDB(), svc.paths.ChatsKeyFile())
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer store.Close()
+	svc.store = store
+	svc.importLegacy()
+
+	os.MkdirAll(svc.paths.ChatsLegacyDir(), 0o700)
+	os.WriteFile(path, []byte(sample), 0o600)
+	if n, _ := svc.importLegacy(); n != 1 {
+		t.Fatal("an identical leftover should be cleaned up")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("and removed")
+	}
+}

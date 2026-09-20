@@ -3,6 +3,11 @@ import QtQuick
 // Reuses OpenAI-compatible format — identical to OpenAiApiStrategy
 // but with Mistral's default endpoint
 ApiStrategy {
+    // Its stream parser emits no tool deltas, so a tool call from this provider
+    // could never reach the approval card. Advertising the capability anyway
+    // produced the worst outcome available: the model is told it may act, and
+    // the action silently never arrives.
+    supportsTools: false
     supportsStreaming: true
 
     function getEndpoint(modelObj, apiKey) {

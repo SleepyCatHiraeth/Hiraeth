@@ -34,6 +34,30 @@ ApiStrategy {
                     }
                 }
                 formatted.push({ role: msg.role, content: contentParts });
+            } else if (msg.role === "function") {
+                // A tool result has to name the call it answers, or the
+                // provider rejects the turn. The id is the one the model chose
+                // and is carried on the proposal the user approved.
+                formatted.push({
+                    role: "tool",
+                    tool_call_id: msg.toolCallId || "",
+                    content: msg.content
+                });
+            } else if (msg.functionCall) {
+                // The assistant turn that made the proposal has to be replayed
+                // as a tool call, not as the empty text it renders as.
+                formatted.push({
+                    role: "assistant",
+                    content: msg.content || null,
+                    tool_calls: [{
+                        id: msg.functionCall.id || "",
+                        type: "function",
+                        function: {
+                            name: msg.functionCall.name,
+                            arguments: JSON.stringify(msg.functionCall.args || {})
+                        }
+                    }]
+                });
             } else {
                 formatted.push({ role: msg.role, content: msg.content });
             }

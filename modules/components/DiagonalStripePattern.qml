@@ -32,7 +32,10 @@ ClippingRectangle {
                 to: root.stripeSpacing
                 duration: root.animationDuration
                 loops: Animation.Infinite
-                running: root.animationRunning
+                // The critical-notification stripes ran forever at a hardcoded
+                // duration, so they kept moving under reduced motion — on the
+                // one surface a user in that mode is most likely to be reading.
+                running: root.animationRunning && Motion.enabled
             }
         }
     }

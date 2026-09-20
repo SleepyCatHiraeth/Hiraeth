@@ -107,6 +107,13 @@ func Open(dbPath, keyPath string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// SQLite creates the file under the process umask, so the 0600 promised
+	// above was only ever true on a 077 umask. The memory store does the same
+	// thing for the same reason.
+	if err := os.Chmod(dbPath, 0o600); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("securing %s: %w", dbPath, err)
+	}
 	return &Store{db: db}, nil
 }
 

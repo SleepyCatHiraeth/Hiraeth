@@ -196,6 +196,25 @@ func (s *Service) importLegacy() (int, error) {
 			continue
 		}
 
+		// A previous run may have imported this file and then failed to remove
+		// it. If the database has since moved on, importing again would
+		// overwrite newer messages with the older plaintext -- which looks
+		// exactly like the conversation losing its most recent turns.
+		if existing, err := s.store.Load(id); err == nil {
+			if bytes.Equal(existing, encoded) {
+				if err := os.Remove(path); err != nil {
+					log.Printf("[chats] %s is already imported but could not be removed: %v", entry.Name(), err)
+					kept++
+					continue
+				}
+				imported++
+				continue
+			}
+			log.Printf("[chats] keeping %s: the stored conversation has changed since it was imported", entry.Name())
+			kept++
+			continue
+		}
+
 		modified := int64(0)
 		if info, err := entry.Info(); err == nil {
 			modified = info.ModTime().UnixMilli()

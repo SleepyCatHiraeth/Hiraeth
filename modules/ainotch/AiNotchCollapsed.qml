@@ -3,6 +3,7 @@ import qs.modules.services
 import qs.modules.theme
 import qs.modules.turret
 import qs.config
+import "NotchEdge.js" as NotchEdge
 
 // Resting content of the AI notch: one ring per provider showing how much of
 // its five-hour window is spent, and a dot that pulses while a reply is
@@ -15,8 +16,10 @@ Item {
     id: root
 
     property bool hovered: false
+    property string edge: "right"
 
     readonly property bool busy: Ai.isLoading
+    readonly property var filamentGeometry: NotchEdge.filamentGeometry(edge, width, height, 2, 3)
 
     // The turret's voice state takes over the notch while a spoken turn is
     // running. This is the whole point of folding its notch into this one:
@@ -102,6 +105,36 @@ Item {
                 enabled: Motion.enabled
                 ColorAnimation {
                     duration: Motion.fast
+                }
+            }
+        }
+    }
+
+    Item {
+        id: filament
+        x: root.filamentGeometry.x
+        y: root.filamentGeometry.y
+        width: root.filamentGeometry.width
+        height: root.filamentGeometry.height
+        visible: root.busy
+        clip: true
+
+        Rectangle {
+            id: filamentSegment
+            width: parent.width
+            height: Motion.enabled ? Math.max(16, parent.height / 3) : parent.height
+            y: Motion.enabled ? -height : 0
+            radius: width / 2
+            color: Styling.srItem("overprimary")
+
+            SequentialAnimation on y {
+                running: root.visible && filament.visible && Motion.enabled
+                loops: Animation.Infinite
+                NumberAnimation {
+                    from: -filamentSegment.height
+                    to: filament.height
+                    duration: Motion.ambient
+                    easing.type: Motion.ambientEasing
                 }
             }
         }

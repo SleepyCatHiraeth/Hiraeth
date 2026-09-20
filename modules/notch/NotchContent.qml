@@ -201,9 +201,9 @@ Item {
         y: root.notchPosition === "top" ? 0 : parent.height - height
 
         Behavior on height {
-            enabled: Config.animDuration > 0
+            enabled: Motion.enabled
             NumberAnimation {
-                duration: Config.animDuration / 4
+                duration: Motion.micro
                 easing.type: Easing.OutCubic
             }
         }
@@ -243,9 +243,9 @@ Item {
             // Opacity animation
             opacity: root.reveal ? 1 : 0
             Behavior on opacity {
-                enabled: Config.animDuration > 0
+                enabled: Motion.enabled
                 NumberAnimation {
-                    duration: Config.animDuration / 2
+                    duration: Motion.fast
                     easing.type: Easing.OutCubic
                 }
             }
@@ -260,9 +260,9 @@ Item {
                         return (Math.max(notchContainer.height, 50) + 16);
                 }
                 Behavior on y {
-                    enabled: Config.animDuration > 0
+                    enabled: Motion.enabled
                     NumberAnimation {
-                        duration: Config.animDuration / 2
+                        duration: Motion.fast
                         easing.type: Easing.OutCubic
                     }
                 }
@@ -323,9 +323,9 @@ Item {
             // Apply same reveal animation as notch
             opacity: root.reveal ? 1 : 0
             Behavior on opacity {
-                enabled: Config.animDuration > 0
+                enabled: Motion.enabled
                 NumberAnimation {
-                    duration: Config.animDuration / 2
+                    duration: Motion.fast
                     easing.type: Easing.OutCubic
                 }
             }
@@ -339,9 +339,9 @@ Item {
                         return (notchContainer.height + 16);
                 }
                 Behavior on y {
-                    enabled: Config.animDuration > 0
+                    enabled: Motion.enabled
                     NumberAnimation {
-                        duration: Config.animDuration / 2
+                        duration: Motion.fast
                         easing.type: Easing.OutCubic
                     }
                 }
@@ -367,18 +367,18 @@ Item {
             }
 
             Behavior on width {
-                enabled: Config.animDuration > 0
+                enabled: Motion.enabled
                 NumberAnimation {
-                    duration: Config.animDuration
+                    duration: Motion.normal
                     easing.type: Easing.OutBack
                     easing.overshoot: 1.2
                 }
             }
 
             Behavior on height {
-                enabled: Config.animDuration > 0
+                enabled: Motion.enabled
                 NumberAnimation {
-                    duration: Config.animDuration
+                    duration: Motion.normal
                     easing.type: Easing.OutQuart
                 }
             }
@@ -401,9 +401,9 @@ Item {
                 notchHovered: notificationPopupContainer.popupHovered
 
                 Behavior on opacity {
-                    enabled: Config.animDuration > 0
+                    enabled: Motion.enabled
                     NumberAnimation {
-                        duration: Config.animDuration
+                        duration: Motion.normal
                         easing.type: Easing.OutQuart
                     }
                 }

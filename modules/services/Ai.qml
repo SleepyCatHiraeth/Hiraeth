@@ -445,9 +445,36 @@ Singleton {
         activeRequest = null;
         isLoading = false;
         lastError = message;
+
         // Whatever had already streamed belongs in the conversation, not
         // stranded in a buffer the delegate has stopped reading.
-        commitStream(target, endStream());
+        const streamed = endStream();
+        if (target >= 0) {
+            let chat = Array.from(currentChat);
+            if (streamed) {
+                // A partial answer is worth keeping; the reason goes below it.
+                chat[target] = Object.assign({}, chat[target], {
+                    content: streamed,
+                    interrupted: true
+                });
+                chat.splice(target + 1, 0, {
+                    role: "system",
+                    content: message
+                });
+            } else {
+                // Nothing arrived, so the placeholder becomes the explanation
+                // rather than a blank row the user has to guess at. `lastError`
+                // alone is not enough -- nothing in the panel reads it.
+                chat[target] = {
+                    role: "system",
+                    content: message
+                };
+            }
+            currentChat = chat;
+            saveCurrentChat();
+        } else {
+            pushSystemMessage(message);
+        }
         return true;
     }
 
@@ -724,7 +751,8 @@ Singleton {
         newChat.push({
             role: "function",
             name: msg.functionCall.name,
-            content: "User rejected the command execution."
+            toolCallId: msg.functionCall.id || "",
+            content: I18n.t("ai.command_rejected_result")
         });
 
         currentChat = newChat;
@@ -820,6 +848,7 @@ Singleton {
                 continue;
 
             calls.push({
+                id: slot.id || "",
                 name: slot.name,
                 args: args
             });
@@ -846,7 +875,12 @@ Singleton {
         // anything on this side would leave those running.
         if (owner.strategy === null) {
             TurretService.cancel();
-        } else {
+        } else if (curlProcess.running) {
+            // Only when curl is actually up. A request cancelled while it was
+            // still in the mkdir step, or waiting on the Qt.callLater that
+            // starts it, produces no exit to clear this flag -- and the flag
+            // then swallowed the NEXT request's exit, leaving that one loading
+            // forever with a finished answer on screen.
             cancelling = true;
             curlProcess.running = false;
         }
@@ -1011,6 +1045,8 @@ Singleton {
                 apiMsg.attachments = msg.attachments;
             if (msg.functionCall)
                 apiMsg.functionCall = msg.functionCall;
+            if (msg.toolCallId)
+                apiMsg.toolCallId = msg.toolCallId;
             if (msg.geminiParts)
                 apiMsg.geminiParts = msg.geminiParts;
             if (msg.name)
@@ -1070,6 +1106,11 @@ Singleton {
     function runCurl(payload) {
         if (!isRequestCurrent(activeRequest, payload.seq))
             return;
+        // Cancelled between writeTempBody() and here: start nothing.
+        if (cancelling) {
+            cancelling = false;
+            return;
+        }
 
         let owner = activeRequest;
         let bodyPath = tmpDir + "/body.json";
@@ -1334,6 +1375,7 @@ Singleton {
             newChat.push({
                 role: "function",
                 name: root.currentChat[target].functionCall.name,
+                toolCallId: root.currentChat[target].functionCall.id || "",
                 content: output
             });
 

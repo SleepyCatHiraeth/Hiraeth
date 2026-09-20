@@ -138,7 +138,10 @@ StyledRect {
 
                 onClicked: {
                     Ai.loadChat(modelData.id);
-                    root.expanded = false;
+                    // The signal, not the property: `expanded` is bound by the
+                    // caller, and assigning it here would destroy that binding,
+                    // so the list would close exactly once and never reopen.
+                    root.dismissed();
                 }
             }
         }
