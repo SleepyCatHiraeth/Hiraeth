@@ -28,6 +28,33 @@ Popup {
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
+    enter: Transition {
+        NumberAnimation {
+            property: "opacity"
+            from: 0
+            to: 1
+            duration: Motion.enabled ? Motion.fast : 0
+            easing.type: Motion.fastEasing
+        }
+        NumberAnimation {
+            property: "scale"
+            from: 0.96
+            to: 1
+            duration: Motion.enabled ? Motion.fast : 0
+            easing.type: Motion.fastEasing
+        }
+    }
+
+    exit: Transition {
+        NumberAnimation {
+            property: "opacity"
+            from: 1
+            to: 0
+            duration: Motion.enabled ? Motion.exit : 0
+            easing.type: Motion.exitEasing
+        }
+    }
+
     onOpened: {
         searchInput.focusInput();
         updateFilteredModels();
@@ -42,6 +69,15 @@ Popup {
 
     property int selectedIndex: -1  // Start with no selection like App Launcher
     property var filteredModels: []
+
+    // Discovery fills `provider`; `api_format` is only set on a hand-written
+    // custom model, so reading it directly rendered a blank label and skipped
+    // the icon for every model the picker actually lists.
+    function providerOf(model) {
+        if (!model)
+            return "";
+        return model.provider || model.api_format || "";
+    }
 
     function getProviderIcon(provider) {
         if (!provider)
@@ -87,7 +123,7 @@ Popup {
         if (text.trim() === "") {
             filteredModels = allModels;
         } else {
-            filteredModels = allModels.filter(m => m.name.toLowerCase().includes(text) || m.api_format.toLowerCase().includes(text) || m.model.toLowerCase().includes(text));
+            filteredModels = allModels.filter(m => m.name.toLowerCase().includes(text) || root.providerOf(m).toLowerCase().includes(text) || m.model.toLowerCase().includes(text));
         }
 
         // Reset selection if out of bounds
@@ -386,8 +422,8 @@ Popup {
                                     src = modelData.icon;
                                 } else
                                 // Fallback to provider icon
-                                if (modelData.api_format) {
-                                    src = root.getProviderIcon(modelData.api_format);
+                                if (root.providerOf(modelData)) {
+                                    src = root.getProviderIcon(root.providerOf(modelData));
                                 }
                             }
                             return src;
@@ -481,7 +517,10 @@ Popup {
 
                         Text {
                             // Show provider and model ID
-                            text: modelData.api_format.toUpperCase() + " • " + modelData.model
+                            text: {
+                                const provider = root.providerOf(modelData);
+                                return provider ? provider.toUpperCase() + " • " + modelData.model : modelData.model;
+                            }
                             color: delegateBtn.isSelected ? Styling.srItem("primary") : Colors.outline
                             font.family: Config.theme.font
                             font.pixelSize: 11

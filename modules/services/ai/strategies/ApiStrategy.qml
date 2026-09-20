@@ -2,6 +2,10 @@ import QtQuick
 
 QtObject {
     property bool supportsStreaming: true
+    // Whether this provider can be offered tools at all. False means the
+    // sidebar says so rather than advertising a capability that will be
+    // silently discarded on the way out.
+    property bool supportsTools: true
 
     function getEndpoint(modelObj, apiKey) { return ""; }
     function getHeaders(apiKey) { return []; }

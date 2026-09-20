@@ -3,6 +3,12 @@ import QtQuick
 ApiStrategy {
     supportsStreaming: true
 
+    // getBody() accepts `tools` and does not send them, while every cloud
+    // strategy parses a tool call back out. Local tool use through this path
+    // therefore cannot work, and used to fail by simply never happening --
+    // the model was told nothing and the user was told nothing either.
+    supportsTools: false
+
     function getEndpoint(modelObj, apiKey) {
         let base = modelObj.endpoint || "http://localhost:11434";
         return base + "/api/chat";

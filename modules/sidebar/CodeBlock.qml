@@ -13,7 +13,12 @@ ColumnLayout {
     id: root
     property string code: ""
     property string language: "txt"
-    property alias implicitWidth: root.width
+
+    // The highlighter theme was pinned to "Breeze Dark" in a shell whose whole
+    // identity is a palette derived from the wallpaper, so a light theme got
+    // dark code and a dark one got somebody else's dark. KSyntaxHighlighting
+    // picks by luminance of the surface the code actually sits on.
+    readonly property bool darkSurface: Colors.surface.hslLightness < 0.5
 
     spacing: 0
 
@@ -125,7 +130,7 @@ ColumnLayout {
                 textEdit: codeText
                 repository: Repository
                 definition: Repository.definitionForName(root.language)
-                theme: Repository.theme("Breeze Dark")
+                theme: Repository.theme(root.darkSurface ? "Breeze Dark" : "Breeze Light")
             }
         }
     }

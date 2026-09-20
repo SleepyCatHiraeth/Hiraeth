@@ -432,6 +432,8 @@ Singleton {
     function commandConflictsWithRequest(command, busy) {
         if (!busy)
             return false;
+        // /stop is the one command whose whole purpose is a request in flight.
+        // /prompt and /key only read or write configuration.
         return command === "/new" || command === "/model";
     }
 
@@ -487,7 +489,10 @@ Singleton {
     // at all, which is stronger than relying on the approval dialog to catch
     // every case. The turret assistant deliberately does not use this path.
     readonly property bool toolsEnabled: (Config.ai.tool ?? "none") !== "none"
-    readonly property var systemTools: toolsEnabled ? shellTools : []
+    // A strategy that cannot carry tools is not offered any, and the send path
+    // says so once rather than letting the model be silently toolless.
+    readonly property bool toolsAvailable: toolsEnabled && (!currentModel || getStrategyForProvider(currentModel.provider).supportsTools)
+    readonly property var systemTools: toolsAvailable ? shellTools : []
 
     // What may be proposed, and the only place a proposal becomes a command
     // line. See modules/services/ai/ToolCatalog.js for why there is no longer a
@@ -549,6 +554,10 @@ Singleton {
                 root.isRestored = true;
                 if (root.persistenceReady)
                     StateService.set("lastAiModel", models[i].model);
+                // Said once, when the choice is made, rather than on every
+                // message or not at all.
+                if (toolsEnabled && !toolsAvailable)
+                    pushSystemMessage(I18n.t("ai.tools_unsupported").replace("%1", models[i].name));
                 return true;
             }
         }
@@ -606,6 +615,24 @@ Singleton {
             return "handled";
         case "/help":
             pushSystemMessage(I18n.t("ai.help_message"));
+            return "handled";
+        case "/stop":
+            if (!cancelRequest())
+                pushSystemMessage(I18n.t("ai.nothing_to_stop"));
+            return "handled";
+        case "/prompt":
+            if (args) {
+                Config.ai.systemPrompt = args;
+                pushSystemMessage(I18n.t("ai.prompt_set"));
+            } else {
+                pushSystemMessage(I18n.t("ai.prompt_current").replace("%1", Config.ai.systemPrompt || ""));
+            }
+            return "handled";
+        case "/key":
+            // Deliberately not settable from the chat box: the text would be
+            // in the conversation, which is now saved to disk, and in the
+            // draft before that. Settings owns the keystore.
+            pushSystemMessage(I18n.t("ai.key_in_settings"));
             return "handled";
         }
 
@@ -1397,9 +1424,16 @@ Singleton {
     property int pendingFetches: 0
 
     function fetchAvailableModels() {
-        fetchingModels = false; // Force refresh
+        // This used to read:
+        //
+        //     fetchingModels = false; // Force refresh
+        //     if (fetchingModels) return;
+        //
+        // which is a guard that can never fire. Two overlapping refreshes then
+        // shared one `pendingFetches` counter, and whichever finished first
+        // drove it to zero and declared the other one complete.
         if (fetchingModels)
-            return;
+            return false;
 
         fetchingModels = true;
         pendingFetches = 0;

@@ -211,6 +211,10 @@ FocusScope {
         {
             name: "prompt",
             description: I18n.t("ai.cmd_set_system_prompt")
+        },
+        {
+            name: "stop",
+            description: I18n.t("ai.cmd_stop")
         }
     ]
 
@@ -507,12 +511,9 @@ FocusScope {
                         }
                     }
 
-                    Rectangle {
+                    Separator {
                         anchors.bottom: parent.bottom
                         width: parent.width
-                        height: 1
-                        color: Colors.outline
-                        opacity: 0.15
                     }
                 }
 
