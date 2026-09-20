@@ -299,4 +299,19 @@ assert(partial.responseBuffer === "" && partial.streamError === "" && partial.ra
 const noTarget = cancelledChat([{role: "user", content: "hi"}], -1);
 assert(noTarget.currentChat.length === 2, "a stop with no owned message still says it stopped");
 
+// ---------------------------------------------------------------------------
+// Tool execution
+// ---------------------------------------------------------------------------
+
+console.log("tool execution:");
+
+const approveBody = extractFunction("approveCommand");
+assert(!/commandExecutionProc\.command = \[/.test(src), "the tool runner is never handed a literal command line");
+assert(!/args\.command/.test(src), "no proposal carries a free-form command string any more");
+assert(/ToolCatalog\.resolve\(msg\.functionCall, homeDir\)/.test(approveBody), "the argv is resolved from the proposal by the catalog");
+assert(/commandExecutionProc\.command = resolved\.argv/.test(approveBody), "only a resolved argv is executed");
+assert(/if \(resolved\.error\)/.test(approveBody), "a proposal that does not resolve is refused rather than guessed at");
+assert(/if \(!toolsEnabled\)/.test(approveBody), "a proposal made while tools were on cannot run after they are turned off");
+assert(/ToolCatalog\.definitions\(\)/.test(src), "the advertised tools come from the catalog");
+
 console.log("\nAi request lifecycle: all checks passed");

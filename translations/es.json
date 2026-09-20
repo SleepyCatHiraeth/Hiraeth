@@ -44,6 +44,8 @@
   "ai.stop": "Detener la generación",
   "ai.stopped": "Detenido.",
   "ai.switched_to_model": "Modelo cambiado: %1",
+  "ai.tool_refused": "Rechazado: '%1' no es una herramienta disponible, o sus argumentos no son válidos.",
+  "ai.tools_disabled": "La ejecución de comandos está desactivada. Actívala en Configuración → IA si la quieres.",
   "bar.resources.tooltip": "Recursos del sistema",
   "bar.tooltip.audio_switcher": "Selector de dispositivo de audio",
   "bar.tooltip.controls": "Controles de audio y brillo",

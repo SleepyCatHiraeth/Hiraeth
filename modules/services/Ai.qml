@@ -7,6 +7,7 @@ import qs.modules.services
 import qs.modules.globals
 import "ai"
 import "ai/strategies"
+import "ai/ToolCatalog.js" as ToolCatalog
 
 Singleton {
     id: root
@@ -412,33 +413,26 @@ Singleton {
         saveCurrentChat();
     }
 
-    // `run_shell_command` hands one model-produced string full user authority:
-    // an approved call runs as ["bash", "-c", args.command]. It is therefore
-    // OFF unless explicitly enabled, and `Config.ai.tool` -- which already
-    // existed, defaulted to "none", and was never read -- is the switch.
-    //
-    // With no tools advertised the model is never offered the capability at
-    // all, which is stronger than relying on the approval dialog to catch every
-    // case. The turret assistant deliberately does not use this path.
+    // Tools stay OFF unless explicitly enabled, and `Config.ai.tool` is the
+    // switch. With nothing advertised the model is never offered the capability
+    // at all, which is stronger than relying on the approval dialog to catch
+    // every case. The turret assistant deliberately does not use this path.
     readonly property bool toolsEnabled: (Config.ai.tool ?? "none") !== "none"
     readonly property var systemTools: toolsEnabled ? shellTools : []
 
-    readonly property var shellTools: [
-        {
-            name: "run_shell_command",
-            description: "Execute a shell command on the user's system (Linux). Use this to list files, control the system, or run utilities. Output will be returned.",
-            parameters: {
-                type: "object",
-                properties: {
-                    command: {
-                        type: "string",
-                        description: "The shell command to run (e.g. 'ls -la', 'ip addr')"
-                    }
-                },
-                required: ["command"]
-            }
-        }
-    ]
+    // What may be proposed, and the only place a proposal becomes a command
+    // line. See modules/services/ai/ToolCatalog.js for why there is no longer a
+    // free-form `run_shell_command` here.
+    readonly property var shellTools: ToolCatalog.definitions()
+
+    readonly property string homeDir: Quickshell.env("HOME")
+
+    // What the approval card shows: the argv that would actually run. An empty
+    // string means the proposal does not resolve, and the card must offer no
+    // approve button for it.
+    function describeToolCall(call) {
+        return ToolCatalog.describe(call, homeDir);
+    }
 
     // ============================================
     // CHAT MANAGEMENT
@@ -579,12 +573,20 @@ Singleton {
         let msg = currentChat[index];
         if (!msg || !msg.functionCall || msg.functionPending === false)
             return false;
-        if (msg.functionCall.name !== "run_shell_command")
-            return false;
         // Defence in depth: a proposal made while tools were enabled must not
         // remain executable after they are turned off.
         if (!toolsEnabled) {
-            pushSystemMessage("Command execution is disabled. Enable it in Settings → AI if you want this.");
+            pushSystemMessage(I18n.t("ai.tools_disabled"));
+            return false;
+        }
+
+        // Resolved here, at the moment of approval, from the proposal itself --
+        // not from anything stored on the message. A message is persisted to
+        // disk and reloaded, so an argv carried on it would be an argv this
+        // process did not build.
+        const resolved = ToolCatalog.resolve(msg.functionCall, homeDir);
+        if (resolved.error) {
+            pushSystemMessage(I18n.t("ai.tool_refused").replace("%1", msg.functionCall.name));
             return false;
         }
 
@@ -594,14 +596,13 @@ Singleton {
         currentChat = newChat;
         saveCurrentChat();
 
-        let args = msg.functionCall.args;
         // The follow-up request is part of this turn, so the command execution
         // holds the busy state until it either issues that request or is
         // dropped for having lost its conversation.
         requestSeq += 1;
         isLoading = true;
         commandExecutionProc.owner = requestOwner(requestSeq, currentChatId, index, null, null);
-        commandExecutionProc.command = ["bash", "-c", args.command];
+        commandExecutionProc.command = resolved.argv;
         commandExecutionProc.running = true;
         return true;
     }

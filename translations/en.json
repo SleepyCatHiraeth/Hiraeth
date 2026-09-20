@@ -44,6 +44,8 @@
   "ai.stop": "Stop generating",
   "ai.stopped": "Stopped.",
   "ai.switched_to_model": "Switched to model: %1",
+  "ai.tool_refused": "Refused: '%1' is not an available tool, or its arguments are not valid.",
+  "ai.tools_disabled": "Command execution is disabled. Enable it in Settings → AI if you want this.",
   "bar.resources.tooltip": "System Resources",
   "bar.tooltip.audio_switcher": "Audio Device Switcher",
   "bar.tooltip.controls": "Audio & Brightness Controls",

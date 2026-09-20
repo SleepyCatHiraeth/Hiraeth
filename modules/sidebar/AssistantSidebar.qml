@@ -1296,19 +1296,22 @@ FocusScope {
                                                     }
 
                                                     ColumnLayout {
+                                                        id: toolCard
                                                         visible: modelData.functionCall !== undefined
                                                         Layout.fillWidth: true
                                                         spacing: 4
 
-                                                        Rectangle {
-                                                            Layout.fillWidth: true
-                                                            height: 1
-                                                            color: Colors.outline
-                                                            opacity: 0.2
-                                                        }
+                                                        // The command line that will actually run, resolved
+                                                        // from the proposal by the tool catalog. Empty means
+                                                        // the proposal does not resolve to anything runnable,
+                                                        // and then there is nothing to approve.
+                                                        readonly property string resolvedCommand: modelData.functionCall ? Ai.describeToolCall(modelData.functionCall) : ""
+                                                        readonly property bool runnable: resolvedCommand !== ""
+
+                                                        Separator {}
 
                                                         Text {
-                                                            text: I18n.t("ai.run_command")
+                                                            text: modelData.functionCall ? modelData.functionCall.name : ""
                                                             color: Styling.srItem("overprimary")
                                                             font.family: Config.theme.font
                                                             font.weight: Font.Bold
@@ -1317,6 +1320,7 @@ FocusScope {
 
                                                         StyledRect {
                                                             Layout.fillWidth: true
+                                                            visible: toolCard.runnable
                                                             variant: "surface"
                                                             color: Colors.surface
                                                             radius: Styling.radius(4)
@@ -1324,7 +1328,7 @@ FocusScope {
                                                             TextEdit {
                                                                 padding: 8
                                                                 width: parent.width
-                                                                text: modelData.functionCall ? modelData.functionCall.args.command : ""
+                                                                text: toolCard.resolvedCommand
                                                                 font.family: "Monospace"
                                                                 color: Colors.overSurface
                                                                 readOnly: true
@@ -1332,8 +1336,18 @@ FocusScope {
                                                             }
                                                         }
 
+                                                        Text {
+                                                            visible: !toolCard.runnable
+                                                            Layout.fillWidth: true
+                                                            text: I18n.t("ai.tool_refused").replace("%1", modelData.functionCall ? modelData.functionCall.name : "")
+                                                            color: Colors.error
+                                                            font.family: Config.theme.font
+                                                            font.pixelSize: 12
+                                                            wrapMode: Text.Wrap
+                                                        }
+
                                                         RowLayout {
-                                                            visible: modelData.functionPending === true
+                                                            visible: modelData.functionPending === true && toolCard.runnable
                                                             Layout.alignment: Qt.AlignRight
                                                             spacing: 8
 
