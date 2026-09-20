@@ -196,6 +196,21 @@ requireIn("runCurl", "isRequestCurrent(activeRequest, payload.seq)", "runCurl() 
 requireIn("runCurl", "owner.model", "runCurl() uses the model the request was built with");
 requireIn("pushSystemMessage", "chatId !== currentChatId", "pushSystemMessage() can drop a message aimed at a chat that is gone");
 
+// A request that never starts must say why. The user turn is already in the
+// conversation by then, so a refusal that only sets `lastError` leaves a
+// question with no answer and no reason -- `lastError` has no reader in the
+// sidebar. Every refusal therefore routes through failWithoutRequest(), and
+// makeRequest() is checked to own no refusal state of its own.
+requireIn("failWithoutRequest", "pushSystemMessage(message)", "failWithoutRequest() puts the reason in the conversation");
+requireIn("failWithoutRequest", "isLoading = false", "failWithoutRequest() clears the busy state");
+requireIn("failWithoutRequest", "lastError = message", "failWithoutRequest() still records the error for any other reader");
+
+const makeRequestBody = extractFunction("makeRequest");
+assert(!/isLoading = false/.test(makeRequestBody), "makeRequest() clears the busy state only through failWithoutRequest()");
+assert(!/lastError = /.test(makeRequestBody), "makeRequest() sets lastError only through failWithoutRequest()");
+assert((makeRequestBody.match(/failWithoutRequest\(/g) || []).length === 3, "every makeRequest() refusal that follows a user turn is reported");
+assert(!/role: "assistant",\n\s+content: "Error: "/.test(src), "an error is never rendered as something the assistant said");
+
 // The stream must never read the mutable current strategy: the model selector
 // can point somewhere else by the time a chunk arrives.
 assert(!/root\.currentStrategy/.test(src), "no callback parses a chunk with the live currentStrategy");

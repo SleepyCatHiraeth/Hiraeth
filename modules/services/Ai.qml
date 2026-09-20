@@ -657,6 +657,18 @@ Singleton {
         return true;
     }
 
+    // A request that never started still has to say so. `lastError` alone is
+    // not enough: the user message is already in the conversation by the time
+    // makeRequest() runs, so a silent refusal leaves a question sitting there
+    // with no answer and no reason. Every path that declines to start reports
+    // through here, as a system message rather than a fabricated assistant
+    // reply -- the assistant did not say this, the shell did.
+    function failWithoutRequest(message) {
+        lastError = message;
+        isLoading = false;
+        pushSystemMessage(message);
+    }
+
     // Issues the single in-flight request against a snapshot of the current
     // chat, message index, strategy and model. Returns true when it started.
     function makeRequest() {
@@ -665,8 +677,7 @@ Singleton {
 
         let model = currentModel;
         if (!model) {
-            lastError = "No AI model available.";
-            isLoading = false;
+            failWithoutRequest(I18n.t("ai.no_model"));
             return false;
         }
 
@@ -682,8 +693,7 @@ Singleton {
                 }
             }
             if (!prompt) {
-                lastError = "Nothing to ask.";
-                isLoading = false;
+                failWithoutRequest(I18n.t("ai.nothing_to_ask"));
                 return false;
             }
 
@@ -717,15 +727,7 @@ Singleton {
 
         let apiKey = getApiKey(model);
         if (!apiKey && model.requires_key) {
-            lastError = I18n.t("ai.api_key_missing").replace("%1", model.name).replace("%2", model.key_id || I18n.t("ai.env_variable"));
-            isLoading = false;
-
-            let errChat = Array.from(currentChat);
-            errChat.push({
-                role: "assistant",
-                content: "Error: " + lastError
-            });
-            currentChat = errChat;
+            failWithoutRequest(I18n.t("ai.api_key_missing").replace("%1", model.name).replace("%2", model.key_id || I18n.t("ai.env_variable")));
             return false;
         }
 
