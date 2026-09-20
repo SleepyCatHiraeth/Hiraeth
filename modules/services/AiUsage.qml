@@ -106,7 +106,11 @@ Singleton {
     Timer {
         interval: 60000
         repeat: true
-        running: (Config.ai.notchEnabled ?? true) && (Config.ai.notchUsageEnabled ?? true) && StateService.initialized
+        // Also gated on the plugin being present. The two config keys alone
+        // left this waking once a minute on a machine where the plugin that
+        // publishes the readings is not installed at all, to call a check()
+        // that could only ever return early.
+        running: root.enabled && StateService.initialized
         triggeredOnStart: true
         onTriggered: root.check()
     }

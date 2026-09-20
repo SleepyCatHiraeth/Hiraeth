@@ -1,11 +1,15 @@
 // Package assistant implements the turret voice assistant's backend service.
 //
 // The design rule that shapes everything here: the language model proposes,
-// this package disposes. Stage 1 has no tools at all, so the model's output is
-// only ever spoken or displayed -- but the process boundaries, argv-only
-// execution and loopback-only networking are established now, because retrofitting
-// them after a tool layer exists is how the existing `run_shell_command` path in
-// modules/services/Ai.qml ended up executing model output through `bash -c`.
+// this package disposes. The process boundaries, argv-only execution and
+// loopback-only networking were established before any tool existed, because
+// retrofitting them afterwards is how the old `run_shell_command` path in
+// modules/services/Ai.qml came to execute model output through `bash -c`.
+//
+// There is a tool loop now (tool_loop.go), bounded to three rounds, and tools
+// that would require approval are withheld because no consent-token path
+// exists yet. The QML side no longer has a shell tool either: it proposes
+// against a fixed argv allow-list in modules/services/ai/ToolCatalog.js.
 package assistant
 
 import (
