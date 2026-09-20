@@ -30,9 +30,39 @@ ApiStrategy {
             if (messages[i].role === "system")
                 continue;
             let role = messages[i].role;
-            if (role === "function")
-                role = "user";
             let msg = messages[i];
+
+            // A tool turn is two content blocks, not two plain messages: the
+            // assistant's tool_use and the user's tool_result answering it by
+            // id. Flattening a function result to a user message, as this did,
+            // drops the call entirely — so the follow-up request after an
+            // approval arrived with no record of what had been run.
+            if (role === "function") {
+                filtered.push({
+                    role: "user",
+                    content: [{
+                        type: "tool_result",
+                        tool_use_id: msg.toolCallId || "",
+                        content: msg.content || ""
+                    }]
+                });
+                continue;
+            }
+
+            if (msg.functionCall) {
+                let blocks = [];
+                if (msg.content)
+                    blocks.push({ type: "text", text: msg.content });
+                blocks.push({
+                    type: "tool_use",
+                    id: msg.functionCall.id || "",
+                    name: msg.functionCall.name,
+                    input: msg.functionCall.args || {}
+                });
+                filtered.push({ role: "assistant", content: blocks });
+                continue;
+            }
+
             if (msg.attachments && msg.attachments.length > 0) {
                 let contentParts = [];
                 for (let j = 0; j < msg.attachments.length; j++) {

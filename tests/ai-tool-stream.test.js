@@ -143,4 +143,39 @@ assert(/functionPending: true/.test(exitBody), "a proposal is left pending rathe
 assert(/ai\.tool_calls_ignored/.test(exitBody), "extra proposals are said out loud rather than dropped quietly");
 assert(/toolCallParts = \(\{\}\)/.test(aiSrc), "the accumulator is reset between requests");
 
+// ---------------------------------------------------------------------------
+// A tool turn has to survive the round trip
+// ---------------------------------------------------------------------------
+//
+// The approval runs the command and then issues a follow-up request carrying
+// the conversation so far. If a provider's serializer drops the call or the
+// result, that request either loses the context or is rejected outright — and
+// the failure only shows up after a user has approved something.
+
+console.log("tool turn replay:");
+
+const openaiSrc = read("modules/services/ai/strategies/OpenAiApiStrategy.qml");
+const anthropicSrc = read("modules/services/ai/strategies/AnthropicApiStrategy.qml");
+const geminiSrc = read("modules/services/ai/strategies/GeminiApiStrategy.qml");
+
+assert(/tool_call_id: msg\.toolCallId/.test(openaiSrc), "OpenAI answers a tool call by its id");
+assert(/tool_calls: \[\{/.test(openaiSrc), "OpenAI replays the assistant turn as a tool call");
+assert(/type: "tool_result"[\s\S]{0,120}tool_use_id: msg\.toolCallId/.test(anthropicSrc), "Anthropic answers with a tool_result carrying the call id");
+assert(/type: "tool_use"/.test(anthropicSrc), "Anthropic replays the assistant turn as a tool_use block");
+assert(/functionResponse/.test(geminiSrc) && /functionCall: msg\.functionCall/.test(geminiSrc), "Gemini replays both sides of the turn");
+
+// A provider that cannot stream a tool call must not be offered tools at all:
+// the model would be told it may act and the action would never arrive.
+for (const name of ["Mistral", "Groq", "MiniMax", "Ollama"]) {
+    const src = read("modules/services/ai/strategies/" + name + "ApiStrategy.qml");
+    const emitsDeltas = /toolCallDelta/.test(src);
+    const declaresUnsupported = /supportsTools: false/.test(src);
+    assert(declaresUnsupported && !emitsDeltas, name + " does not advertise tools it cannot stream");
+}
+
+// And one that does stream them must also be able to replay them.
+for (const [name, src] of [["OpenAI", openaiSrc], ["Anthropic", anthropicSrc], ["Gemini", geminiSrc]]) {
+    assert(!/supportsTools: false/.test(src), name + " still offers tools");
+}
+
 console.log("\nAI tool streaming: all checks passed");
