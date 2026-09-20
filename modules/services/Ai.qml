@@ -264,6 +264,10 @@ Singleton {
     property string streamError: ""
     property string rawTail: ""
     readonly property int rawTailLimit: 2000
+    // Tool-call fragments as they arrive, keyed by the call index the strategy
+    // normalized. Parsed only once the stream has finished: the arguments are
+    // JSON split across deltas, so there is nothing valid to read until then.
+    property var toolCallParts: ({})
     // Set while a stop the user asked for is being carried out. Killing curl
     // produces a non-zero exit like any other failure, and without this the
     // exit handler would report the user's own stop as a request failure.
@@ -669,6 +673,65 @@ Singleton {
         return true;
     }
 
+    function recordToolCallDelta(deltas) {
+        if (!deltas || deltas.length === 0)
+            return;
+
+        for (let i = 0; i < deltas.length; i++) {
+            const delta = deltas[i];
+            const key = String(delta.index === undefined ? 0 : delta.index);
+            let slot = toolCallParts[key];
+            if (!slot) {
+                slot = {
+                    id: "",
+                    name: "",
+                    args: ""
+                };
+                toolCallParts[key] = slot;
+            }
+            if (delta.id)
+                slot.id = delta.id;
+            if (delta.name)
+                slot.name = delta.name;
+            if (delta.argumentsFragment)
+                slot.args += delta.argumentsFragment;
+        }
+    }
+
+    // The completed calls, in the order the provider numbered them. A call with
+    // no name, or whose arguments never parsed, is dropped rather than guessed
+    // at -- a proposal that cannot be read cannot be shown for approval, and
+    // showing an approximation of one is worse than showing none.
+    function collectToolCalls(parts) {
+        const keys = Object.keys(parts || {}).sort((a, b) => Number(a) - Number(b));
+        let calls = [];
+
+        for (let i = 0; i < keys.length; i++) {
+            const slot = parts[keys[i]];
+            if (!slot || !slot.name)
+                continue;
+
+            let args = {};
+            const raw = (slot.args || "").trim();
+            if (raw !== "") {
+                try {
+                    args = JSON.parse(raw);
+                } catch (e) {
+                    continue;
+                }
+            }
+            if (!args || typeof args !== "object" || Array.isArray(args))
+                continue;
+
+            calls.push({
+                name: slot.name,
+                args: args
+            });
+        }
+
+        return calls;
+    }
+
     // Stops the in-flight request. Returns true when there was one to stop.
     //
     // A reply that had already started streaming is kept: a truncated answer is
@@ -720,6 +783,7 @@ Singleton {
         responseBuffer = "";
         streamError = "";
         rawTail = "";
+        toolCallParts = ({});
         saveCurrentChat();
     }
 
@@ -794,6 +858,7 @@ Singleton {
             activeRequest = requestOwner(requestSeq, currentChatId, turretChat.length - 1, null, model);
             isLoading = true;
             responseBuffer = "";
+            toolCallParts = ({});
 
             const seq = requestSeq;
             BackendService.call("assistant.ask", {
@@ -858,8 +923,11 @@ Singleton {
         // Build body — always use streaming
         let body = strategy.getStreamBody(messages, model, systemTools);
 
-        // Reset streaming buffer
+        // Reset per-request streaming state
         responseBuffer = "";
+        streamError = "";
+        rawTail = "";
+        toolCallParts = ({});
 
         // Add placeholder assistant message for streaming
         let streamChat = Array.from(currentChat);
@@ -1030,6 +1098,9 @@ Singleton {
                     return;
                 }
 
+                if (result.toolCallDelta)
+                    root.recordToolCallDelta(result.toolCallDelta);
+
                 if (result.content) {
                     root.responseBuffer += result.content;
                     // Write into the message this request owns, not simply the
@@ -1073,9 +1144,29 @@ Singleton {
 
             if (!failure) {
                 if (target >= 0) {
-                    // Nothing streamed: a non-streaming response body, which
-                    // the buffer already holds, or genuinely nothing.
-                    if (!root.currentChat[target].content) {
+                    const calls = root.collectToolCalls(root.toolCallParts);
+
+                    if (calls.length > 0) {
+                        // The reply proposed something. It waits for the user
+                        // rather than running: approveCommand() resolves it
+                        // against the tool catalog and takes the busy state
+                        // back when it does.
+                        let callChat = Array.from(root.currentChat);
+                        callChat[target] = Object.assign({}, callChat[target], {
+                            functionCall: calls[0],
+                            functionPending: true
+                        });
+                        root.currentChat = callChat;
+
+                        // One message carries one proposal. Extra calls are
+                        // said out loud rather than dropped quietly -- the user
+                        // is about to approve one of several things the model
+                        // asked for, and should know that.
+                        if (calls.length > 1)
+                            root.pushSystemMessage(I18n.t("ai.tool_calls_ignored").replace("%1", calls.length - 1));
+                    } else if (!root.currentChat[target].content) {
+                        // Nothing streamed: a non-streaming response body, which
+                        // the buffer already holds, or genuinely nothing.
                         let newChat = Array.from(root.currentChat);
                         newChat[target].content = root.responseBuffer !== "" ? root.responseBuffer : I18n.t("ai.no_response");
                         root.currentChat = newChat;
@@ -1112,6 +1203,7 @@ Singleton {
             root.responseBuffer = "";
             root.streamError = "";
             root.rawTail = "";
+            root.toolCallParts = ({});
         }
     }
 

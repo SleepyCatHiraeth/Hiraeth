@@ -160,11 +160,26 @@ ApiStrategy {
                 let content = json.candidates[0].content;
                 if (content && content.parts) {
                     let text = "";
+                    let calls = [];
                     for (let i = 0; i < content.parts.length; i++) {
                         if (content.parts[i].text)
                             text += content.parts[i].text;
+                        // Gemini does not fragment a call: the whole thing
+                        // arrives in one part, so its arguments are emitted as
+                        // a single fragment.
+                        const fn = content.parts[i].functionCall;
+                        if (fn && fn.name) {
+                            calls.push({
+                                index: i,
+                                id: "",
+                                name: fn.name,
+                                argumentsFragment: JSON.stringify(fn.args || {})
+                            });
+                        }
                     }
                     let done = json.candidates[0].finishReason === "STOP";
+                    if (calls.length > 0)
+                        return { content: text, done: done, error: null, toolCallDelta: calls };
                     return { content: text, done: done, error: null };
                 }
             }

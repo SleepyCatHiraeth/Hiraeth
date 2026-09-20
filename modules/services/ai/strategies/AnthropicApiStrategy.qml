@@ -153,9 +153,29 @@ ApiStrategy {
         try {
             let json = JSON.parse(trimmed.substring(6));
 
+            // A tool call is announced once, then its arguments arrive as
+            // input_json_delta fragments carrying the same block index.
+            if (json.type === "content_block_start") {
+                const block = json.content_block;
+                if (block && block.type === "tool_use") {
+                    return { content: "", done: false, error: null, toolCallDelta: [{
+                        index: json.index === undefined ? 0 : json.index,
+                        id: block.id || "",
+                        name: block.name || "",
+                        argumentsFragment: ""
+                    }] };
+                }
+            }
+
             if (json.type === "content_block_delta") {
                 if (json.delta && json.delta.type === "text_delta")
                     return { content: json.delta.text || "", done: false, error: null };
+                if (json.delta && json.delta.type === "input_json_delta") {
+                    return { content: "", done: false, error: null, toolCallDelta: [{
+                        index: json.index === undefined ? 0 : json.index,
+                        argumentsFragment: json.delta.partial_json || ""
+                    }] };
+                }
             }
 
             if (json.type === "message_delta") {

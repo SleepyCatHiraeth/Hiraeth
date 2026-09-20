@@ -108,10 +108,21 @@ ApiStrategy {
                 if (delta && delta.content)
                     return { content: delta.content, done: false, error: null };
 
-                // Check for tool calls in stream
+                // Tool calls arrive fragmented: the name in one delta, the
+                // arguments split across the next several.
                 if (delta && delta.tool_calls) {
-                    // Accumulate tool call data — handled by Ai.qml
-                    return { content: "", done: false, error: null, toolCallDelta: delta.tool_calls };
+                    let parts = [];
+                    for (let i = 0; i < delta.tool_calls.length; i++) {
+                        const call = delta.tool_calls[i];
+                        const fn = call.function || {};
+                        parts.push({
+                            index: call.index === undefined ? i : call.index,
+                            id: call.id || "",
+                            name: fn.name || "",
+                            argumentsFragment: fn.arguments || ""
+                        });
+                    }
+                    return { content: "", done: false, error: null, toolCallDelta: parts };
                 }
 
                 // finish_reason check
