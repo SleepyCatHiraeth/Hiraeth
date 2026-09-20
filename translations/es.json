@@ -645,6 +645,7 @@
   "settings.theme.mono_font": "Fuente monoespaciada",
   "settings.theme.pane_variant": "Variante de panel",
   "settings.theme.popup_variant": "Variante de ventana emergente",
+  "settings.theme.reduced_motion": "Movimiento reducido",
   "settings.theme.roundness": "Redondez",
   "settings.theme.shadow": "Sombra",
   "settings.theme.shadow_blur": "Desenfoque de sombra",

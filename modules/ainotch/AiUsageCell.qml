@@ -53,9 +53,9 @@ Item {
     property real animatedFraction: root.fraction
 
     Behavior on animatedFraction {
-        enabled: Config.animDuration > 0
+        enabled: Motion.enabled
         NumberAnimation {
-            duration: Config.animDuration * 2
+            duration: Motion.normal * 2
             easing.type: Easing.OutQuart
         }
     }
@@ -63,9 +63,9 @@ Item {
     opacity: root.stale ? 0.45 : 1
 
     Behavior on opacity {
-        enabled: Config.animDuration > 0
+        enabled: Motion.enabled
         NumberAnimation {
-            duration: Config.animDuration
+            duration: Motion.normal
             easing.type: Easing.OutQuart
         }
     }
@@ -167,9 +167,9 @@ Item {
         color: root.arcColor
 
         Behavior on color {
-            enabled: Config.animDuration > 0
+            enabled: Motion.enabled
             ColorAnimation {
-                duration: Config.animDuration
+                duration: Motion.normal
             }
         }
     }

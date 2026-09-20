@@ -91,17 +91,17 @@ Item {
             color: root.hovered ? Styling.srItem("overprimary") : Colors.overSurface
 
             Behavior on font.pixelSize {
-                enabled: Config.animDuration > 0
+                enabled: Motion.enabled
                 NumberAnimation {
-                    duration: Config.animDuration / 2
+                    duration: Motion.fast
                     easing.type: Easing.OutCubic
                 }
             }
 
             Behavior on color {
-                enabled: Config.animDuration > 0
+                enabled: Motion.enabled
                 ColorAnimation {
-                    duration: Config.animDuration / 2
+                    duration: Motion.fast
                 }
             }
         }
@@ -122,9 +122,9 @@ Item {
             color: TurretStateStyle.accent(root.turretState)
 
             Behavior on color {
-                enabled: Config.animDuration > 0
+                enabled: Motion.enabled
                 ColorAnimation {
-                    duration: Config.animDuration
+                    duration: Motion.normal
                 }
             }
         }
@@ -154,15 +154,15 @@ Item {
         opacity: (root.busy && !root.turretBusy) ? 1 : 0
 
         Behavior on opacity {
-            enabled: Config.animDuration > 0
+            enabled: Motion.enabled
             NumberAnimation {
-                duration: Config.animDuration / 2
+                duration: Motion.fast
                 easing.type: Easing.OutCubic
             }
         }
 
         SequentialAnimation on scale {
-            running: root.visible && root.busy && !root.turretBusy && Config.animDuration > 0
+            running: root.visible && root.busy && !root.turretBusy && Motion.enabled
             loops: Animation.Infinite
             alwaysRunToEnd: true
             NumberAnimation {

@@ -12,6 +12,7 @@ var data = {
     "tintIcons": false,
     "enableCorners": true,
     "animDuration": 300,
+    "reducedMotion": false,
     "shadowOpacity": 0.5,
     "shadowColor": "shadow",
     "shadowXOffset": 0,

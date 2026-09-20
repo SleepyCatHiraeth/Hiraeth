@@ -109,17 +109,17 @@ FocusScope {
     property int notchBodyRadius: frameWrapped ? 0 : (showAsNotch ? Styling.radius(4) : Styling.radius(0))
 
     Behavior on notchFlareSize {
-        enabled: Config.animDuration > 0
+        enabled: Motion.enabled
         NumberAnimation {
-            duration: Config.animDuration
+            duration: Motion.normal
             easing.type: Easing.OutQuart
         }
     }
 
     Behavior on notchBodyRadius {
-        enabled: Config.animDuration > 0
+        enabled: Motion.enabled
         NumberAnimation {
-            duration: Config.animDuration
+            duration: Motion.normal
             easing.type: root.expanded ? Easing.OutBack : Easing.OutQuart
             easing.overshoot: root.expanded ? 1.2 : 1.0
         }
@@ -161,7 +161,7 @@ FocusScope {
     }
     Timer {
         id: hoverRearmTimer
-        interval: Math.max(250, Config.animDuration)
+        interval: Math.max(250, Motion.normal)
         onTriggered: if (!root.notchHovered) root.hoverOpenBlocked = false
     }
 
@@ -378,10 +378,10 @@ FocusScope {
             }
 
             Behavior on x {
-                enabled: Config.animDuration > 0
+                enabled: Motion.enabled
                 NumberAnimation {
                     id: revealAnimation
-                    duration: Config.animDuration / 2
+                    duration: Motion.fast
                     easing.type: Easing.OutCubic
                 }
             }
@@ -391,20 +391,20 @@ FocusScope {
         // actually pops along. Height spans most of the screen when expanded,
         // where an overshoot would only throw the flares off-screen.
         Behavior on width {
-            enabled: Config.animDuration > 0 && root.dragWidth < 0
+            enabled: Motion.enabled && root.dragWidth < 0
             NumberAnimation {
                 id: widthAnimation
-                duration: Config.animDuration
+                duration: Motion.normal
                 easing.type: root.expanded ? Easing.OutBack : Easing.OutQuart
                 easing.overshoot: root.expanded ? 1.2 : 1.0
             }
         }
 
         Behavior on height {
-            enabled: Config.animDuration > 0
+            enabled: Motion.enabled
             NumberAnimation {
                 id: heightAnimation
-                duration: Config.animDuration
+                duration: Motion.normal
                 easing.type: Easing.OutQuart
             }
         }
@@ -456,9 +456,9 @@ FocusScope {
                 visible: opacity > 0.01
 
                 Behavior on opacity {
-                    enabled: Config.animDuration > 0
+                    enabled: Motion.enabled
                     NumberAnimation {
-                        duration: Config.animDuration / 2
+                        duration: Motion.fast
                         easing.type: Easing.OutQuart
                     }
                 }
@@ -654,7 +654,7 @@ FocusScope {
 
                             Behavior on opacity {
                                 NumberAnimation {
-                                    duration: Config.animDuration
+                                    duration: Motion.normal
                                 }
                             }
 
@@ -1424,7 +1424,7 @@ FocusScope {
 
                                                 SequentialAnimation on opacity {
                                                     loops: Animation.Infinite
-                                                    running: root.active && visible && Ai.isLoading && Config.animDuration > 0
+                                                    running: root.active && visible && Ai.isLoading && Motion.enabled
 
                                                     PauseAnimation {
                                                         duration: index * 200
@@ -1486,7 +1486,7 @@ FocusScope {
 
                             Behavior on anchors.bottomMargin {
                                 NumberAnimation {
-                                    duration: Config.animDuration
+                                    duration: Motion.normal
                                     easing.type: Easing.OutCubic
                                 }
                             }
@@ -1836,9 +1836,9 @@ FocusScope {
                             opacity: mainChatArea.isWelcome ? 1 : 0
 
                             Behavior on opacity {
-                                enabled: Config.animDuration > 0
+                                enabled: Motion.enabled
                                 NumberAnimation {
-                                    duration: Config.animDuration
+                                    duration: Motion.normal
                                     easing.type: Easing.OutQuart
                                 }
                             }

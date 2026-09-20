@@ -146,6 +146,9 @@ Singleton {
             property bool tintIcons: false
             property bool enableCorners: true
             property int animDuration: 300
+            // Suppresses motion without zeroing animDuration, which several
+            // surfaces read directly for their own timing.
+            property bool reducedMotion: false
             property real shadowOpacity: 0.5
             property string shadowColor: "shadow"
             property int shadowXOffset: 0

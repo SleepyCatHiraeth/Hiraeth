@@ -54,9 +54,9 @@ Button {
         opacity: root.hovered ? 1 : 0
 
         Behavior on opacity {
-            enabled: Config.animDuration > 0
+            enabled: Motion.enabled
             NumberAnimation {
-                duration: Config.animDuration / 4
+                duration: Motion.micro
             }
         }
     }

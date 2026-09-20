@@ -554,6 +554,75 @@ Item {
                                 }
                             }
 
+                            // Reduced motion toggle
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    text: I18n.t("settings.theme.reduced_motion")
+                                    font.family: Config.theme.font
+                                    font.pixelSize: Styling.fontSize(0)
+                                    color: Colors.overBackground
+                                    Layout.fillWidth: true
+                                }
+
+                                Switch {
+                                    id: reducedMotionSwitch
+                                    checked: Config.theme.reducedMotion
+
+                                    readonly property bool configValue: Config.theme.reducedMotion
+
+                                    onConfigValueChanged: {
+                                        if (checked !== configValue) {
+                                            checked = configValue;
+                                        }
+                                    }
+
+                                    onCheckedChanged: {
+                                        if (checked !== Config.theme.reducedMotion) {
+                                            GlobalStates.markThemeChanged();
+                                            Config.theme.reducedMotion = checked;
+                                        }
+                                    }
+
+                                    indicator: Rectangle {
+                                        implicitWidth: 40
+                                        implicitHeight: 20
+                                        x: reducedMotionSwitch.leftPadding
+                                        y: parent.height / 2 - height / 2
+                                        radius: height / 2
+                                        color: reducedMotionSwitch.checked ? Styling.srItem("overprimary") : Colors.surfaceBright
+                                        border.color: reducedMotionSwitch.checked ? Styling.srItem("overprimary") : Colors.outline
+
+                                        Behavior on color {
+                                            enabled: Motion.enabled
+                                            ColorAnimation {
+                                                duration: Motion.fast
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            x: reducedMotionSwitch.checked ? parent.width - width - 2 : 2
+                                            y: 2
+                                            width: parent.height - 4
+                                            height: width
+                                            radius: width / 2
+                                            color: reducedMotionSwitch.checked ? Colors.background : Colors.overSurfaceVariant
+
+                                            Behavior on x {
+                                                enabled: Motion.enabled
+                                                NumberAnimation {
+                                                    duration: Motion.fast
+                                                    easing.type: Motion.fastEasing
+                                                }
+                                            }
+                                        }
+                                    }
+                                    background: null
+                                }
+                            }
+
                             // Animation Duration slider
                             RowLayout {
                                 Layout.fillWidth: true
@@ -569,6 +638,8 @@ Item {
 
                                 StyledSlider {
                                     id: animDurationSlider
+                                    enabled: !Config.theme.reducedMotion
+                                    opacity: enabled ? 1 : 0.4
                                     Layout.fillWidth: true
                                     Layout.preferredHeight: 20
                                     progressColor: Styling.srItem("overprimary")

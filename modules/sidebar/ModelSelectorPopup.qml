@@ -13,7 +13,9 @@ Popup {
 
     signal modelSelected(string modelName)
 
-    width: 400
+    // Sized to the panel, not to a constant: the sidebar clamps to 300-800 px,
+    // so a fixed 400 was wider than its own host at the narrow end.
+    width: parent ? Math.min(400, parent.width - 32) : 400
     // Height: Header (48) + Spacing (12) + List (5 * 48 = 240) + Padding (8*2)
     height: contentItem.implicitHeight + padding * 2
     padding: 16
@@ -174,9 +176,9 @@ Popup {
                 Layout.preferredHeight: 48
 
                 Behavior on Layout.preferredWidth {
-                    enabled: Config.animDuration > 0
+                    enabled: Motion.enabled
                     NumberAnimation {
-                        duration: Config.animDuration
+                        duration: Motion.normal
                         easing.type: Easing.OutCubic
                     }
                 }
@@ -210,8 +212,11 @@ Popup {
                                 loops: Animation.Infinite
                                 from: 0
                                 to: 360
-                                duration: 1000
-                                running: Ai.fetchingModels
+                                duration: Motion.ambient * 2
+                                // Also gated on the popup being on screen: every
+                                // screen owns a sidebar, so hidden copies of this
+                                // spinner used to turn during model discovery.
+                                running: Ai.fetchingModels && root.visible && Motion.enabled
                                 onRunningChanged: {
                                     if (!running) {
                                         refreshIcon.rotation = 0;
@@ -220,9 +225,9 @@ Popup {
                             }
 
                             Behavior on color {
-                                enabled: Config.animDuration > 0
+                                enabled: Motion.enabled
                                 ColorAnimation {
-                                    duration: Config.animDuration / 2
+                                    duration: Motion.fast
                                 }
                             }
                         }
@@ -243,9 +248,9 @@ Popup {
                         visible: opacity > 0
 
                         Behavior on opacity {
-                            enabled: Config.animDuration > 0
+                            enabled: Motion.enabled
                             NumberAnimation {
-                                duration: Config.animDuration / 2
+                                duration: Motion.fast
                             }
                         }
                     }
@@ -256,9 +261,9 @@ Popup {
                     radius: Styling.radius(4)
 
                     Behavior on color {
-                        enabled: Config.animDuration > 0
+                        enabled: Motion.enabled
                         ColorAnimation {
-                            duration: Config.animDuration / 2
+                            duration: Motion.fast
                         }
                     }
                 }
@@ -295,9 +300,9 @@ Popup {
             property bool enableScrollAnimation: true
 
             Behavior on contentY {
-                enabled: Config.animDuration > 0 && modelList.enableScrollAnimation && !modelList.moving
+                enabled: Motion.enabled && modelList.enableScrollAnimation && !modelList.moving
                 NumberAnimation {
-                    duration: Config.animDuration / 2
+                    duration: Motion.fast
                     easing.type: Easing.OutCubic
                 }
             }
@@ -329,9 +334,9 @@ Popup {
                 y: modelList.currentIndex >= 0 ? modelList.currentIndex * 48 : 0
 
                 Behavior on y {
-                    enabled: Config.animDuration > 0
+                    enabled: Motion.enabled
                     NumberAnimation {
-                        duration: Config.animDuration / 2
+                        duration: Motion.fast
                         easing.type: Easing.OutCubic
                     }
                 }
@@ -355,7 +360,7 @@ Popup {
 
                 // Controlled by ListView's currentIndex via root.selectedIndex
                 property bool isSelected: ListView.isCurrentItem
-                property bool isActiveModel: Ai.currentModel.name === modelData.name
+                property bool isActiveModel: (Ai.currentModel ? Ai.currentModel.name : "") === modelData.name
 
                 contentItem: RowLayout {
                     anchors.fill: parent
@@ -434,18 +439,18 @@ Popup {
                             color: iconRect.item
 
                             Behavior on color {
-                                enabled: Config.animDuration > 0
+                                enabled: Motion.enabled
                                 ColorAnimation {
-                                    duration: Config.animDuration / 2
+                                    duration: Motion.fast
                                     easing.type: Easing.OutCubic
                                 }
                             }
                         }
 
                         Behavior on color {
-                            enabled: Config.animDuration > 0
+                            enabled: Motion.enabled
                             ColorAnimation {
-                                duration: Config.animDuration / 2
+                                duration: Motion.fast
                                 easing.type: Easing.OutCubic
                             }
                         }
@@ -466,9 +471,9 @@ Popup {
                             elide: Text.ElideRight
 
                             Behavior on color {
-                                enabled: Config.animDuration > 0
+                                enabled: Motion.enabled
                                 ColorAnimation {
-                                    duration: Config.animDuration / 2
+                                    duration: Motion.fast
                                     easing.type: Easing.OutCubic
                                 }
                             }
@@ -484,9 +489,9 @@ Popup {
                             elide: Text.ElideRight
 
                             Behavior on color {
-                                enabled: Config.animDuration > 0
+                                enabled: Motion.enabled
                                 ColorAnimation {
-                                    duration: Config.animDuration / 2
+                                    duration: Motion.fast
                                     easing.type: Easing.OutCubic
                                 }
                             }
@@ -509,9 +514,9 @@ Popup {
                             visible: delegateBtn.isActiveModel
 
                             Behavior on color {
-                                enabled: Config.animDuration > 0
+                                enabled: Motion.enabled
                                 ColorAnimation {
-                                    duration: Config.animDuration / 2
+                                    duration: Motion.fast
                                     easing.type: Easing.OutCubic
                                 }
                             }

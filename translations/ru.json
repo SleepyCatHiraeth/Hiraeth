@@ -641,6 +641,7 @@
   "settings.theme.mono_font": "Моноширинный шрифт",
   "settings.theme.pane_variant": "Вариант панели",
   "settings.theme.popup_variant": "Вариант всплывающего окна",
+  "settings.theme.reduced_motion": "Уменьшенное движение",
   "settings.theme.roundness": "Скруглённость",
   "settings.theme.shadow": "Тень",
   "settings.theme.shadow_blur": "Размытие тени",
