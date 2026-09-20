@@ -37,7 +37,7 @@ for (const [src, name] of [[iconButton, "AssistantIconButton"], [action, "Assist
 console.log("\nreaching a message:");
 
 assert(/ListView\.isCurrentItem/.test(sidebar), "the message actions follow the keyboard's current message");
-assert(/visible: bubbleArea\.containsMouse[\s\S]{0,200}ListView\.isCurrentItem/.test(sidebar),
+assert(/bubbleArea\.containsMouse[\s\S]{0,200}ListView\.isCurrentItem/.test(sidebar),
     "they are no longer hover-only");
 assert(/activeFocusOnTab: true/.test(action), "each action can be tabbed to once shown");
 

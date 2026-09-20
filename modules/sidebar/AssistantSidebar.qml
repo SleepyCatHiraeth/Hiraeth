@@ -841,8 +841,8 @@ FocusScope {
                             ListView {
                                 id: chatView
                                 visible: !mainChatArea.isWelcome
-                                // These delegates are expensive — avatar, bubble, action row,
-                                // segmented body — so they are pooled and reused rather than
+                                // These delegates are still not cheap — role line, segmented
+                                // body, tool card — so they are pooled and reused rather than
                                 // rebuilt, and the cache is sized to a screenful rather than
                                 // holding a thousand pixels of them either side.
                                 reuseItems: true
@@ -851,7 +851,9 @@ FocusScope {
                                 Layout.fillHeight: true
                                 clip: true
                                 model: Ai.currentChat
-                                spacing: 16
+                                // Rows carry their own padding now, so the gap between them is
+                                // the separation between speakers rather than between cards.
+                                spacing: 6
                                 displayMarginBeginning: 40
                                 displayMarginEnd: 40
 
@@ -946,7 +948,7 @@ FocusScope {
                                     readonly property color bodyColor: isSystem ? Colors.outline : (isUser ? Styling.srItem("primary") : Styling.srItem("secondary"))
 
                                     width: ListView.view.width
-                                    height: bubbleArea.height + 8
+                                    height: column.implicitHeight + 14
 
                                     // Reuse means this object now stands for a different
                                     // message. Anything it was holding about the old one has
@@ -958,85 +960,133 @@ FocusScope {
                                     }
                                     ListView.onPooled: retryTimer.stop()
 
-                                    Row {
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.margins: 10
-                                        layoutDirection: (isUser && !isSystem) ? Qt.RightToLeft : Qt.LeftToRight
-                                        spacing: 12
+                                    // A transcript row, not a chat bubble.
+                                    //
+                                    // The bubbles cost most of a 400px panel to chrome: a 32px
+                                    // avatar, 12px of gutter, 16px of padding each side, and a
+                                    // 70%-width cap on top. What was left for the answer was under
+                                    // half the panel. A rule in the margin says who is speaking in
+                                    // 2px, and the text gets the rest.
+                                    MouseArea {
+                                        id: bubbleArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        acceptedButtons: Qt.NoButton
+                                    }
 
-                                        Item {
-                                            width: 32
-                                            height: 32
-                                            visible: !isSystem
+                                    Rectangle {
+                                        id: roleRule
+                                        x: 14
+                                        y: 6
+                                        width: 2
+                                        radius: 1
+                                        height: Math.max(0, column.height - 4)
+                                        color: messageDelegate.isSystem ? Colors.outline
+                                            : (messageDelegate.isUser ? Colors.overSurface : Styling.srItem("overprimary"))
+                                        opacity: messageDelegate.isUser || messageDelegate.isSystem ? 0.3 : 0.85
 
-                                            StyledRect {
-                                                anchors.fill: parent
-                                                radius: Styling.radius(16)
-                                                variant: "primary"
-                                                visible: !isUser
-
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: Icons.robot
-                                                    font.family: Icons.font
-                                                    color: Colors.overPrimary
-                                                    font.pixelSize: 20
-                                                }
-                                            }
-
-                                            ClippingRectangle {
-                                                anchors.fill: parent
-                                                radius: Styling.radius(16)
-                                                color: Colors.surfaceDim
-                                                visible: isUser
-
-                                                Image {
-                                                    mipmap: true
-                                                    anchors.fill: parent
-                                                    source: "file://" + Quickshell.env("HOME") + "/.face.icon"
-                                                    fillMode: Image.PreserveAspectCrop
-
-                                                    onStatusChanged: {
-                                                        if (status === Image.Error) {
-                                                            source = "";
-                                                        }
-                                                    }
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: Icons.user
-                                                        font.family: Icons.font
-                                                        color: Colors.overPrimary
-                                                        visible: parent.status !== Image.Ready
-                                                    }
-                                                }
+                                        Behavior on opacity {
+                                            enabled: Motion.enabled
+                                            NumberAnimation {
+                                                duration: Motion.fast
                                             }
                                         }
+                                    }
 
-                                        MouseArea {
-                                            id: bubbleArea
-                                            width: parent.width
-                                            height: Math.max(bubble.height, 32) + (modelIndicator.visible ? modelIndicator.implicitHeight + 4 : 0)
-                                            hoverEnabled: true
-                                            acceptedButtons: Qt.NoButton
+                                    ColumnLayout {
+                                        id: column
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        anchors.leftMargin: 28
+                                        anchors.rightMargin: 16
+                                        anchors.topMargin: 6
+                                        spacing: 3
 
+                                        // Who is speaking, and — for a reply — what answered.
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 6
+                                            visible: !messageDelegate.isSystem
+
+                                            Text {
+                                                text: messageDelegate.isUser ? I18n.t("ai.role_you") : (modelData.model || I18n.t("ai.role_assistant"))
+                                                color: messageDelegate.isUser ? Colors.outline : Styling.srItem("overprimary")
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-3)
+                                                font.weight: Font.DemiBold
+                                                font.capitalization: Font.AllUppercase
+                                                font.letterSpacing: 0.6
+                                                elide: Text.ElideRight
+                                                Layout.maximumWidth: column.width * 0.5
+
+                                                // Kept from the old model indicator: a second click
+                                                // retries the reply against another model, with the
+                                                // armed state timing out rather than sticking.
+                                                MouseArea {
+                                                    id: retryArea
+                                                    anchors.fill: parent
+                                                    anchors.margins: -4
+                                                    enabled: !messageDelegate.isUser && !Ai.isLoading
+                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                    onClicked: {
+                                                        if (messageDelegate.retryMode) {
+                                                            mainChatArea.retryIndex = index;
+                                                            modelSelector.open();
+                                                            messageDelegate.retryMode = false;
+                                                        } else {
+                                                            messageDelegate.retryMode = true;
+                                                            retryTimer.start();
+                                                        }
+                                                    }
+                                                }
+
+                                                Timer {
+                                                    id: retryTimer
+                                                    interval: 5000
+                                                    onTriggered: messageDelegate.retryMode = false
+                                                }
+                                            }
+
+                                            Text {
+                                                visible: messageDelegate.retryMode
+                                                text: I18n.t("ai.retry_another_model")
+                                                color: Colors.outline
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-3)
+                                            }
+
+                                            Text {
+                                                visible: modelData.interrupted === true
+                                                text: I18n.t("ai.interrupted")
+                                                color: Colors.outline
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-3)
+                                                font.italic: true
+                                            }
+
+                                            Item {
+                                                Layout.fillWidth: true
+                                            }
+
+                                            // In the role line rather than floating beside a bubble,
+                                            // so it takes no horizontal space from the text and has
+                                            // somewhere to live when the keyboard selects a message.
                                             Row {
-                                                anchors.verticalCenter: bubble.verticalCenter
-                                                anchors.left: isUser ? undefined : bubble.right
-                                                anchors.right: isUser ? bubble.left : undefined
-                                                anchors.leftMargin: 8
-                                                anchors.rightMargin: 8
-                                                spacing: 4
-                                                // Also shown for the keyboard's current message. These
-                                                // were hover-only, which put copy, edit and retry out of
-                                                // reach entirely without a pointer.
-                                                visible: bubbleArea.containsMouse
+                                                spacing: 2
+                                                opacity: bubbleArea.containsMouse
                                                     || messageDelegate.isEditing
-                                                    || messageDelegate.ListView.isCurrentItem
+                                                    || messageDelegate.ListView.isCurrentItem ? 1 : 0
+                                                visible: opacity > 0.01
+
+                                                Behavior on opacity {
+                                                    enabled: Motion.enabled
+                                                    NumberAnimation {
+                                                        duration: Motion.micro
+                                                    }
+                                                }
 
                                                 AssistantMessageAction {
-                                                    visible: !isSystem
                                                     enabled: !Ai.isLoading
                                                     glyph: messageDelegate.isEditing ? Icons.accept : Icons.edit
                                                     label: messageDelegate.isEditing ? I18n.t("ai.save_edit") : I18n.t("ai.edit_message")
@@ -1060,220 +1110,174 @@ FocusScope {
                                                 }
 
                                                 AssistantMessageAction {
-                                                    visible: !isUser && !isSystem && !messageDelegate.isEditing
+                                                    visible: !messageDelegate.isUser && !messageDelegate.isEditing
                                                     enabled: !Ai.isLoading
                                                     glyph: Icons.arrowCounterClockwise
                                                     label: I18n.t("ai.retry_message")
                                                     onClicked: Ai.regenerateResponse(index)
                                                 }
                                             }
+                                        }
+
+                                        AssistantMarkdown {
+                                            Layout.fillWidth: true
+                                            visible: !messageDelegate.isEditing && !messageDelegate.isStreaming
+                                            // Only built for what is on screen: an off-screen or
+                                            // streaming message segments nothing.
+                                            text: visible ? (modelData.content || "") : ""
+                                            textColor: messageDelegate.bodyColor
+                                            contentWidth: column.width
+                                        }
+
+                                        Text {
+                                            id: streamingBody
+                                            Layout.fillWidth: true
+                                            visible: messageDelegate.isStreaming
+                                            text: Ai.streamingText
+                                            textFormat: Text.PlainText
+                                            color: messageDelegate.bodyColor
+                                            font.family: Config.theme.font
+                                            font.pixelSize: 14
+                                            wrapMode: Text.Wrap
+                                        }
+
+                                        // The edit box is the one place a message still gets a
+                                        // surface: it is an input, and it should look like one.
+                                        StyledRect {
+                                            Layout.fillWidth: true
+                                            visible: messageDelegate.isEditing
+                                            implicitHeight: bubbleContentText.implicitHeight + 16
+                                            variant: "surface"
+                                            radius: Styling.radius(4)
+                                            border.width: 1
+                                            border.color: Styling.srItem("overprimary")
+
+                                            TextEdit {
+                                                id: bubbleContentText
+                                                anchors.fill: parent
+                                                anchors.margins: 8
+                                                text: modelData.content || ""
+                                                textFormat: Text.PlainText
+                                                color: Colors.overSurface
+                                                font.family: Config.theme.font
+                                                font.pixelSize: 14
+                                                wrapMode: Text.Wrap
+                                                readOnly: !messageDelegate.isEditing
+                                                selectByMouse: true
+                                            }
+                                        }
+
+                                        ColumnLayout {
+                                            id: toolCard
+                                            visible: modelData.functionCall !== undefined
+                                            Layout.fillWidth: true
+                                            Layout.topMargin: 4
+                                            spacing: 4
+
+                                            // The command line that will actually run, resolved from
+                                            // the proposal by the tool catalog. Empty means it does
+                                            // not resolve to anything runnable, and then there is
+                                            // nothing to approve.
+                                            readonly property string resolvedCommand: modelData.functionCall ? Ai.describeToolCall(modelData.functionCall) : ""
+                                            readonly property bool runnable: resolvedCommand !== ""
+
+                                            Text {
+                                                text: modelData.functionCall ? modelData.functionCall.name : ""
+                                                color: Styling.srItem("overprimary")
+                                                font.family: Config.theme.font
+                                                font.weight: Font.Bold
+                                                font.pixelSize: Styling.fontSize(-2)
+                                            }
 
                                             StyledRect {
-                                                id: bubble
-                                                width: Math.min(Math.max(bubbleContent.implicitWidth + 32, 100), chatView.width * (isSystem ? 0.9 : 0.7))
-                                                height: bubbleContent.implicitHeight + 24
-
-                                                anchors.right: isUser ? parent.right : undefined
-                                                anchors.left: isUser ? undefined : parent.left
-
-                                                variant: isSystem ? "surface" : (isUser ? "primary" : "secondary")
+                                                Layout.fillWidth: true
+                                                visible: toolCard.runnable
+                                                implicitHeight: toolCommand.implicitHeight + 16
+                                                variant: "internalbg"
                                                 radius: Styling.radius(4)
-                                                border.width: isSystem || messageDelegate.isEditing ? 1 : 0
-                                                border.color: messageDelegate.isEditing ? Styling.srItem("overprimary") : Colors.surfaceDim
 
-                                                ColumnLayout {
-                                                    id: bubbleContent
-                                                    anchors.centerIn: parent
-                                                    width: parent.width - 32
-                                                    spacing: 8
+                                                TextEdit {
+                                                    id: toolCommand
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    text: toolCard.resolvedCommand
+                                                    font.family: "Monospace"
+                                                    font.pixelSize: 13
+                                                    color: Colors.overSurface
+                                                    readOnly: true
+                                                    selectByMouse: true
+                                                    wrapMode: Text.WrapAnywhere
+                                                }
+                                            }
 
-                                                    AssistantMarkdown {
-                                                        Layout.fillWidth: true
-                                                        visible: !messageDelegate.isEditing && !bubbleContentText.visible && !messageDelegate.isStreaming
-                                                        // Only built for what is on screen: an off-screen
-                                                        // or streaming message segments nothing.
-                                                        text: visible ? (modelData.content || "") : ""
-                                                        textColor: messageDelegate.bodyColor
-                                                        contentWidth: bubbleContent.width
+                                            Text {
+                                                visible: !toolCard.runnable
+                                                Layout.fillWidth: true
+                                                text: I18n.t("ai.tool_refused").replace("%1", modelData.functionCall ? modelData.functionCall.name : "")
+                                                color: Colors.error
+                                                font.family: Config.theme.font
+                                                font.pixelSize: Styling.fontSize(-2)
+                                                wrapMode: Text.Wrap
+                                            }
+
+                                            RowLayout {
+                                                visible: modelData.functionPending === true && toolCard.runnable
+                                                Layout.alignment: Qt.AlignRight
+                                                spacing: 8
+
+                                                Button {
+                                                    text: I18n.t("ai.reject")
+                                                    flat: true
+                                                    onClicked: Ai.rejectCommand(index)
+
+                                                    background: StyledRect {
+                                                        variant: "error"
+                                                        opacity: parent.hovered ? 0.8 : 0.5
+                                                        radius: Styling.radius(4)
                                                     }
 
-                                                    Text {
-                                                        id: streamingBody
-                                                        Layout.fillWidth: true
-                                                        visible: messageDelegate.isStreaming
-                                                        text: Ai.streamingText
-                                                        textFormat: Text.PlainText
-                                                        color: messageDelegate.bodyColor
+                                                    contentItem: Text {
+                                                        text: parent.text
+                                                        color: Colors.overError
                                                         font.family: Config.theme.font
-                                                        font.pixelSize: 14
-                                                        wrapMode: Text.Wrap
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+                                                }
+
+                                                Button {
+                                                    text: I18n.t("ai.approve")
+                                                    flat: true
+                                                    onClicked: Ai.approveCommand(index)
+
+                                                    background: StyledRect {
+                                                        variant: "primary"
+                                                        opacity: parent.hovered ? 1 : 0.8
+                                                        radius: Styling.radius(4)
                                                     }
 
-                                                    TextEdit {
-                                                        id: bubbleContentText
-                                                        Layout.fillWidth: true
-                                                        text: modelData.content || ""
-                                                        textFormat: Text.PlainText
-                                                        color: messageDelegate.bodyColor
+                                                    contentItem: Text {
+                                                        text: parent.text
+                                                        color: Colors.overPrimary
                                                         font.family: Config.theme.font
-                                                        font.pixelSize: 14
-                                                        wrapMode: Text.Wrap
-                                                        readOnly: !messageDelegate.isEditing
-                                                        selectByMouse: true
-                                                        visible: messageDelegate.isEditing
-                                                    }
-
-                                                    ColumnLayout {
-                                                        id: toolCard
-                                                        visible: modelData.functionCall !== undefined
-                                                        Layout.fillWidth: true
-                                                        spacing: 4
-
-                                                        // The command line that will actually run, resolved
-                                                        // from the proposal by the tool catalog. Empty means
-                                                        // the proposal does not resolve to anything runnable,
-                                                        // and then there is nothing to approve.
-                                                        readonly property string resolvedCommand: modelData.functionCall ? Ai.describeToolCall(modelData.functionCall) : ""
-                                                        readonly property bool runnable: resolvedCommand !== ""
-
-                                                        Separator {}
-
-                                                        Text {
-                                                            text: modelData.functionCall ? modelData.functionCall.name : ""
-                                                            color: Styling.srItem("overprimary")
-                                                            font.family: Config.theme.font
-                                                            font.weight: Font.Bold
-                                                            font.pixelSize: 12
-                                                        }
-
-                                                        StyledRect {
-                                                            Layout.fillWidth: true
-                                                            visible: toolCard.runnable
-                                                            variant: "surface"
-                                                            color: Colors.surface
-                                                            radius: Styling.radius(4)
-
-                                                            TextEdit {
-                                                                padding: 8
-                                                                width: parent.width
-                                                                text: toolCard.resolvedCommand
-                                                                font.family: "Monospace"
-                                                                color: Colors.overSurface
-                                                                readOnly: true
-                                                                wrapMode: Text.WrapAnywhere
-                                                            }
-                                                        }
-
-                                                        Text {
-                                                            visible: !toolCard.runnable
-                                                            Layout.fillWidth: true
-                                                            text: I18n.t("ai.tool_refused").replace("%1", modelData.functionCall ? modelData.functionCall.name : "")
-                                                            color: Colors.error
-                                                            font.family: Config.theme.font
-                                                            font.pixelSize: 12
-                                                            wrapMode: Text.Wrap
-                                                        }
-
-                                                        RowLayout {
-                                                            visible: modelData.functionPending === true && toolCard.runnable
-                                                            Layout.alignment: Qt.AlignRight
-                                                            spacing: 8
-
-                                                            Button {
-                                                                text: I18n.t("ai.reject")
-                                                                highlighted: true
-                                                                flat: true
-                                                                onClicked: Ai.rejectCommand(index)
-
-                                                                background: StyledRect {
-                                                                    variant: "error"
-                                                                    opacity: parent.hovered ? 0.8 : 0.5
-                                                                    radius: Styling.radius(4)
-                                                                }
-
-                                                                contentItem: Text {
-                                                                    text: parent.text
-                                                                    color: Colors.overError
-                                                                    font.family: Config.theme.font
-                                                                    horizontalAlignment: Text.AlignHCenter
-                                                                    verticalAlignment: Text.AlignVCenter
-                                                                }
-                                                            }
-
-                                                            Button {
-                                                                text: I18n.t("ai.approve")
-                                                                highlighted: true
-                                                                flat: true
-                                                                onClicked: Ai.approveCommand(index)
-
-                                                                background: StyledRect {
-                                                                    variant: "primary"
-                                                                    opacity: parent.hovered ? 1 : 0.8
-                                                                    radius: Styling.radius(4)
-                                                                }
-
-                                                                contentItem: Text {
-                                                                    text: parent.text
-                                                                    color: Colors.overPrimary
-                                                                    font.family: Config.theme.font
-                                                                    horizontalAlignment: Text.AlignHCenter
-                                                                    verticalAlignment: Text.AlignVCenter
-                                                                }
-                                                            }
-                                                        }
-
-                                                        Text {
-                                                            visible: modelData.functionApproved === true
-                                                            text: I18n.t("ai.command_approved")
-                                                            color: Colors.success
-                                                            font.pixelSize: 12
-                                                        }
-
-                                                        Text {
-                                                            visible: modelData.functionApproved === false && !modelData.functionPending
-                                                            text: I18n.t("ai.command_rejected")
-                                                            color: Colors.error
-                                                            font.pixelSize: 12
-                                                        }
+                                                        horizontalAlignment: Text.AlignHCenter
+                                                        verticalAlignment: Text.AlignVCenter
                                                     }
                                                 }
                                             }
 
                                             Text {
-                                                id: modelIndicator
-                                                visible: !isUser && !isSystem && (modelData.model ? true : false)
-                                                text: retryMode ? "Retry with another model " + Icons.caretRight : (modelData.model || "")
-                                                color: Colors.outline
-                                                font.family: Config.theme.font
+                                                visible: modelData.functionApproved === true
+                                                text: I18n.t("ai.command_approved")
+                                                color: Colors.success
                                                 font.pixelSize: Styling.fontSize(-2)
-                                                font.weight: Font.Medium
+                                            }
 
-                                                anchors.top: bubble.bottom
-                                                anchors.topMargin: 4
-                                                anchors.left: bubble.left
-                                                anchors.leftMargin: 4
-
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-
-                                                    onClicked: {
-                                                        if (retryMode) {
-                                                            mainChatArea.retryIndex = index;
-                                                            modelSelector.open();
-                                                            retryMode = false;
-                                                        } else {
-                                                            retryMode = true;
-                                                            retryTimer.start();
-                                                        }
-                                                    }
-                                                }
-
-                                                Timer {
-                                                    id: retryTimer
-                                                    interval: 5000
-                                                    onTriggered: retryMode = false
-                                                }
+                                            Text {
+                                                visible: modelData.functionApproved === false && !modelData.functionPending
+                                                text: I18n.t("ai.command_rejected")
+                                                color: Colors.error
+                                                font.pixelSize: Styling.fontSize(-2)
                                             }
                                         }
                                     }
@@ -1355,12 +1359,13 @@ FocusScope {
 
                             anchors.bottom: parent.bottom
                             property real centerMargin: (parent.height / 2) - (height / 2)
-                            anchors.bottomMargin: mainChatArea.isWelcome ? centerMargin : 20
+                            anchors.bottomMargin: mainChatArea.isWelcome ? centerMargin : 12
                             anchors.horizontalCenter: parent.horizontalCenter
 
-                            width: Math.min(600, parent.width - 40)
+                            width: parent.width - 24
 
                             Behavior on anchors.bottomMargin {
+                                enabled: Motion.enabled
                                 NumberAnimation {
                                     duration: Motion.normal
                                     easing.type: Easing.OutCubic
@@ -1371,8 +1376,26 @@ FocusScope {
                                 id: inputStyledRect
                                 anchors.fill: parent
                                 variant: "pane"
-                                radius: Styling.radius(4)
+                                // The composer is the one element in the panel that still carries
+                                // a surface, now that messages do not. Rounded far more than the
+                                // old 4px so it reads as an input rather than another card, and
+                                // outlined in the accent while it holds the keyboard.
+                                radius: Styling.radius(14)
                                 enableShadow: true
+                                border.width: 1
+                                // ClippingRectangle's border is a pen, not an item, so the
+                                // strength of the outline lives in the colour's alpha.
+                                border.color: {
+                                    const base = inputField.activeFocus ? Styling.srItem("overprimary") : Colors.outline;
+                                    return Qt.rgba(base.r, base.g, base.b, inputField.activeFocus ? 0.7 : 0.25);
+                                }
+
+                                Behavior on border.color {
+                                    enabled: Motion.enabled
+                                    ColorAnimation {
+                                        duration: Motion.fast
+                                    }
+                                }
 
                                 DropArea {
                                     anchors.fill: parent
