@@ -31,6 +31,13 @@ Item {
     property bool sidebarMerged: false
     property int sidebarWidth: 0
     property string sidebarPosition: "right"
+    // How far the panel has unfolded. The zone used to be all-or-nothing off
+    // `assistantVisible`, so tiled windows were shoved the full width in one
+    // frame while the panel itself was still 300 ms from being that wide.
+    // Follows the same progress the screen frame does.
+    property real sidebarExpansion: 1
+
+    readonly property int sidebarZone: Math.round(sidebarWidth * Math.max(0, Math.min(1, sidebarExpansion)))
 
     readonly property int sidebarMargin: 4
 
@@ -129,8 +136,8 @@ Item {
                 zone += barSize + barOuterMargin;
                 if (containBar && frameEnabled) zone += actualFrameSize;
             }
-            if (sidebarEnabled && sidebarPosition === "left" && sidebarReserveSpace) {
-                zone += sidebarWidth;
+            if (sidebarEnabled && sidebarPosition === "left" && sidebarReserveSpace && sidebarZone > 0) {
+                zone += sidebarZone;
                 zone += frameEnabled && sidebarMerged ? actualFrameSize : sidebarMargin;
             }
             if (dockEnabled && dockPosition === "left" && dockPinned) zone += dockHeight;
@@ -165,8 +172,8 @@ Item {
                 zone += barSize + barOuterMargin;
                 if (containBar && frameEnabled) zone += actualFrameSize;
             }
-            if (sidebarEnabled && sidebarPosition === "right" && sidebarReserveSpace) {
-                zone += sidebarWidth;
+            if (sidebarEnabled && sidebarPosition === "right" && sidebarReserveSpace && sidebarZone > 0) {
+                zone += sidebarZone;
                 zone += frameEnabled && sidebarMerged ? actualFrameSize : sidebarMargin;
             }
             if (dockEnabled && dockPosition === "right" && dockPinned) zone += dockHeight;

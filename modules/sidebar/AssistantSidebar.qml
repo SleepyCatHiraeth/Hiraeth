@@ -713,7 +713,11 @@ FocusScope {
                             id: historyPage
                             anchors.fill: parent
                             variant: "bg"
-                            visible: root.menuExpanded
+                            // Driven by opacity, not by menuExpanded directly: a
+                            // `visible` bound to the same flag switches off in the
+                            // frame the fade starts, so the fade-out never showed.
+                            visible: opacity > 0.01
+                            enabled: root.menuExpanded
                             opacity: root.menuExpanded ? 1 : 0
                             z: 10
 
@@ -2003,15 +2007,18 @@ FocusScope {
                                 onClicked: if (!Ai.isLoading) modelSelector.open()
                             }
 
-                            visible: mainChatArea.isWelcome
+                            // Same shape as the history page: the fade drives
+                            // visibility rather than the other way round.
+                            visible: opacity > 0.01
+                            opacity: mainChatArea.isWelcome ? 1 : 0
 
                             Behavior on opacity {
+                                enabled: Config.animDuration > 0
                                 NumberAnimation {
-                                    duration: 200
+                                    duration: Config.animDuration
+                                    easing.type: Easing.OutQuart
                                 }
                             }
-
-                            opacity: visible ? 1 : 0
                         }
                     }
                 }

@@ -99,6 +99,10 @@ PanelWindow {
     readonly property int dockHeight: dockContent.dockSize + dockContent.totalMargin
 
     readonly property alias assistantWidth: assistantSidebar.effectiveWidth
+    // How far the panel has actually unfolded, 0 at the resting notch and 1
+    // fully open. The screen frame already follows this; the compositor
+    // reservation used to ignore it.
+    readonly property alias assistantExpansion: assistantSidebar.expansionProgress
     readonly property alias notchHoverActive: notchContent.hoverActive
     readonly property alias notchOpen: notchContent.screenNotchOpen
     readonly property alias notchReveal: notchContent.reveal

@@ -116,10 +116,15 @@ ShellRoot {
                 frameThickness: (Config.bar && Config.bar.frameThickness !== undefined ? Config.bar.frameThickness : 6)
 
                 // Sidebar status for reservations
-                sidebarEnabled: GlobalStates.assistantVisible && screenShellContainer.modelData.name === GlobalStates.assistantScreenName
+                // Stays true through the retraction as well, so closing gives
+                // the space back as the panel narrows instead of all at once
+                // while it is still most of the way open.
+                sidebarEnabled: screenShellContainer.modelData.name === GlobalStates.assistantScreenName
+                    && (GlobalStates.assistantVisible || unifiedPanel.assistantExpansion > 0)
                 sidebarReserveSpace: Config.ai.sidebarReserveSpace ?? true
                 sidebarMerged: GlobalStates.assistantMergedIntoFrame
                 sidebarWidth: unifiedPanel.assistantWidth
+                sidebarExpansion: unifiedPanel.assistantExpansion
                 sidebarPosition: GlobalStates.assistantPosition
             }
         }
