@@ -4,6 +4,7 @@
   "ai.approve": "Одобрить",
   "ai.ask_or_help": "Спросите AI или введите /help...",
   "ai.chat_history": "История чата",
+  "ai.chat_store_failed": "Хранилище чатов недоступно: %1",
   "ai.cmd_no_output": "Команда выполнена успешно (вывод отсутствует).",
   "ai.cmd_set_api_key": "Установить API ключ",
   "ai.cmd_set_system_prompt": "Установить системный промпт",

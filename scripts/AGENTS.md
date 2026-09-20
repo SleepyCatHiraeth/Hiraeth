@@ -1,7 +1,7 @@
 # SCRIPTS KNOWLEDGE BASE
 
 ## OVERVIEW
-Remaining Bash utilities. All Python and most Bash logic has moved into the Go backend (`backend/`): services (`systemmonitor`, `sleep`, `weather`, `clipboard`, `network`, `brightness`, `config`, `keystore`, `linkpreview`, `screenshot`, `recorder`) and CLI subcommands (`colorpicker`, `ocr`, `qr`, `lockwall`, `thumbs`, `dthumbs`, `chatlist`, `writeshader`). The scripts below are thin external-tool wrappers kept for compositor/tooling edge cases.
+Remaining Bash utilities. All Python and most Bash logic has moved into the Go backend (`backend/`): services (`systemmonitor`, `sleep`, `weather`, `clipboard`, `network`, `brightness`, `config`, `keystore`, `linkpreview`, `screenshot`, `recorder`) and CLI subcommands (`colorpicker`, `ocr`, `qr`, `lockwall`, `thumbs`, `dthumbs`, `writeshader`). The scripts below are thin external-tool wrappers kept for compositor/tooling edge cases.
 
 ## WHERE TO LOOK
 | Script | Language | Called By | Role |

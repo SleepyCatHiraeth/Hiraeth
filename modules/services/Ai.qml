@@ -16,7 +16,6 @@ Singleton {
     // PROPERTIES
     // ============================================
 
-    property string chatDir: Quickshell.env("HOME") + "/.local/share/ambxst/chats"
     property string tmpDir: "/tmp/ambxst-ai"
 
     property list<AiModel> models: []
@@ -277,13 +276,11 @@ Singleton {
     property var currentChat: []
     property string currentChatId: ""
 
-    // Chat History List (files)
+    // History list as the daemon reports it: {id, title, updatedAt, count}.
     property var chatHistory: []
-
-    FileView {
-        id: chatFileView
-        printErrors: false
-    }
+    // Set when the chat store itself is unavailable, so the history list can
+    // say so instead of looking empty.
+    property string historyError: ""
 
     FileView {
         id: bodyFileView
@@ -451,9 +448,13 @@ Singleton {
         if (id === currentChatId)
             createNewChat();
 
-        let filename = chatDir + "/" + id + ".json";
-        deleteChatProcess.command = ["rm", filename];
-        deleteChatProcess.running = true;
+        BackendService.call("chats.delete", {
+            id: id
+        }, (result, error) => {
+            if (error)
+                root.pushSystemMessage(I18n.t("ai.chat_store_failed").replace("%1", String(error)));
+            root.reloadHistory();
+        });
         return true;
     }
 
@@ -1274,103 +1275,50 @@ Singleton {
         if (turretActive)
             return;
 
-        let filename = chatDir + "/" + currentChatId + ".json";
-        let data = JSON.stringify(currentChat, null, 2);
-
-        saveChatProcess.filePath = filename;
-        saveChatProcess.data = data;
-        saveChatProcess.command = ["/usr/bin/mkdir", "-p", chatDir];
-        saveChatProcess.running = true;
+        BackendService.call("chats.save", {
+            id: currentChatId,
+            messages: currentChat
+        }, (result, error) => {
+            if (error) {
+                root.pushSystemMessage(I18n.t("ai.chat_store_failed").replace("%1", String(error)));
+                return;
+            }
+            root.reloadHistory();
+        });
     }
 
     function reloadHistory() {
-        listHistoryProcess.command = ["ambxst", "chatlist", chatDir];
-        listHistoryProcess.running = true;
+        BackendService.call("chats.list", {}, (result, error) => {
+            if (error) {
+                root.historyError = String(error);
+                return;
+            }
+            root.historyError = "";
+            root.chatHistory = Array.isArray(result) ? result : [];
+            root.historyModelChanged();
+        });
     }
 
     function loadChat(id) {
         if (isLoading)
             return false;
 
-        let filename = chatDir + "/" + id + ".json";
-        loadChatProcess.targetId = id;
-        loadChatProcess.command = ["cat", filename];
-        loadChatProcess.running = true;
-        return true;
-    }
-
-    Process {
-        id: saveChatProcess
-        property string filePath: ""
-        property string data: ""
-        onExited: exitCode => {
-            if (exitCode === 0) {
-                if (filePath.length > 0)
-                    chatFileView.path = filePath;
-                if (data.length > 0)
-                    chatFileView.setText(data);
-                reloadHistory();
-            } else {
-                console.warn("Failed to create chat directory");
-            }
-        }
-    }
-
-    Process {
-        id: deleteChatProcess
-        onExited: reloadHistory()
-    }
-
-    Process {
-        id: listHistoryProcess
-        stdout: StdioCollector {
-            id: listHistoryStdout
-        }
-        onExited: exitCode => {
-            if (exitCode === 0) {
-                let lines = listHistoryStdout.text.trim().split("\n");
-                let history = [];
-                for (let i = 0; i < lines.length; i++) {
-                    let line = lines[i];
-                    if (line === "")
-                        continue;
-                    let parts = line.split("|");
-                    if (parts.length >= 2) {
-                        history.push({
-                            id: parts[0],
-                            title: parts.slice(1).join("|"),
-                            path: chatDir + "/" + parts[0] + ".json"
-                        });
-                    }
-                }
-                root.chatHistory = history;
-                root.historyModelChanged();
-            }
-        }
-    }
-
-    Process {
-        id: loadChatProcess
-        property string targetId: ""
-        stdout: StdioCollector {
-            id: loadChatStdout
-        }
-        onExited: exitCode => {
-            // A request may have started while `cat` was running; swapping the
-            // conversation under it now would strand its stream.
+        BackendService.call("chats.load", {
+            id: id
+        }, (result, error) => {
+            // A request may have started while the load was in flight; swapping
+            // the conversation under it now would strand its stream.
             if (root.isLoading)
                 return;
-
-            if (exitCode === 0) {
-                try {
-                    root.currentChat = JSON.parse(loadChatStdout.text);
-                    root.currentChatId = targetId;
-                    root.chatModelChanged();
-                } catch (e) {
-                    console.log("Error loading chat: " + e);
-                }
+            if (error || !result || !Array.isArray(result.messages)) {
+                root.pushSystemMessage(I18n.t("ai.chat_store_failed").replace("%1", String(error || "unreadable")));
+                return;
             }
-        }
+            root.currentChat = result.messages;
+            root.currentChatId = result.id;
+            root.chatModelChanged();
+        });
+        return true;
     }
 
     // ============================================

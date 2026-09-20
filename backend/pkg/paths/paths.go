@@ -112,6 +112,25 @@ func (p *Paths) ClipboardKeyFile() string {
 	return filepath.Join(p.StateDir, "clipboard.key")
 }
 
+// ChatsDB is the encrypted store holding AI sidebar conversations. They were
+// plaintext JSON under ChatsLegacyDir until the daemon took them over; a
+// conversation with an assistant is at least as sensitive as the clipboard,
+// which this codebase already encrypts at rest.
+func (p *Paths) ChatsDB() string {
+	return filepath.Join(p.DataDir, "chats.db")
+}
+
+func (p *Paths) ChatsKeyFile() string {
+	return filepath.Join(p.StateDir, "chats.key")
+}
+
+// ChatsLegacyDir holds the plaintext per-conversation JSON files written
+// before ChatsDB existed. Kept only so the daemon can import them and remove
+// the plaintext.
+func (p *Paths) ChatsLegacyDir() string {
+	return filepath.Join(p.DataDir, "chats")
+}
+
 // ClipboardImageCacheDir is a tmpfs cache where image blobs are
 // materialized for drag-and-drop / external open.
 func (p *Paths) ClipboardImageCacheDir() string {

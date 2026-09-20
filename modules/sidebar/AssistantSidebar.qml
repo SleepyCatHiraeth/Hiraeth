@@ -736,8 +736,19 @@ FocusScope {
                                     font.weight: Font.Bold
                                 }
 
+                                Text {
+                                    visible: Ai.historyError !== ""
+                                    Layout.fillWidth: true
+                                    text: I18n.t("ai.chat_store_failed").replace("%1", Ai.historyError)
+                                    color: Colors.error
+                                    font.family: Config.theme.font
+                                    font.pixelSize: 12
+                                    wrapMode: Text.Wrap
+                                }
+
                                 ListView {
                                     id: historyList
+                                    visible: Ai.historyError === ""
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
                                     clip: true
@@ -772,8 +783,14 @@ FocusScope {
 
                                                 Text {
                                                     text: {
-                                                        let date = new Date(parseInt(modelData.id));
-                                                        return date.toLocaleString(Qt.locale(), "MMM dd, hh:mm a");
+                                                        // The store reports when the conversation was
+                                                        // last written. Chat ids happen to be creation
+                                                        // timestamps, which is the fallback, but an
+                                                        // imported one is only as good as its old file.
+                                                        const stamp = modelData.updatedAt || parseInt(modelData.id);
+                                                        if (!stamp)
+                                                            return "";
+                                                        return new Date(stamp).toLocaleString(Qt.locale(), "MMM dd, hh:mm a");
                                                     }
                                                     color: Ai.currentChatId === modelData.id ? Styling.srItem("primary") : Colors.outline
                                                     font.family: Config.theme.font

@@ -19,6 +19,7 @@ import (
 	"ambxst/backend/pkg/svc"
 	assistantsvc "ambxst/backend/pkg/svc/assistant"
 	"ambxst/backend/pkg/svc/caffeine"
+	"ambxst/backend/pkg/svc/chats"
 	"ambxst/backend/pkg/svc/clipboard"
 	"ambxst/backend/pkg/svc/compositor"
 	configsvc "ambxst/backend/pkg/svc/config"
@@ -61,6 +62,7 @@ type Daemon struct {
 	recorder    *recordersvc.Service
 	screenshot  *screenshot.Service
 	assistant   *assistantsvc.Service
+	chats       *chats.Service
 	sessionLock *sessionlock.Service
 	mods        *mods.Manager
 
@@ -197,6 +199,13 @@ func New() (*Daemon, error) {
 
 	keySvc := keystore.NewService(d.paths)
 	keySvc.Register(d.srv)
+
+	// chats — AI sidebar conversations, encrypted at rest. They were plaintext
+	// JSON the shell wrote itself; the daemon owns them now, the same way it
+	// owns the clipboard.
+	chatsSvc := chats.NewService(d.paths)
+	chatsSvc.Register(d.srv)
+	d.chats = chatsSvc
 
 	linkSvc := linkpreview.NewService()
 	linkSvc.Register(d.srv)
@@ -478,6 +487,9 @@ func (d *Daemon) shutdown() {
 	// after the shell that started it had gone.
 	if d.assistant != nil {
 		d.assistant.Close()
+	}
+	if d.chats != nil {
+		d.chats.Close()
 	}
 
 	// Defensive sweep: any child that escaped the process group cleanup

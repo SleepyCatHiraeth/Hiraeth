@@ -101,8 +101,6 @@ func main() {
 		os.Exit(runThumbs(args[1:], 64, false))
 	case "ipc":
 		os.Exit(runIpc(args[1:]))
-	case "chatlist":
-		os.Exit(runChatList(args[1:]))
 	case "wallpaper":
 		os.Exit(runWallpaper(args[1:]))
 	case "preset":

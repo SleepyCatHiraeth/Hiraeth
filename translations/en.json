@@ -4,6 +4,7 @@
   "ai.approve": "Approve",
   "ai.ask_or_help": "Ask AI or type /help...",
   "ai.chat_history": "Chat History",
+  "ai.chat_store_failed": "Chat storage is unavailable: %1",
   "ai.cmd_no_output": "Command executed successfully (no output).",
   "ai.cmd_set_api_key": "Set API key",
   "ai.cmd_set_system_prompt": "Set system prompt",
