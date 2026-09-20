@@ -983,6 +983,7 @@ FocusScope {
                                     // is parsed once, when it is finished.
                                     readonly property bool isStreaming: index === Ai.streamingIndex
                                     readonly property string bodyText: isStreaming ? Ai.streamingText : (modelData.content || "")
+                                    readonly property color bodyColor: isSystem ? Colors.outline : (isUser ? Styling.srItem("primary") : Styling.srItem("secondary"))
 
                                     width: ListView.view.width
                                     height: bubbleArea.height + 8
@@ -1177,78 +1178,14 @@ FocusScope {
                                                     width: parent.width - 32
                                                     spacing: 8
 
-                                                    ColumnLayout {
+                                                    AssistantMarkdown {
                                                         Layout.fillWidth: true
                                                         visible: !messageDelegate.isEditing && !bubbleContentText.visible && !messageDelegate.isStreaming
-                                                        spacing: 8
-
-                                                        Repeater {
-                                                            model: {
-                                                                if (messageDelegate.isStreaming)
-                                                                    return [];
-                                                                let txt = modelData.content || "";
-                                                                let parts = [];
-                                                                let regex = /```(\w*)\n([\s\S]*?)```/g;
-                                                                let lastIndex = 0;
-                                                                let match;
-                                                                while ((match = regex.exec(txt)) !== null) {
-                                                                    if (match.index > lastIndex) {
-                                                                        parts.push({
-                                                                            type: "text",
-                                                                            content: txt.substring(lastIndex, match.index),
-                                                                            language: ""
-                                                                        });
-                                                                    }
-                                                                    parts.push({
-                                                                        type: "code",
-                                                                        content: match[2].trim(),
-                                                                        language: match[1] || "text"
-                                                                    });
-                                                                    lastIndex = regex.lastIndex;
-                                                                }
-                                                                if (lastIndex < txt.length) {
-                                                                    parts.push({
-                                                                        type: "text",
-                                                                        content: txt.substring(lastIndex),
-                                                                        language: ""
-                                                                    });
-                                                                }
-                                                                return parts;
-                                                            }
-
-                                                            delegate: Loader {
-                                                                Layout.fillWidth: true
-                                                                sourceComponent: modelData.type === 'code' ? codeComponent : textComponent
-
-                                                                property var segment: modelData
-
-                                                                Component {
-                                                                    id: textComponent
-                                                                    TextEdit {
-                                                                        width: bubbleContent.width
-                                                                        text: segment.content
-                                                                        textFormat: Text.MarkdownText
-                                                                        color: isSystem ? Colors.outline : (isUser ? Styling.srItem("primary") : Styling.srItem("secondary"))
-                                                                        font.family: Config.theme.font
-                                                                        font.pixelSize: 14
-                                                                        wrapMode: Text.Wrap
-                                                                        readOnly: true
-                                                                        selectByMouse: true
-
-                                                                        onLinkActivated: link => Qt.openUrlExternally(link)
-                                                                    }
-                                                                }
-
-                                                                Component {
-                                                                    id: codeComponent
-                                                                    CodeBlock {
-                                                                        width: bubbleContent.width
-                                                                        code: segment.content
-                                                                        language: segment.language
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
+                                                        // Only built for what is on screen: an off-screen
+                                                        // or streaming message segments nothing.
+                                                        text: visible ? (modelData.content || "") : ""
+                                                        textColor: messageDelegate.bodyColor
+                                                        contentWidth: bubbleContent.width
                                                     }
 
                                                     Text {
@@ -1257,7 +1194,7 @@ FocusScope {
                                                         visible: messageDelegate.isStreaming
                                                         text: Ai.streamingText
                                                         textFormat: Text.PlainText
-                                                        color: Styling.srItem("secondary")
+                                                        color: messageDelegate.bodyColor
                                                         font.family: Config.theme.font
                                                         font.pixelSize: 14
                                                         wrapMode: Text.Wrap
@@ -1268,7 +1205,7 @@ FocusScope {
                                                         Layout.fillWidth: true
                                                         text: modelData.content || ""
                                                         textFormat: Text.PlainText
-                                                        color: isSystem ? Colors.outline : (isUser ? Styling.srItem("primary") : Styling.srItem("secondary"))
+                                                        color: messageDelegate.bodyColor
                                                         font.family: Config.theme.font
                                                         font.pixelSize: 14
                                                         wrapMode: Text.Wrap
