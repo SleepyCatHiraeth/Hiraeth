@@ -127,6 +127,38 @@ const args = vm.runInNewContext(clipboardCommand, {mimeType});
 const result = spawnSync(args[0], ['-c', 'wl-paste() { printf "%s" "$2"; }; ' + args[2], ...args.slice(3)], {encoding: 'utf8'});
 assert.equal(result.status, 0, result.stderr);
 assert.equal(Buffer.from(result.stdout.trim(), 'base64').toString(), mimeType);
+// The attachment read is bounded and takes its filename as a positional
+// argument, so a file named with shell metacharacters is read, not run.
+const attachmentCommand = sidebarSource.match(/command: (\["\/usr\/bin\/bash", "-c",[\s\S]*?\])/)[1];
+const hostileName = '/tmp/$(printf pwned) "; id; #.png';
+const attachArgs = vm.runInNewContext(attachmentCommand, {
+    mainChatArea: {maxAttachmentBytes: 8 * 1024 * 1024},
+    filePath: hostileName,
+    String
+});
+assert.ok(attachArgs.includes(hostileName), 'the path is passed as its own argument');
+assert.ok(/head -c "\$1"/.test(attachArgs[2]), 'the read is bounded by head');
+assert.equal(attachArgs[4], '8388611', 'the bound is three bytes past the limit: base64 works in three-byte groups, so one byte over encodes to the same length');
+{
+    const limit = 8 * 1024 * 1024;
+    const encoded = n => Math.ceil(n / 3) * 4;
+    assert.ok(encoded(Number(attachArgs[4])) > encoded(limit), 'a file over the limit encodes longer than one at it');
+}
+
+{
+    const probe = '/tmp/ambxst-attach-probe $(printf pwned).png';
+    fs.writeFileSync(probe, 'hello');
+    const probeArgs = vm.runInNewContext(attachmentCommand, {
+        mainChatArea: {maxAttachmentBytes: 8 * 1024 * 1024},
+        filePath: probe,
+        String
+    });
+    const run = spawnSync(probeArgs[0], probeArgs.slice(1), {encoding: 'utf8'});
+    fs.unlinkSync(probe);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(Buffer.from(run.stdout.trim(), 'base64').toString(), 'hello');
+}
+
 assert.ok(!sidebarSource.includes('Qt.createQmlObject'));
 assert.ok(!read('modules/sidebar/CodeBlock.qml').includes('Qt.createQmlObject'));
 console.log('SideNotch: freshness, validation, refresh exclusion, monitor recovery, capacity, attachment queue and clipboard safety pass.');

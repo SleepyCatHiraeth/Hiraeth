@@ -528,6 +528,17 @@ FocusScope {
                         property var attachmentQueue: []
                         readonly property var supportedImageTypes: ["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"]
 
+                        // An image is read whole, base64-encoded, copied into the
+                        // conversation, written to the store and encoded again into
+                        // the request body — so one file exists several times over.
+                        // Nothing bounded any of that, and a provider would reject a
+                        // huge one anyway, after it had been paid for in memory.
+                        readonly property int maxAttachmentBytes: 8 * 1024 * 1024
+                        readonly property int maxAttachments: 8
+
+                        // Base64 is 4 bytes per 3, so this is the encoded ceiling.
+                        readonly property int maxEncodedLength: Math.ceil(maxAttachmentBytes / 3) * 4
+
                         function startNextAttachment() {
                             if (attachmentReadProcess.running || attachmentQueue.length === 0)
                                 return;
@@ -549,6 +560,14 @@ FocusScope {
                         }
 
                         function addAttachment(mimeType, base64Data, fileName) {
+                            if (pendingAttachments.length >= maxAttachments) {
+                                Ai.pushSystemMessage(I18n.t("ai.too_many_attachments").replace("%1", maxAttachments));
+                                return;
+                            }
+                            if (base64Data.length > maxEncodedLength) {
+                                Ai.pushSystemMessage(I18n.t("ai.attachment_too_large").replace("%1", fileName).replace("%2", Math.round(maxAttachmentBytes / 1048576)));
+                                return;
+                            }
                             let list = pendingAttachments.slice();
                             list.push({
                                 type: "image",
@@ -589,7 +608,11 @@ FocusScope {
                                 return;
                             let mimeType = fileMimeForPath(filePath);
                             if (!mimeType) {
-                                Ai.pushSystemMessage("Only image files are supported for attachments.");
+                                Ai.pushSystemMessage(I18n.t("ai.attachment_unsupported"));
+                                return;
+                            }
+                            if (pendingAttachments.length + attachmentQueue.length >= maxAttachments) {
+                                Ai.pushSystemMessage(I18n.t("ai.too_many_attachments").replace("%1", maxAttachments));
                                 return;
                             }
                             attachmentQueue = attachmentQueue.concat([{
@@ -779,7 +802,17 @@ FocusScope {
                             property string mimeType: ""
                             property string fileName: ""
                             property string chatId: ""
-                            command: ["/usr/bin/base64", "-w", "0", "--", filePath]
+                            // head bounds the read: a check on the file's size is a
+                            // promise about a moment, and the file is still the
+                            // user's to change afterwards.
+                            command: ["/usr/bin/bash", "-c",
+                                'head -c "$1" -- "$2" | /usr/bin/base64 -w 0',
+                                // Three bytes past the limit, not one: base64 encodes
+                                // in three-byte groups, so a file one byte over
+                                // encodes to exactly the same length as one exactly
+                                // at the limit and the check below could not tell
+                                // them apart.
+                                "ambxst-attachment", String(mainChatArea.maxAttachmentBytes + 3), filePath]
                             stdout: StdioCollector { id: attachmentReadStdout }
                             stderr: StdioCollector { id: attachmentReadStderr }
                             onExited: exitCode => {
@@ -788,7 +821,7 @@ FocusScope {
                                     if (exitCode === 0 && data.length > 0)
                                         mainChatArea.addAttachment(mimeType, data, fileName);
                                     else
-                                        Ai.pushSystemMessage("Failed to read attachment: " + fileName);
+                                        Ai.pushSystemMessage(I18n.t("ai.attachment_read_failed").replace("%1", fileName));
                                 }
                                 Qt.callLater(mainChatArea.startNextAttachment);
                             }
