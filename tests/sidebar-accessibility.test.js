@@ -58,4 +58,42 @@ assert(/KeyNavigation\.backtab: chatView/.test(sidebar), "shift-tab from the com
 assert(/onCurrentIndexChanged: if \(currentIndex >= 0\) followTail = false/.test(view),
     "selecting a message stops the view chasing the reply still arriving");
 
+// ---------------------------------------------------------------------------
+// Getting the keyboard back
+// ---------------------------------------------------------------------------
+//
+// Reported from use: type, click a message, click the composer -- and typing
+// was dead until the panel was closed and reopened. The sidebar's root
+// MouseArea sets `wantsFocus` on press but sits below everything, so a press
+// the text field consumes never reaches it; the surface was left on
+// keyboardFocus None while the field held Qt focus no keystroke could reach.
+
+console.log("\nregaining focus:");
+
+const input = sidebar.slice(sidebar.indexOf("id: inputField"), sidebar.indexOf("onTextChanged"));
+assert(/onActiveFocusChanged/.test(input), "the composer reacts to taking focus");
+assert(/root\.wantsFocus = true/.test(input), "and asserts the panel wants the keyboard");
+assert(/root\.restoreInputFocus\(\)/.test(input),
+    "and re-asserts the Wayland surface, which Quickshell only re-pushes when the binding changes");
+
+// The pill is wider than its field; clicking the padding used to do nothing.
+const composer = sidebar.slice(sidebar.indexOf("id: inputStyledRect"), sidebar.indexOf("DropArea"));
+assert(/MouseArea/.test(composer) && /inputField\.forceActiveFocus\(\)/.test(composer),
+    "the whole composer surface is a click target for its field");
+
+// ---------------------------------------------------------------------------
+// The list must not move under the pointer
+// ---------------------------------------------------------------------------
+//
+// Also reported: messages twitched up and down on hover. The action row is
+// 24px and the role label about 11, so revealing it grew the delegate the
+// cursor was over and shifted everything below it.
+
+console.log("\nstable rows:");
+
+assert(/Layout\.preferredHeight: 24/.test(sidebar), "the role line reserves the action row's height");
+assert(!/opacity: bubbleArea\.containsMouse[\s\S]{0,300}visible: opacity > 0\.01/.test(sidebar),
+    "the action row is never taken out of the layout to hide it");
+assert(/enabled: opacity > 0\.01/.test(sidebar), "a fully transparent action is not a click target");
+
 console.log("\nSidebar accessibility: all checks passed");

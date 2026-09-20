@@ -1001,6 +1001,12 @@ FocusScope {
                                         // Who is speaking, and — for a reply — what answered.
                                         RowLayout {
                                             Layout.fillWidth: true
+                                            // Tall enough for the actions whether or not they are
+                                            // showing. Letting this row size to its contents made
+                                            // the whole list shift as the pointer crossed a
+                                            // message, because revealing a 24px button grew the
+                                            // delegate under the cursor.
+                                            Layout.preferredHeight: 24
                                             spacing: 6
                                             visible: !messageDelegate.isSystem
 
@@ -1072,7 +1078,11 @@ FocusScope {
                                                 opacity: bubbleArea.containsMouse
                                                     || messageDelegate.isEditing
                                                     || messageDelegate.ListView.isCurrentItem ? 1 : 0
-                                                visible: opacity > 0.01
+                                                // Always laid out, never `visible: false`: taking
+                                                // it out of the layout is what made the row change
+                                                // height under the pointer. Disabled instead, so a
+                                                // fully transparent button is not a click target.
+                                                enabled: opacity > 0.01
 
                                                 Behavior on opacity {
                                                     enabled: Motion.enabled
@@ -1392,6 +1402,18 @@ FocusScope {
                                     }
                                 }
 
+                                // The pill is wider than its text field, so most of it was dead
+                                // to the pointer: clicking the padding did nothing at all. Sits
+                                // below the field, so it only ever catches what the field missed.
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onPressed: mouse => {
+                                        root.wantsFocus = true;
+                                        inputField.forceActiveFocus();
+                                        mouse.accepted = false;
+                                    }
+                                }
+
                                 DropArea {
                                     anchors.fill: parent
                                     onDropped: drop => {
@@ -1592,6 +1614,18 @@ FocusScope {
                                             focus: true
                                             activeFocusOnTab: true
                                             KeyNavigation.backtab: chatView
+
+                                            // Taking Qt focus is not enough: the compositor may
+                                            // still be sending keys elsewhere, and Quickshell only
+                                            // re-pushes keyboardFocus when the binding's value
+                                            // changes. Assert both, from the one place that always
+                                            // runs when the user aims at the composer.
+                                            onActiveFocusChanged: {
+                                                if (!activeFocus)
+                                                    return;
+                                                root.wantsFocus = true;
+                                                root.restoreInputFocus();
+                                            }
                                             placeholderText: Ai.isLoading ? "AI is responding…" : mainChatArea.isWelcome ? I18n.t("ai.ask_or_help") : I18n.t("ai.message")
                                             placeholderTextColor: Colors.outline
                                             font.pixelSize: 14
