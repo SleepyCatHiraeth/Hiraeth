@@ -5,7 +5,6 @@ import qs.modules.globals
 import Quickshell.Io
 
 import qs.modules.services
-import qs.config
 
 ActionGrid {
     id: root
@@ -91,7 +90,7 @@ ActionGrid {
     Timer {
         id: screenshotActivationTimer
         property string pendingMode: ""
-        interval: Config.animDuration > 0 ? Config.animDuration + 150 : 150
+        interval: Motion.reduced ? 150 : Motion.normal + 150
         onTriggered: {
             if (pendingMode !== "") {
                 Screenshot.captureMode = pendingMode;
