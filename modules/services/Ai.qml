@@ -127,17 +127,12 @@ Singleton {
         enabled: root.turretActive
 
         function onResponseChanged() {
-            const owner = root.activeRequest;
-            if (!owner)
+            if (!root.activeRequest)
                 return;
-            const target = root.streamTargetIndex(owner, root.currentChatId, root.currentChat);
-            if (target < 0)
-                return;
-            let chat = Array.from(root.currentChat);
-            chat[target] = Object.assign({}, chat[target], {
-                content: TurretService.response
-            });
-            root.currentChat = chat;
+            // The daemon broadcasts the whole reply so far, not a delta, so
+            // this replaces the buffer rather than appending to it. The flush
+            // timer publishes it exactly as it does a cloud stream.
+            root.responseBuffer = TurretService.response;
         }
 
         // The turn ends when the backend leaves its busy states. `busy` is
@@ -159,14 +154,20 @@ Singleton {
             const target = root.streamTargetIndex(owner, root.currentChatId, root.currentChat);
             root.activeRequest = null;
             root.isLoading = false;
+
+            const streamed = root.endStream();
             // An empty reply is a failed turn, not an answer. Leaving the
             // blank bubble in place would look like the assistant chose to
             // say nothing.
-            if (target >= 0 && !root.currentChat[target].content) {
+            if (target < 0)
+                return;
+            if (streamed === "") {
                 let chat = Array.from(root.currentChat);
                 chat.splice(target, 1);
                 root.currentChat = chat;
+                return;
             }
+            root.commitStream(target, streamed);
         }
     }
 
@@ -202,6 +203,7 @@ Singleton {
             root.requestSeq += 1;
             root.activeRequest = root.requestOwner(root.requestSeq, root.currentChatId, chat.length - 1, null, root.currentModel);
             root.isLoading = true;
+            root.beginStream(chat.length - 1);
         }
     }
 
@@ -267,6 +269,68 @@ Singleton {
     // normalized. Parsed only once the stream has finished: the arguments are
     // JSON split across deltas, so there is nothing valid to read until then.
     property var toolCallParts: ({})
+
+    // The message currently being streamed into, and its text.
+    //
+    // The stream used to write through the conversation: every SSE line copied
+    // the whole `currentChat` array, replaced one message's content and
+    // reassigned the property the ListView uses as its model. One token
+    // therefore cost an array copy proportional to the conversation, a model
+    // swap, and -- because the delegate re-ran a fenced-code regex over the
+    // full message text and re-parsed it as Markdown on every content change --
+    // a re-segmentation and re-layout of the whole reply.
+    //
+    // Now the conversation is not touched at all until the stream ends. The
+    // delegate at `streamingIndex` binds to `streamingText` instead of to its
+    // own model data, so a chunk moves one string and re-lays out one Text.
+    property int streamingIndex: -1
+    property string streamingText: ""
+
+    // Chunks land in `responseBuffer` as they arrive and are published to
+    // `streamingText` on a fixed cadence. A local model on this machine emits
+    // far faster than a frame, and without this every one of those emissions
+    // would be a separate relayout of the same paragraph.
+    property Timer streamFlushTimer: Timer {
+        interval: 33
+        repeat: true
+        onTriggered: {
+            if (root.streamingText !== root.responseBuffer)
+                root.streamingText = root.responseBuffer;
+        }
+    }
+
+    // Opens the streaming window on `index`. Everything written between here
+    // and endStream() lives in `responseBuffer`, not in the conversation.
+    function beginStream(index) {
+        responseBuffer = "";
+        streamingText = "";
+        streamingIndex = index;
+        streamFlushTimer.restart();
+    }
+
+    // Closes the window and returns the text that was streamed. The caller
+    // decides what to do with it; this only stops the machinery.
+    function endStream() {
+        streamFlushTimer.stop();
+        streamingIndex = -1;
+        const text = responseBuffer;
+        responseBuffer = "";
+        streamingText = "";
+        return text;
+    }
+
+    // Writes the streamed text into the conversation once, at the end. Returns
+    // true when there was something to write.
+    function commitStream(target, text) {
+        if (target < 0 || target >= currentChat.length)
+            return false;
+        let chat = Array.from(currentChat);
+        chat[target] = Object.assign({}, chat[target], {
+            content: text
+        });
+        currentChat = chat;
+        return text !== "";
+    }
     // Set while a stop the user asked for is being carried out. Killing curl
     // produces a non-zero exit like any other failure, and without this the
     // exit handler would report the user's own stop as a request failure.
@@ -375,9 +439,13 @@ Singleton {
     function failRequest(seq, message) {
         if (!isRequestCurrent(activeRequest, seq))
             return false;
+        const target = streamTargetIndex(activeRequest, currentChatId, currentChat);
         activeRequest = null;
         isLoading = false;
         lastError = message;
+        // Whatever had already streamed belongs in the conversation, not
+        // stranded in a buffer the delegate has stopped reading.
+        commitStream(target, endStream());
         return true;
     }
 
@@ -758,17 +826,19 @@ Singleton {
 
         activeRequest = null;
         isLoading = false;
-        finishCancelled(target);
+        finishCancelled(target, endStream());
         return true;
     }
 
-    // Shared by both cancel paths: trims an empty placeholder, marks a partial
-    // one, and says so in the conversation.
-    function finishCancelled(target) {
+    // Shared by both cancel paths: keeps what had streamed, trims an empty
+    // placeholder, and says so in the conversation.
+    function finishCancelled(target, streamed) {
         let chat = Array.from(currentChat);
         if (target >= 0 && target < chat.length) {
-            if (chat[target].content) {
+            const partial = streamed || chat[target].content;
+            if (partial) {
                 chat[target] = Object.assign({}, chat[target], {
+                    content: partial,
                     interrupted: true
                 });
             } else {
@@ -858,8 +928,8 @@ Singleton {
             requestSeq += 1;
             activeRequest = requestOwner(requestSeq, currentChatId, turretChat.length - 1, null, model);
             isLoading = true;
-            responseBuffer = "";
             toolCallParts = ({});
+            beginStream(turretChat.length - 1);
 
             const seq = requestSeq;
             BackendService.call("assistant.ask", {
@@ -942,6 +1012,7 @@ Singleton {
         requestSeq += 1;
         activeRequest = requestOwner(requestSeq, currentChatId, streamChat.length - 1, strategy, model);
         isLoading = true;
+        beginStream(streamChat.length - 1);
 
         writeTempBody(JSON.stringify(body), headers, endpoint, requestSeq);
         return true;
@@ -1102,18 +1173,11 @@ Singleton {
                 if (result.toolCallDelta)
                     root.recordToolCallDelta(result.toolCallDelta);
 
-                if (result.content) {
+                // Appended only. The conversation is not touched until the
+                // stream ends, and the flush timer publishes this to the one
+                // delegate that is rendering it.
+                if (result.content)
                     root.responseBuffer += result.content;
-                    // Write into the message this request owns, not simply the
-                    // last one in whatever chat is current.
-                    let target = root.streamTargetIndex(owner, root.currentChatId, root.currentChat);
-                    if (target < 0)
-                        return;
-
-                    let newChat = Array.from(root.currentChat);
-                    newChat[target].content = root.responseBuffer;
-                    root.currentChat = newChat;
-                }
 
                 // Note: done is handled in onExited
             }
@@ -1138,6 +1202,10 @@ Singleton {
             root.activeRequest = null;
             root.isLoading = false;
 
+            // Close the streaming window first: from here the reply lives in
+            // the conversation, not in the buffer the delegate was reading.
+            const streamed = root.endStream();
+
             // A clean exit is not the same as a successful turn. A provider can
             // refuse mid-stream and still close the connection tidily, so the
             // parser's own error counts as a failure even at exit code 0.
@@ -1146,6 +1214,7 @@ Singleton {
             if (!failure) {
                 if (target >= 0) {
                     const calls = root.collectToolCalls(root.toolCallParts);
+                    root.commitStream(target, streamed);
 
                     if (calls.length > 0) {
                         // The reply proposed something. It waits for the user
@@ -1165,12 +1234,10 @@ Singleton {
                         // asked for, and should know that.
                         if (calls.length > 1)
                             root.pushSystemMessage(I18n.t("ai.tool_calls_ignored").replace("%1", calls.length - 1));
-                    } else if (!root.currentChat[target].content) {
-                        // Nothing streamed: a non-streaming response body, which
-                        // the buffer already holds, or genuinely nothing.
-                        let newChat = Array.from(root.currentChat);
-                        newChat[target].content = root.responseBuffer !== "" ? root.responseBuffer : I18n.t("ai.no_response");
-                        root.currentChat = newChat;
+                    } else if (streamed === "") {
+                        // Nothing streamed at all: a provider that answered
+                        // without an event stream, or genuinely nothing.
+                        root.commitStream(target, I18n.t("ai.no_response"));
                     }
 
                     root.saveCurrentChat();
@@ -1179,8 +1246,9 @@ Singleton {
                 root.lastError = root.describeRequestFailure(exitCode, curlStderr.text);
 
                 if (target >= 0) {
+                    root.commitStream(target, streamed);
                     let errChat = Array.from(root.currentChat);
-                    const partial = errChat[target].content;
+                    const partial = streamed;
                     // The failure is the shell reporting, not the assistant
                     // speaking, so it takes the system role and renders as a
                     // notice. A reply that had already started streaming is

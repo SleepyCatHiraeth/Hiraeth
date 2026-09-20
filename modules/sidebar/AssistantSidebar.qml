@@ -1016,7 +1016,12 @@ FocusScope {
                             ListView {
                                 id: chatView
                                 visible: !mainChatArea.isWelcome
-                                cacheBuffer: 1000
+                                // These delegates are expensive — avatar, bubble, action row,
+                                // segmented body — so they are pooled and reused rather than
+                                // rebuilt, and the cache is sized to a screenful rather than
+                                // holding a thousand pixels of them either side.
+                                reuseItems: true
+                                cacheBuffer: 300
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 clip: true
@@ -1027,11 +1032,27 @@ FocusScope {
 
                                 bottomMargin: mainChatArea.isWelcome ? 0 : inputContainer.height
 
+                                // Following the newest content, unless the user has scrolled
+                                // away from it. Only `onCountChanged` used to scroll, and a
+                                // streamed reply grows without changing the count — so a long
+                                // answer wrote itself off the bottom of the view.
+                                property bool followTail: true
+
                                 onCountChanged: {
-                                    Qt.callLater(() => {
-                                        positionViewAtEnd();
-                                    });
+                                    followTail = true;
+                                    Qt.callLater(() => positionViewAtEnd());
                                 }
+
+                                onContentHeightChanged: {
+                                    if (followTail)
+                                        Qt.callLater(() => positionViewAtEnd());
+                                }
+
+                                // Reading back through a conversation must not be yanked
+                                // forward by the reply still arriving; returning to the
+                                // bottom opts back in.
+                                onMovementEnded: followTail = atYEnd
+                                onFlickEnded: followTail = atYEnd
 
                                 delegate: Item {
                                     id: messageDelegate
@@ -1043,8 +1064,26 @@ FocusScope {
                                     property bool isEditing: false
                                     property bool retryMode: false
 
+                                    // While this message is the one being streamed into it renders
+                                    // as plain text from the service, not from its own model data.
+                                    // Segmenting fenced code and parsing Markdown on every chunk
+                                    // meant re-doing both for the whole reply per token; the reply
+                                    // is parsed once, when it is finished.
+                                    readonly property bool isStreaming: index === Ai.streamingIndex
+                                    readonly property string bodyText: isStreaming ? Ai.streamingText : (modelData.content || "")
+
                                     width: ListView.view.width
                                     height: bubbleArea.height + 8
+
+                                    // Reuse means this object now stands for a different
+                                    // message. Anything it was holding about the old one has
+                                    // to go, or an edit box follows the scroll.
+                                    ListView.onReused: {
+                                        isEditing = false;
+                                        retryMode = false;
+                                        retryTimer.stop();
+                                    }
+                                    ListView.onPooled: retryTimer.stop()
 
                                     Row {
                                         anchors.left: parent.left
@@ -1228,11 +1267,13 @@ FocusScope {
 
                                                     ColumnLayout {
                                                         Layout.fillWidth: true
-                                                        visible: !messageDelegate.isEditing && !bubbleContentText.visible
+                                                        visible: !messageDelegate.isEditing && !bubbleContentText.visible && !messageDelegate.isStreaming
                                                         spacing: 8
 
                                                         Repeater {
                                                             model: {
+                                                                if (messageDelegate.isStreaming)
+                                                                    return [];
                                                                 let txt = modelData.content || "";
                                                                 let parts = [];
                                                                 let regex = /```(\w*)\n([\s\S]*?)```/g;
@@ -1296,6 +1337,18 @@ FocusScope {
                                                                 }
                                                             }
                                                         }
+                                                    }
+
+                                                    Text {
+                                                        id: streamingBody
+                                                        Layout.fillWidth: true
+                                                        visible: messageDelegate.isStreaming
+                                                        text: Ai.streamingText
+                                                        textFormat: Text.PlainText
+                                                        color: Styling.srItem("secondary")
+                                                        font.family: Config.theme.font
+                                                        font.pixelSize: 14
+                                                        wrapMode: Text.Wrap
                                                     }
 
                                                     TextEdit {

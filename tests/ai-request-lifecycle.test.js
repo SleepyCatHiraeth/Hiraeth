@@ -271,7 +271,7 @@ assert(/activeRequest = null/.test(cancelBody) && /isLoading = false/.test(cance
 assert(/root\.cancelling/.test(exitBody), "the exit handler honours a user-requested stop");
 
 // finishCancelled() decides what is left behind. Run the real one.
-function cancelledChat(chat, target) {
+function cancelledChat(chat, target, streamed) {
     const ctx = {
         currentChat: chat,
         responseBuffer: "buffered",
@@ -281,7 +281,7 @@ function cancelledChat(chat, target) {
         saveCurrentChat: () => {}
     };
     const make = new Function("ctx", "with (ctx) { " + extractFunction("finishCancelled") + " return finishCancelled; }");
-    make(ctx)(target);
+    make(ctx)(target, streamed);
     return ctx;
 }
 
@@ -313,5 +313,43 @@ assert(/commandExecutionProc\.command = resolved\.argv/.test(approveBody), "only
 assert(/if \(resolved\.error\)/.test(approveBody), "a proposal that does not resolve is refused rather than guessed at");
 assert(/if \(!toolsEnabled\)/.test(approveBody), "a proposal made while tools were on cannot run after they are turned off");
 assert(/ToolCatalog\.definitions\(\)/.test(src), "the advertised tools come from the catalog");
+
+// ---------------------------------------------------------------------------
+// Streaming without rewriting the conversation
+// ---------------------------------------------------------------------------
+
+console.log("streaming window:");
+
+// Every SSE line used to copy the whole currentChat array, replace one
+// message's content and reassign the ListView's model — so one token cost work
+// proportional to the conversation, and the delegate re-segmented and re-parsed
+// the entire reply each time.
+const readBody = src.slice(src.indexOf("stdout: SplitParser"), src.indexOf("stderr: StdioCollector"));
+assert(/root\.responseBuffer \+= result\.content/.test(readBody), "a chunk appends to the buffer");
+assert(!/root\.currentChat = /.test(readBody), "a chunk never reassigns the conversation");
+assert(!/streamTargetIndex/.test(readBody), "a chunk does no per-token ownership lookup either");
+
+const begin = extractFunction("beginStream");
+const end = extractFunction("endStream");
+assert(/streamingIndex = index/.test(begin) && /streamFlushTimer\.restart\(\)/.test(begin), "beginStream opens the window and starts the flush");
+assert(/streamFlushTimer\.stop\(\)/.test(end) && /streamingIndex = -1/.test(end), "endStream closes it");
+assert(/responseBuffer = ""/.test(end), "endStream leaves no partial behind for the next turn");
+assert(/return text/.test(end), "endStream hands the streamed text back to its caller");
+
+assert(/interval: 33/.test(src), "the buffer is published on a fixed cadence rather than per chunk");
+
+// Every path that ends a turn has to close the window, or the delegate keeps
+// reading a buffer nobody is writing.
+for (const fn of ["failRequest", "cancelRequest"])
+    assert(/endStream\(\)/.test(extractFunction(fn)), fn + "() closes the streaming window");
+assert(/const streamed = root\.endStream\(\)/.test(exitBody), "the curl exit handler closes the streaming window");
+
+const commit = extractFunction("commitStream");
+assert(/currentChat = chat/.test(commit), "the conversation is written once, at the end");
+
+// A cancelled turn keeps what had arrived; it only ever lived in the buffer.
+const cancelled = cancelledChat([{role: "user", content: "hi"}, {role: "assistant", content: ""}], 1, "half an answer");
+assert(cancelled.currentChat[1].content === "half an answer" && cancelled.currentChat[1].interrupted === true,
+    "a cancelled reply keeps the text that had streamed");
 
 console.log("\nAi request lifecycle: all checks passed");
