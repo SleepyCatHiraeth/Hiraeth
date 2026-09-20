@@ -41,6 +41,8 @@
   "ai.request_failed": "La solicitud falló: %1",
   "ai.run_command": "Ejecutar comando",
   "ai.search_models": "Buscar modelos...",
+  "ai.stop": "Detener la generación",
+  "ai.stopped": "Detenido.",
   "ai.switched_to_model": "Modelo cambiado: %1",
   "bar.resources.tooltip": "Recursos del sistema",
   "bar.tooltip.audio_switcher": "Selector de dispositivo de audio",

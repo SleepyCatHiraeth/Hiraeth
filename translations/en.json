@@ -41,6 +41,8 @@
   "ai.request_failed": "Request failed: %1",
   "ai.run_command": "Run Command",
   "ai.search_models": "Search models...",
+  "ai.stop": "Stop generating",
+  "ai.stopped": "Stopped.",
   "ai.switched_to_model": "Switched to model: %1",
   "bar.resources.tooltip": "System Resources",
   "bar.tooltip.audio_switcher": "Audio Device Switcher",

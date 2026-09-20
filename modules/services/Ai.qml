@@ -263,6 +263,10 @@ Singleton {
     property string streamError: ""
     property string rawTail: ""
     readonly property int rawTailLimit: 2000
+    // Set while a stop the user asked for is being carried out. Killing curl
+    // produces a non-zero exit like any other failure, and without this the
+    // exit handler would report the user's own stop as a request failure.
+    property bool cancelling: false
 
     // Current Chat
     property var currentChat: []
@@ -664,6 +668,60 @@ Singleton {
         return true;
     }
 
+    // Stops the in-flight request. Returns true when there was one to stop.
+    //
+    // A reply that had already started streaming is kept: a truncated answer is
+    // usually still worth reading, and deleting it would throw away the tokens
+    // the user has already paid for. An empty placeholder is removed instead --
+    // a blank bubble reads as the assistant choosing to say nothing.
+    function cancelRequest() {
+        const owner = activeRequest;
+        if (!owner)
+            return false;
+
+        const target = streamTargetIndex(owner, currentChatId, currentChat);
+
+        // A turret turn is owned by the daemon, which holds the microphone, the
+        // model client and the speech processes. It has its own cancel; killing
+        // anything on this side would leave those running.
+        if (owner.strategy === null) {
+            TurretService.cancel();
+        } else {
+            cancelling = true;
+            curlProcess.running = false;
+        }
+
+        activeRequest = null;
+        isLoading = false;
+        finishCancelled(target);
+        return true;
+    }
+
+    // Shared by both cancel paths: trims an empty placeholder, marks a partial
+    // one, and says so in the conversation.
+    function finishCancelled(target) {
+        let chat = Array.from(currentChat);
+        if (target >= 0 && target < chat.length) {
+            if (chat[target].content) {
+                chat[target] = Object.assign({}, chat[target], {
+                    interrupted: true
+                });
+            } else {
+                chat.splice(target, 1);
+            }
+        }
+        chat.push({
+            role: "system",
+            content: I18n.t("ai.stopped")
+        });
+        currentChat = chat;
+
+        responseBuffer = "";
+        streamError = "";
+        rawTail = "";
+        saveCurrentChat();
+    }
+
     // Why a request failed, in the order the answer is most likely to be
     // useful: the provider's own words first, then curl's, then a bare exit
     // code. Before this the handler reported only `curlStderr`, which is empty
@@ -993,6 +1051,15 @@ Singleton {
         }
 
         onExited: exitCode => {
+            // cancelRequest() has already cleared the request and reported the
+            // stop. Killing curl lands here with a non-zero exit like any other
+            // failure, and reporting it again would tell the user their own
+            // stop was an error.
+            if (root.cancelling) {
+                root.cancelling = false;
+                return;
+            }
+
             let owner = root.activeRequest;
             let target = root.streamTargetIndex(owner, root.currentChatId, root.currentChat);
             root.activeRequest = null;

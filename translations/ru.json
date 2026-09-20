@@ -41,6 +41,8 @@
   "ai.request_failed": "Запрос не выполнен: %1",
   "ai.run_command": "Выполнить команду",
   "ai.search_models": "Поиск моделей...",
+  "ai.stop": "Остановить генерацию",
+  "ai.stopped": "Остановлено.",
   "ai.switched_to_model": "Модель переключена: %1",
   "bar.resources.tooltip": "Системные ресурсы",
   "bar.tooltip.audio_switcher": "Переключатель аудиоустройств",

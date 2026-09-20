@@ -1825,13 +1825,53 @@ FocusScope {
 
                                         onClicked: zenityProcess.running = true
                                     }
+                                    // Stop takes Send's place while a reply is
+                                    // in flight. There was no way to end a
+                                    // generation at all before: closing the
+                                    // panel only hid it, and the request kept
+                                    // streaming and billing.
+                                    Button {
+                                        Accessible.name: I18n.t("ai.stop")
+                                        Layout.preferredWidth: 32
+                                        Layout.preferredHeight: 32
+                                        flat: true
+                                        visible: Ai.isLoading
+
+                                        contentItem: Text {
+                                            text: Icons.stop
+                                            font.family: Icons.font
+                                            font.pixelSize: 20
+                                            color: Styling.srItem("overerror")
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+
+                                        background: StyledRect {
+                                            variant: "error"
+                                            radius: Styling.radius(16)
+                                            opacity: parent.hovered ? 0.8 : 0.4
+
+                                            Behavior on opacity {
+                                                enabled: Config.animDuration > 0
+                                                NumberAnimation {
+                                                    duration: Config.animDuration / 4
+                                                }
+                                            }
+                                        }
+
+                                        onClicked: Ai.cancelRequest()
+
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: I18n.t("ai.stop")
+                                    }
+
                                     Button {
                             Accessible.name: "Send message"
                             enabled: !Ai.isLoading && !attachmentReadProcess.running && mainChatArea.attachmentQueue.length === 0
                                         Layout.preferredWidth: 32
                                         Layout.preferredHeight: 32
                                         flat: true
-                                        visible: inputField.text.length > 0 || mainChatArea.pendingAttachments.length > 0
+                                        visible: !Ai.isLoading && (inputField.text.length > 0 || mainChatArea.pendingAttachments.length > 0)
 
                                         contentItem: Text {
                                             text: Icons.paperPlane

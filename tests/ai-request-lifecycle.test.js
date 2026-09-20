@@ -256,4 +256,47 @@ assert(reasonWith({})(6, "curl: (6) Could not resolve host") === "ai.network_fai
 assert(reasonWith({})(7, "   ") === "ai.network_failed: curl exit 7",
     "a silent failure still names the exit code rather than reporting nothing");
 
+// ---------------------------------------------------------------------------
+// Cancellation
+// ---------------------------------------------------------------------------
+
+console.log("cancellation:");
+
+const cancelBody = extractFunction("cancelRequest");
+assert(/if \(!owner\)\s*\n\s*return false;/.test(cancelBody), "cancelRequest() reports that there was nothing to stop");
+assert(/TurretService\.cancel\(\)/.test(cancelBody), "a turret turn is cancelled by the daemon that owns its processes");
+assert(/curlProcess\.running = false/.test(cancelBody), "a cloud request kills its own curl");
+assert(/cancelling = true/.test(cancelBody), "the stop is flagged so the exit handler does not report it as a failure");
+assert(/activeRequest = null/.test(cancelBody) && /isLoading = false/.test(cancelBody), "cancelRequest() releases the request and the busy state");
+assert(/root\.cancelling/.test(exitBody), "the exit handler honours a user-requested stop");
+
+// finishCancelled() decides what is left behind. Run the real one.
+function cancelledChat(chat, target) {
+    const ctx = {
+        currentChat: chat,
+        responseBuffer: "buffered",
+        streamError: "parser said no",
+        rawTail: "raw",
+        I18n: {t: key => key},
+        saveCurrentChat: () => {}
+    };
+    const make = new Function("ctx", "with (ctx) { " + extractFunction("finishCancelled") + " return finishCancelled; }");
+    make(ctx)(target);
+    return ctx;
+}
+
+const partial = cancelledChat([{role: "user", content: "hi"}, {role: "assistant", content: "half an ans"}], 1);
+assert(partial.currentChat.length === 3, "a partially streamed reply is kept and the stop is noted after it");
+assert(partial.currentChat[1].content === "half an ans" && partial.currentChat[1].interrupted === true, "the kept reply is marked interrupted rather than rewritten");
+assert(partial.currentChat[2].role === "system" && partial.currentChat[2].content === "ai.stopped", "the stop is reported as a notice");
+
+const empty = cancelledChat([{role: "user", content: "hi"}, {role: "assistant", content: ""}], 1);
+assert(empty.currentChat.length === 2, "an empty placeholder is removed rather than left as a blank bubble");
+assert(empty.currentChat[1].role === "system", "only the stop notice remains after the user turn");
+
+assert(partial.responseBuffer === "" && partial.streamError === "" && partial.rawTail === "", "cancelling clears the request-scoped buffers");
+
+const noTarget = cancelledChat([{role: "user", content: "hi"}], -1);
+assert(noTarget.currentChat.length === 2, "a stop with no owned message still says it stopped");
+
 console.log("\nAi request lifecycle: all checks passed");
