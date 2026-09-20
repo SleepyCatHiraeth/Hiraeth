@@ -999,6 +999,53 @@ FocusScope {
                                 onMovementEnded: followTail = atYEnd
                                 onFlickEnded: followTail = atYEnd
 
+                                // The conversation was unreachable from the keyboard:
+                                // no focus, no current item, and the per-message
+                                // actions were shown on hover only.
+                                activeFocusOnTab: true
+                                keyNavigationEnabled: true
+                                currentIndex: -1
+                                highlightFollowsCurrentItem: true
+                                highlightMoveDuration: Motion.fast
+
+                                // Selecting a message stops the view chasing the
+                                // reply still arriving; Escape gives up the
+                                // selection and resumes following.
+                                onCurrentIndexChanged: if (currentIndex >= 0) followTail = false
+
+                                Keys.onEscapePressed: event => {
+                                    if (currentIndex >= 0) {
+                                        currentIndex = -1;
+                                        followTail = true;
+                                        inputField.forceActiveFocus();
+                                        event.accepted = true;
+                                    }
+                                }
+
+                                onActiveFocusChanged: {
+                                    if (activeFocus && currentIndex < 0 && count > 0)
+                                        currentIndex = count - 1;
+                                    else if (!activeFocus)
+                                        currentIndex = -1;
+                                }
+
+                                highlight: Item {
+                                    // Drawn only while the list itself has the
+                                    // keyboard: a highlight on an unfocused list
+                                    // looks like a selection the user cannot move.
+                                    visible: chatView.activeFocus
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        anchors.margins: 4
+                                        radius: Styling.radius(4)
+                                        color: "transparent"
+                                        border.width: 1
+                                        border.color: Styling.srItem("overprimary")
+                                        opacity: 0.6
+                                    }
+                                }
+
                                 delegate: Item {
                                     id: messageDelegate
                                     required property var modelData
@@ -1101,31 +1148,18 @@ FocusScope {
                                                 anchors.leftMargin: 8
                                                 anchors.rightMargin: 8
                                                 spacing: 4
-                                                visible: bubbleArea.containsMouse || messageDelegate.isEditing
+                                                // Also shown for the keyboard's current message. These
+                                                // were hover-only, which put copy, edit and retry out of
+                                                // reach entirely without a pointer.
+                                                visible: bubbleArea.containsMouse
+                                                    || messageDelegate.isEditing
+                                                    || messageDelegate.ListView.isCurrentItem
 
-                                                Button {
-                                                    width: 24
-                                                    height: 24
-                                                    flat: true
-                                                    padding: 0
+                                                AssistantMessageAction {
                                                     visible: !isSystem
-
-                                                    property bool isHovered: hovered
-
-                                                    contentItem: Text {
-                                                        text: messageDelegate.isEditing ? Icons.accept : Icons.edit
-                                                        font.family: Icons.font
-                                                        color: parent.down ? Colors.overPrimary : (parent.isHovered ? Colors.overSurface : Colors.overSurface)
-                                                        horizontalAlignment: Text.AlignHCenter
-                                                        verticalAlignment: Text.AlignVCenter
-                                                    }
-
-                                                    background: StyledRect {
-                                                        variant: parent.down ? "primary" : (parent.isHovered ? "focus" : "common")
-                                                        radius: Styling.radius(4)
-                                                    }
-
                                                     enabled: !Ai.isLoading
+                                                    glyph: messageDelegate.isEditing ? Icons.accept : Icons.edit
+                                                    label: messageDelegate.isEditing ? I18n.t("ai.save_edit") : I18n.t("ai.edit_message")
                                                     onClicked: {
                                                         if (messageDelegate.isEditing) {
                                                             Ai.updateMessage(index, bubbleContentText.text);
@@ -1138,56 +1172,18 @@ FocusScope {
                                                     }
                                                 }
 
-                                                Button {
-                                                    width: 24
-                                                    height: 24
-                                                    flat: true
-                                                    padding: 0
+                                                AssistantMessageAction {
                                                     visible: !messageDelegate.isEditing
-
-                                                    property bool isHovered: hovered
-
-                                                    contentItem: Text {
-                                                        text: Icons.copy
-                                                        font.family: Icons.font
-                                                        color: parent.down ? Colors.overPrimary : (parent.isHovered ? Colors.overSurface : Colors.overSurface)
-                                                        horizontalAlignment: Text.AlignHCenter
-                                                        verticalAlignment: Text.AlignVCenter
-                                                    }
-
-                                                    background: StyledRect {
-                                                        variant: parent.down ? "primary" : (parent.isHovered ? "focus" : "common")
-                                                        radius: Styling.radius(4)
-                                                    }
-
-                                                    onClicked: {
-                                                        Quickshell.clipboardText = modelData.content || "";
-                                                    }
+                                                    glyph: Icons.copy
+                                                    label: I18n.t("ai.copy_message")
+                                                    onClicked: Quickshell.clipboardText = messageDelegate.bodyText
                                                 }
 
-                                                Button {
+                                                AssistantMessageAction {
                                                     visible: !isUser && !isSystem && !messageDelegate.isEditing
-                                                    width: 24
-                                                    height: 24
-                                                    flat: true
-                                                    padding: 0
-
-                                                    property bool isHovered: hovered
-
-                                                    contentItem: Text {
-                                                        text: Icons.arrowCounterClockwise
-                                                        font.family: Icons.font
-                                                        color: parent.down ? Colors.overPrimary : (parent.isHovered ? Colors.overSurface : Colors.overSurface)
-                                                        horizontalAlignment: Text.AlignHCenter
-                                                        verticalAlignment: Text.AlignVCenter
-                                                    }
-
-                                                    background: StyledRect {
-                                                        variant: parent.down ? "primary" : (parent.isHovered ? "focus" : "common")
-                                                        radius: Styling.radius(4)
-                                                    }
-
                                                     enabled: !Ai.isLoading
+                                                    glyph: Icons.arrowCounterClockwise
+                                                    label: I18n.t("ai.retry_message")
                                                     onClicked: Ai.regenerateResponse(index)
                                                 }
                                             }
@@ -1697,6 +1693,7 @@ FocusScope {
                                             id: inputField
                                             focus: true
                                             activeFocusOnTab: true
+                                            KeyNavigation.backtab: chatView
                                             placeholderText: Ai.isLoading ? "AI is responding…" : mainChatArea.isWelcome ? I18n.t("ai.ask_or_help") : I18n.t("ai.message")
                                             placeholderTextColor: Colors.outline
                                             font.pixelSize: 14
