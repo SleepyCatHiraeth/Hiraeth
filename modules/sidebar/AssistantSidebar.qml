@@ -472,129 +472,37 @@ FocusScope {
                         anchors.leftMargin: 8
                         anchors.rightMargin: 8
 
-                        Button {
-                            Accessible.name: "Chat history"
-                            Layout.preferredWidth: 32
-                            Layout.preferredHeight: 32
-                            flat: true
-                            padding: 0
-                            contentItem: Text {
-                                text: Icons.list
-                                font.family: Icons.font
-                                font.pixelSize: 16
-                                color: root.menuExpanded ? Styling.srItem("overprimary") : Colors.overSurface
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            background: StyledRect {
-                                variant: parent.hovered ? "focus" : "common"
-                                radius: Styling.radius(4)
-                                opacity: parent.hovered ? 1 : 0
-                                Behavior on opacity {
-                                    NumberAnimation {
-                                        duration: Config.animDuration / 4
-                                    }
-                                }
-                            }
+                        AssistantIconButton {
+                            glyph: Icons.list
+                            label: I18n.t("ai.chat_history")
+                            active: root.menuExpanded
                             onClicked: root.menuExpanded = !root.menuExpanded
                         }
 
-                        Button {
-                            Accessible.name: "New chat"
+                        AssistantIconButton {
+                            glyph: Icons.edit
+                            label: I18n.t("ai.new_chat")
                             enabled: !Ai.isLoading
-                            Layout.preferredWidth: 32
-                            Layout.preferredHeight: 32
-                            flat: true
-                            padding: 0
-                            contentItem: Text {
-                                text: Icons.edit
-                                font.family: Icons.font
-                                font.pixelSize: 16
-                                color: Colors.overSurface
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            background: StyledRect {
-                                variant: parent.hovered ? "focus" : "common"
-                                radius: Styling.radius(4)
-                                opacity: parent.hovered ? 1 : 0
-                                Behavior on opacity {
-                                    NumberAnimation {
-                                        duration: Config.animDuration / 4
-                                    }
-                                }
-                            }
                             onClicked: {
                                 Ai.createNewChat();
                                 root.menuExpanded = false;
                             }
                         }
 
-                        Button {
-                            Accessible.name: "Merge into frame"
-                            Layout.preferredWidth: 32
-                            Layout.preferredHeight: 32
-                            flat: true
-                            padding: 0
-
-                            contentItem: Text {
-                                text: Icons.pin
-                                font.family: Icons.font
-                                font.pixelSize: 16
-                                color: GlobalStates.assistantMergedIntoFrame ? Styling.srItem("overprimary") : Colors.overSurface
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-
-                            background: StyledRect {
-                                variant: parent.hovered ? "focus" : "common"
-                                radius: Styling.radius(4)
-                                opacity: parent.hovered ? 1 : 0
-
-                                Behavior on opacity {
-                                    NumberAnimation {
-                                        duration: Config.animDuration / 4
-                                    }
-                                }
-                            }
-
-                            onClicked: {
-                                Config.ai.sidebarMergeIntoFrame = !Config.ai.sidebarMergeIntoFrame;
-                            }
+                        AssistantIconButton {
+                            glyph: Icons.pin
+                            label: I18n.t("ai.merge_into_frame")
+                            active: GlobalStates.assistantMergedIntoFrame
+                            onClicked: Config.ai.sidebarMergeIntoFrame = !Config.ai.sidebarMergeIntoFrame
                         }
 
                         Item {
                             Layout.fillWidth: true
                         }
 
-                        Button {
-                            Accessible.name: "Close assistant"
-                            Layout.preferredWidth: 32
-                            Layout.preferredHeight: 32
-                            flat: true
-                            padding: 0
-
-                            contentItem: Text {
-                                text: GlobalStates.assistantPosition === "right" ? Icons.caretRight : Icons.caretLeft
-                                font.family: Icons.font
-                                font.pixelSize: 16
-                                color: Colors.overSurface
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-
-                            background: StyledRect {
-                                variant: parent.hovered ? "focus" : "common"
-                                radius: Styling.radius(4)
-                                opacity: parent.hovered ? 1 : 0
-
-                                Behavior on opacity {
-                                    NumberAnimation {
-                                        duration: Config.animDuration / 4
-                                    }
-                                }
-                            }
-
+                        AssistantIconButton {
+                            glyph: GlobalStates.assistantPosition === "right" ? Icons.caretRight : Icons.caretLeft
+                            label: I18n.t("ai.close_assistant")
                             onClicked: GlobalStates.hideAssistant()
                         }
                     }
@@ -1891,26 +1799,11 @@ FocusScope {
                                         }
                                     }
 
-                                    Button {
-                            Accessible.name: "Attach image"
-                                        Layout.preferredWidth: 32
-                                        Layout.preferredHeight: 32
-                                        flat: true
-
-                                        contentItem: Text {
-                                            text: Icons.plus
-                                            font.family: Icons.font
-                                            font.pixelSize: 20
-                                            color: Colors.outline
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
-
-                                        background: Rectangle {
-                                            color: parent.hovered ? Colors.surfaceBright : "transparent"
-                                            radius: 16
-                                        }
-
+                                    AssistantIconButton {
+                                        glyph: Icons.plus
+                                        label: I18n.t("ai.attach_image")
+                                        iconSize: 20
+                                        iconColor: Colors.outline
                                         onClicked: zenityProcess.running = true
                                     }
                                     // Stop takes Send's place while a reply is
@@ -1918,62 +1811,22 @@ FocusScope {
                                     // generation at all before: closing the
                                     // panel only hid it, and the request kept
                                     // streaming and billing.
-                                    Button {
-                                        Accessible.name: I18n.t("ai.stop")
-                                        Layout.preferredWidth: 32
-                                        Layout.preferredHeight: 32
-                                        flat: true
+                                    AssistantIconButton {
+                                        glyph: Icons.stop
+                                        label: I18n.t("ai.stop")
+                                        iconSize: 20
+                                        iconColor: Colors.error
                                         visible: Ai.isLoading
-
-                                        contentItem: Text {
-                                            text: Icons.stop
-                                            font.family: Icons.font
-                                            font.pixelSize: 20
-                                            color: Styling.srItem("overerror")
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
-
-                                        background: StyledRect {
-                                            variant: "error"
-                                            radius: Styling.radius(16)
-                                            opacity: parent.hovered ? 0.8 : 0.4
-
-                                            Behavior on opacity {
-                                                enabled: Config.animDuration > 0
-                                                NumberAnimation {
-                                                    duration: Config.animDuration / 4
-                                                }
-                                            }
-                                        }
-
                                         onClicked: Ai.cancelRequest()
-
-                                        ToolTip.visible: hovered
-                                        ToolTip.text: I18n.t("ai.stop")
                                     }
 
-                                    Button {
-                            Accessible.name: "Send message"
-                            enabled: !Ai.isLoading && !attachmentReadProcess.running && mainChatArea.attachmentQueue.length === 0
-                                        Layout.preferredWidth: 32
-                                        Layout.preferredHeight: 32
-                                        flat: true
+                                    AssistantIconButton {
+                                        glyph: Icons.paperPlane
+                                        label: I18n.t("ai.send_message")
+                                        iconSize: 20
+                                        iconColor: Styling.srItem("overprimary")
+                                        enabled: !Ai.isLoading && !attachmentReadProcess.running && mainChatArea.attachmentQueue.length === 0
                                         visible: !Ai.isLoading && (inputField.text.length > 0 || mainChatArea.pendingAttachments.length > 0)
-
-                                        contentItem: Text {
-                                            text: Icons.paperPlane
-                                            font.family: Icons.font
-                                            font.pixelSize: 20
-                                            color: Styling.srItem("overprimary")
-                                            horizontalAlignment: Text.AlignHCenter
-                                            verticalAlignment: Text.AlignVCenter
-                                        }
-
-                                        background: Rectangle {
-                                            color: parent.hovered ? Colors.surfaceBright : "transparent"
-                                            radius: 16
-                                        }
 
                                         onClicked: {
                                             if (inputField.text.trim().length > 0 || mainChatArea.pendingAttachments.length > 0) {
