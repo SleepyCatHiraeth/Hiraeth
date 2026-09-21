@@ -1214,6 +1214,7 @@ Singleton {
             property bool notchHoverToOpen: false
             property bool notchAutoHideWithWindows: false
             property bool notchUsageEnabled: true
+            property bool notchTransparentPill: true
             property list<string> notchUsageProviders: []
             // Speak the turret's replies aloud when it answers a TYPED message.
             // Off by default: a reply spoken for every typed line is the wrong

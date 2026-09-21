@@ -2088,6 +2088,17 @@ Item {
                         }
 
                         ToggleRow {
+                            label: "Transparent Pill"
+                            checked: Config.ai.notchTransparentPill ?? true
+                            onToggled: value => {
+                                if (value !== Config.ai.notchTransparentPill) {
+                                    GlobalStates.markShellChanged();
+                                    Config.ai.notchTransparentPill = value;
+                                }
+                            }
+                        }
+
+                        ToggleRow {
                             // ToggleRow carries a label only, so the nuance --
                             // that spoken turns always speak regardless -- lives
                             // here rather than in a subtitle the row cannot show.

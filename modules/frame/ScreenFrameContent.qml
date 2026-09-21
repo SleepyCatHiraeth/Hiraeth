@@ -38,6 +38,9 @@ Item {
     readonly property bool sidebarMerged: GlobalStates.assistantMergedIntoFrame
     property int sidebarWidth: GlobalStates.assistantWidth
     property real sidebarProgress: 0
+    property rect sidebarGlassRect: Qt.rect(0, 0, 0, 0)
+    property real sidebarGlassRadius: 0
+    property bool sidebarGlassVisible: false
     readonly property string sidebarPosition: GlobalStates.assistantPosition
 
     readonly property int sidebarMargin: 4
@@ -150,6 +153,21 @@ Item {
             radius: root.innerRadius
             color: "white"
             visible: width > 0 && height > 0
+        }
+
+        // A second opening retains the frame around the inset chat terminal.
+        // Without it the frame's opaque fill prevents native backdrop blur.
+        Rectangle {
+            id: glassMask
+            x: root.sidebarGlassRect.x
+            y: root.sidebarGlassRect.y
+            width: root.sidebarGlassRect.width
+            height: root.sidebarGlassRect.height
+            radius: root.sidebarGlassRadius
+            color: "white"
+            // The source item is hidden. Gate its mask contribution by alpha;
+            // a visible binding here suppresses the cutout in the layer texture.
+            opacity: root.sidebarMerged && root.sidebarGlassVisible ? 1 : 0
         }
     }
 }

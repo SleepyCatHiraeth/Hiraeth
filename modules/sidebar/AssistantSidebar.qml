@@ -24,6 +24,15 @@ FocusScope {
     readonly property bool hasActiveFocus: root.activeFocus
     property alias resizeHitbox: resizeHandle
 
+    // The frame cuts out this exact inset so compositor blur can reach the
+    // desktop instead of blurring an opaque shell surface underneath it.
+    readonly property rect glassRect: Qt.rect(
+        root.x + sidebarContainer.x + notchShell.x + notchShell.body.x + terminalSurface.x,
+        root.y + sidebarContainer.y + notchShell.y + notchShell.body.y + terminalSurface.y,
+        terminalSurface.width, terminalSurface.height)
+    readonly property real glassRadius: terminalSurface.radius
+    readonly property bool glassVisible: terminalSurface.visible
+
     readonly property bool frameEnabled: (Config.bar?.frameEnabled ?? false)
 
     // Frame-wrapping is an expanded-panel behavior. The resting notch keeps its
@@ -380,16 +389,14 @@ FocusScope {
             }
         }
 
-        // Width carries the notch's overshoot, since that is the axis the notch
-        // actually pops along. Height spans most of the screen when expanded,
-        // where an overshoot would only throw the flares off-screen.
+        // A single decelerating expansion keeps the glass and frame together.
+        // Closing is shorter; neither edge overshoots the finished surface.
         Behavior on width {
             enabled: Motion.enabled && root.dragWidth < 0
             NumberAnimation {
                 id: widthAnimation
-                duration: root.morphDuration
-                easing.type: root.expanded ? Easing.OutBack : Easing.OutQuart
-                easing.overshoot: root.expanded ? 1.2 : 1.0
+                duration: root.expanded ? root.morphDuration : Math.round(root.morphDuration * 0.66)
+                easing.type: Easing.OutCubic
             }
         }
 
@@ -397,8 +404,8 @@ FocusScope {
             enabled: Motion.enabled
             NumberAnimation {
                 id: heightAnimation
-                duration: root.morphDuration
-                easing.type: Easing.OutQuart
+                duration: root.expanded ? root.morphDuration : Math.round(root.morphDuration * 0.66)
+                easing.type: Easing.OutCubic
             }
         }
 
@@ -425,10 +432,13 @@ FocusScope {
             edge: root.notchEdge
             flareSize: root.notchFlareSize
             bodyRadius: root.notchBodyRadius
-            surfaceVariant: root.frameWrapped && !widthAnimation.running && !heightAnimation.running ? "transparent" : "bg"
-            borderEnabled: !root.frameWrapped
+            surfaceVariant: root.expansionProgress > 0.01 || root.frameWrapped ? "transparent" : "bg"
+            borderEnabled: !root.frameWrapped && root.expansionProgress <= 0.01
+            glassInset: root.showAsNotch ? collapsedContent.glassInset : Qt.rect(0, 0, 0, 0)
+            glassRadius: collapsedContent.glassRadius
 
             AiNotchCollapsed {
+                id: collapsedContent
                 anchors.fill: parent
                 edge: root.notchEdge
                 hovered: root.notchHovered
@@ -441,16 +451,34 @@ FocusScope {
                 visible: opacity > 0.01
             }
 
+            StyledRect {
+                id: terminalSurface
+                anchors.fill: parent
+                anchors.margins: Math.round(Styling.fontSize(0) * 1.7)
+                variant: "bg"
+                backgroundOpacity: 0.72
+                radius: Styling.radius(4)
+                animateRadius: false
+                enableBorder: false
+                border.width: 0
+                visible: root.expansionProgress > 0.01
+            }
+
             ColumnLayout {
+                id: terminalContent
+                parent: terminalSurface
                 anchors.fill: parent
                 spacing: 0
                 clip: true
                 enabled: root.expanded
-                opacity: root.expanded ? 1 : 0
+                opacity: root.notchEnabled
+                    ? Math.max(0, Math.min(1, (root.expansionProgress - 0.45) / 0.55))
+                    : (root.expanded ? 1 : 0)
                 visible: opacity > 0.01
+                transform: Translate { y: (1 - terminalContent.opacity) * Styling.fontSize(0) }
 
                 Behavior on opacity {
-                    enabled: Motion.enabled
+                    enabled: Motion.enabled && !root.notchEnabled
                     NumberAnimation {
                         duration: Motion.fast
                         easing.type: Easing.OutQuart
@@ -459,12 +487,22 @@ FocusScope {
 
                 Item {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 40
+                    Layout.preferredHeight: Styling.fontSize(0) * 3.7
 
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 8
                         anchors.rightMargin: 8
+
+                        Text {
+                            Layout.leftMargin: 8
+                            Layout.fillWidth: true
+                            text: ">_  " + I18n.t("ai.role_assistant").toLowerCase()
+                            font.family: Config.theme.monoFont
+                            font.pixelSize: Styling.monoFontSize(-1)
+                            color: Colors.overBackground
+                            elide: Text.ElideRight
+                        }
 
                         AssistantIconButton {
                             glyph: Icons.list
@@ -490,10 +528,6 @@ FocusScope {
                             onClicked: Config.ai.sidebarMergeIntoFrame = !Config.ai.sidebarMergeIntoFrame
                         }
 
-                        Item {
-                            Layout.fillWidth: true
-                        }
-
                         AssistantIconButton {
                             glyph: GlobalStates.assistantPosition === "right" ? Icons.caretRight : Icons.caretLeft
                             label: I18n.t("ai.close_assistant")
@@ -503,6 +537,7 @@ FocusScope {
 
                     Separator {
                         anchors.bottom: parent.bottom
+                        opacity: 0.16
                         width: parent.width
                     }
                 }
@@ -793,25 +828,46 @@ FocusScope {
                         property bool isWelcome: Ai.currentChat.length === 0
 
                         ColumnLayout {
-                            anchors.bottom: inputContainer.top
-                            anchors.bottomMargin: 24
+                            width: Math.max(0, parent.width - 48)
+                            y: Math.max(16, (inputContainer.y - height) * 0.42)
                             anchors.horizontalCenter: parent.horizontalCenter
                             visible: mainChatArea.isWelcome
-                            spacing: 8
+                            spacing: 12
+
+                            Text {
+                                text: ">_"
+                                font.family: Config.theme.monoFont
+                                font.pixelSize: Styling.monoFontSize(20)
+                                color: Styling.srItem("overprimary")
+                                Layout.alignment: Qt.AlignHCenter
+                            }
 
                             Text {
                                 text: I18n.t("ai.hello_user", mainChatArea.username)
-                                font.family: Config.theme.font
-                                font.pixelSize: 32
-                                font.weight: Font.Bold
-                                textFormat: Text.StyledText
-                                Layout.alignment: Qt.AlignHCenter
+                                font.family: Config.theme.monoFont
+                                font.pixelSize: Styling.monoFontSize(7)
+                                font.weight: Font.Medium
+                                textFormat: Text.PlainText
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
                                 color: Colors.overBackground
+                            }
+
+                            Text {
+                                text: I18n.t("ai.ask_or_help")
+                                font.family: Config.theme.monoFont
+                                font.pixelSize: Styling.monoFontSize(-1)
+                                color: Qt.alpha(Colors.overBackground, 0.72)
+                                Layout.fillWidth: true
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
                             }
                         }
 
                         ColumnLayout {
                             anchors.fill: parent
+                            anchors.bottomMargin: inputContainer.height + inputContainer.anchors.bottomMargin + 12
                             spacing: 8
 
                             RowLayout {
@@ -852,7 +908,8 @@ FocusScope {
                                 displayMarginBeginning: 40
                                 displayMarginEnd: 40
 
-                                bottomMargin: mainChatArea.isWelcome ? 0 : inputContainer.height
+                                bottomMargin: 12
+                                topMargin: 12
 
                                 // Following the newest content, unless the user has scrolled
                                 // away from it. Only `onCountChanged` used to scroll, and a
@@ -940,7 +997,7 @@ FocusScope {
                                     // is parsed once, when it is finished.
                                     readonly property bool isStreaming: index === Ai.streamingIndex
                                     readonly property string bodyText: isStreaming ? Ai.streamingText : (modelData.content || "")
-                                    readonly property color bodyColor: isSystem ? Colors.outline : (isUser ? Styling.srItem("primary") : Styling.srItem("secondary"))
+                                    readonly property color bodyColor: Colors.overBackground
 
                                     width: ListView.view.width
                                     height: column.implicitHeight + 14
@@ -1011,13 +1068,12 @@ FocusScope {
                                             visible: !messageDelegate.isSystem
 
                                             Text {
-                                                text: messageDelegate.isUser ? I18n.t("ai.role_you") : (modelData.model || I18n.t("ai.role_assistant"))
-                                                color: messageDelegate.isUser ? Colors.outline : Styling.srItem("overprimary")
-                                                font.family: Config.theme.font
-                                                font.pixelSize: Styling.fontSize(-3)
+                                                text: (messageDelegate.isUser ? "~/ " : ">_ ") + (messageDelegate.isUser ? I18n.t("ai.role_you") : (modelData.model || I18n.t("ai.role_assistant")))
+                                                color: messageDelegate.isUser ? Colors.overBackground : Styling.srItem("overprimary")
+                                                font.family: Config.theme.monoFont
+                                                font.pixelSize: Styling.monoFontSize(-1)
                                                 font.weight: Font.DemiBold
-                                                font.capitalization: Font.AllUppercase
-                                                font.letterSpacing: 0.6
+                                                font.capitalization: Font.MixedCase
                                                 elide: Text.ElideRight
                                                 Layout.maximumWidth: column.width * 0.5
 
@@ -1141,8 +1197,8 @@ FocusScope {
                                             text: Ai.streamingText
                                             textFormat: Text.PlainText
                                             color: messageDelegate.bodyColor
-                                            font.family: Config.theme.font
-                                            font.pixelSize: 14
+                                            font.family: Config.theme.monoFont
+                                            font.pixelSize: Styling.monoFontSize(0)
                                             wrapMode: Text.Wrap
                                         }
 
@@ -1164,8 +1220,8 @@ FocusScope {
                                                 text: modelData.content || ""
                                                 textFormat: Text.PlainText
                                                 color: Colors.overSurface
-                                                font.family: Config.theme.font
-                                                font.pixelSize: 14
+                                                font.family: Config.theme.monoFont
+                                                font.pixelSize: Styling.monoFontSize(0)
                                                 wrapMode: Text.Wrap
                                                 readOnly: !messageDelegate.isEditing
                                                 selectByMouse: true
@@ -1363,30 +1419,18 @@ FocusScope {
                             height: attachmentPreviewHeight + Math.min(150, Math.max(48, inputField.contentHeight + 24))
 
                             anchors.bottom: parent.bottom
-                            property real centerMargin: (parent.height / 2) - (height / 2)
-                            anchors.bottomMargin: mainChatArea.isWelcome ? centerMargin : 12
+                            anchors.bottomMargin: modelButton.height + 20
                             anchors.horizontalCenter: parent.horizontalCenter
 
                             width: parent.width - 24
 
-                            Behavior on anchors.bottomMargin {
-                                enabled: Motion.enabled
-                                NumberAnimation {
-                                    duration: Motion.normal
-                                    easing.type: Easing.OutCubic
-                                }
-                            }
-
                             StyledRect {
                                 id: inputStyledRect
                                 anchors.fill: parent
-                                variant: "pane"
-                                // The composer is the one element in the panel that still carries
-                                // a surface, now that messages do not. Rounded far more than the
-                                // old 4px so it reads as an input rather than another card, and
-                                // outlined in the accent while it holds the keyboard.
-                                radius: Styling.radius(14)
-                                enableShadow: true
+                                variant: "internalbg"
+                                backgroundOpacity: 0.48
+                                radius: Styling.radius(-4)
+                                animateRadius: false
                                 border.width: 1
                                 // ClippingRectangle's border is a pen, not an item, so the
                                 // strength of the outline lives in the colour's alpha.
@@ -1605,6 +1649,14 @@ FocusScope {
                                     Layout.topMargin: attachmentPreview.visible ? 0 : 8
                                     Layout.bottomMargin: 8
 
+                                    Text {
+                                        text: ">"
+                                        font.family: Config.theme.monoFont
+                                        font.pixelSize: Styling.monoFontSize(2)
+                                        color: Styling.srItem("overprimary")
+                                        Accessible.ignored: true
+                                    }
+
                                     ScrollView {
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
@@ -1626,9 +1678,11 @@ FocusScope {
                                                 root.wantsFocus = true;
                                                 root.restoreInputFocus();
                                             }
-                                            placeholderText: Ai.isLoading ? "AI is responding…" : mainChatArea.isWelcome ? I18n.t("ai.ask_or_help") : I18n.t("ai.message")
-                                            placeholderTextColor: Colors.outline
-                                            font.pixelSize: 14
+                                            placeholderText: Ai.isLoading ? "AI is responding…" : I18n.t("ai.message")
+                                            placeholderTextColor: Qt.alpha(Colors.overBackground, 0.65)
+                                            Accessible.name: I18n.t("ai.message")
+                                            font.family: Config.theme.monoFont
+                                            font.pixelSize: Styling.monoFontSize(0)
                                             color: Colors.overBackground
                                             wrapMode: TextEdit.Wrap
 
@@ -1724,8 +1778,8 @@ FocusScope {
                                         label: I18n.t("ai.send_message")
                                         iconSize: 20
                                         iconColor: Styling.srItem("overprimary")
-                                        enabled: !Ai.isLoading && !attachmentReadProcess.running && mainChatArea.attachmentQueue.length === 0
-                                        visible: !Ai.isLoading && (inputField.text.length > 0 || mainChatArea.pendingAttachments.length > 0)
+                                        enabled: !Ai.isLoading && !attachmentReadProcess.running && mainChatArea.attachmentQueue.length === 0 && (inputField.text.trim().length > 0 || mainChatArea.pendingAttachments.length > 0)
+                                        visible: !Ai.isLoading
 
                                         onClicked: {
                                             if (inputField.text.trim().length > 0 || mainChatArea.pendingAttachments.length > 0) {
@@ -1741,35 +1795,32 @@ FocusScope {
                         }
                     }
 
-                    Text {
+                    Button {
+                            id: modelButton
                             anchors.top: inputContainer.bottom
-                            anchors.topMargin: 8
-                            anchors.horizontalCenter: inputContainer.horizontalCenter
-
-                            text: Ai.currentModel ? Ai.currentModel.name : ""
-                            color: Colors.outline
-                            font.family: Config.theme.font
-                            font.pixelSize: Styling.fontSize(-2)
-                            font.weight: Font.Medium
-
-                            MouseArea {
-                                anchors.fill: parent
-                                anchors.margins: -4
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: if (!Ai.isLoading) modelSelector.open()
+                            anchors.topMargin: 4
+                            anchors.left: inputContainer.left
+                            width: inputContainer.width
+                            height: Styling.fontSize(0) * 2
+                            flat: true
+                            enabled: !Ai.isLoading
+                            text: (Ai.currentModel ? Ai.currentModel.name : I18n.t("ai.cmd_switch_model")) + "  /model"
+                            Accessible.name: I18n.t("ai.cmd_switch_model")
+                            onClicked: modelSelector.open()
+                            contentItem: Text {
+                                text: modelButton.text
+                                font.family: Config.theme.monoFont
+                                font.pixelSize: Styling.monoFontSize(-2)
+                                color: Qt.alpha(Colors.overBackground, 0.75)
+                                verticalAlignment: Text.AlignVCenter
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideRight
                             }
-
-                            // Same shape as the history page: the fade drives
-                            // visibility rather than the other way round.
-                            visible: opacity > 0.01
-                            opacity: mainChatArea.isWelcome ? 1 : 0
-
-                            Behavior on opacity {
-                                enabled: Motion.enabled
-                                NumberAnimation {
-                                    duration: Motion.normal
-                                    easing.type: Easing.OutQuart
-                                }
+                            background: StyledRect {
+                                variant: "transparent"
+                                radius: Styling.radius(-8)
+                                border.width: modelButton.visualFocus ? 1 : 0
+                                border.color: Styling.srItem("overprimary")
                             }
                         }
                     }

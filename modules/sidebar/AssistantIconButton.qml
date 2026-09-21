@@ -34,6 +34,12 @@ Button {
     Layout.preferredHeight: 32
     flat: true
     padding: 0
+    scale: down ? 0.94 : 1
+
+    Behavior on scale {
+        enabled: Motion.enabled
+        NumberAnimation { duration: Motion.micro; easing.type: Motion.microEasing }
+    }
 
     Accessible.name: root.label
     ToolTip.visible: hovered && root.label !== ""
@@ -50,8 +56,11 @@ Button {
 
     background: StyledRect {
         variant: root.hovered ? "focus" : "common"
-        radius: Styling.radius(4)
-        opacity: root.hovered ? 1 : 0
+        radius: Styling.radius(-6)
+        animateRadius: false
+        opacity: root.hovered || root.visualFocus || root.down ? 1 : 0
+        border.width: root.visualFocus ? 1 : 0
+        border.color: Styling.srItem("overprimary")
 
         Behavior on opacity {
             enabled: Motion.enabled

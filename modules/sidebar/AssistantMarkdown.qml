@@ -39,8 +39,8 @@ ColumnLayout {
                     text: segment.content
                     textFormat: Text.MarkdownText
                     color: root.textColor
-                    font.family: Config.theme.font
-                    font.pixelSize: 14
+                    font.family: Config.theme.monoFont
+                    font.pixelSize: Styling.monoFontSize(0)
                     wrapMode: Text.Wrap
                     readOnly: true
                     selectByMouse: true

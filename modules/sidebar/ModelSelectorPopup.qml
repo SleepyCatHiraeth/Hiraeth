@@ -138,7 +138,10 @@ Popup {
 
     background: StyledRect {
         variant: "popup"
-        radius: Styling.radius(20)
+        backgroundOpacity: 0.94
+        enableBorder: false
+        radius: Styling.radius(4)
+        animateRadius: false
     }
 
     contentItem: ColumnLayout {
@@ -500,8 +503,8 @@ Popup {
                         Text {
                             text: modelData.name
                             color: delegateBtn.isSelected ? Styling.srItem("primary") : (delegateBtn.isActiveModel ? Styling.srItem("overprimary") : Colors.overBackground)
-                            font.family: Config.theme.font
-                            font.pixelSize: 14
+                            font.family: Config.theme.monoFont
+                            font.pixelSize: Styling.monoFontSize(0)
                             font.weight: Font.Medium
                             Layout.fillWidth: true
                             elide: Text.ElideRight
@@ -522,8 +525,8 @@ Popup {
                                 return provider ? provider.toUpperCase() + " • " + modelData.model : modelData.model;
                             }
                             color: delegateBtn.isSelected ? Styling.srItem("primary") : Colors.outline
-                            font.family: Config.theme.font
-                            font.pixelSize: 11
+                            font.family: Config.theme.monoFont
+                            font.pixelSize: Styling.monoFontSize(-2)
                             Layout.fillWidth: true
                             elide: Text.ElideRight
 

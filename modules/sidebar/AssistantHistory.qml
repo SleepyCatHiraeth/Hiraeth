@@ -19,6 +19,10 @@ StyledRect {
     signal dismissed
 
     variant: "bg"
+    backgroundOpacity: 0.88
+    enableBorder: false
+    radius: Styling.radius(4)
+    animateRadius: false
     // Driven by opacity rather than by `expanded` directly: a `visible` bound
     // to the same flag switches off in the frame the fade starts, so the
     // fade-out never showed.
@@ -29,7 +33,7 @@ StyledRect {
     Behavior on opacity {
         enabled: Motion.enabled
         NumberAnimation {
-            duration: Motion.normal
+            duration: root.expanded ? Motion.normal : Motion.fast
             easing.type: Motion.normalEasing
         }
     }
@@ -42,9 +46,9 @@ StyledRect {
         Text {
             text: I18n.t("ai.chat_history")
             color: Colors.overSurface
-            font.family: Config.theme.font
-            font.pixelSize: 18
-            font.weight: Font.Bold
+            font.family: Config.theme.monoFont
+            font.pixelSize: Styling.monoFontSize(2)
+            font.weight: Font.Medium
         }
 
         Text {
@@ -84,9 +88,9 @@ StyledRect {
 
                         Text {
                             text: modelData.title || "New Chat"
-                            color: Ai.currentChatId === modelData.id ? Styling.srItem("primary") : Colors.overSurface
-                            font.family: Config.theme.font
-                            font.pixelSize: 14
+                            color: Ai.currentChatId === modelData.id ? Styling.srItem("overprimary") : Colors.overBackground
+                            font.family: Config.theme.monoFont
+                            font.pixelSize: Styling.monoFontSize(0)
                             font.weight: Font.Medium
                             elide: Text.ElideRight
                             width: parent.width
@@ -103,9 +107,9 @@ StyledRect {
                                     return "";
                                 return new Date(stamp).toLocaleString(Qt.locale(), "MMM dd, hh:mm a");
                             }
-                            color: Ai.currentChatId === modelData.id ? Styling.srItem("primary") : Colors.outline
-                            font.family: Config.theme.font
-                            font.pixelSize: 11
+                            color: Qt.alpha(Colors.overBackground, 0.7)
+                            font.family: Config.theme.monoFont
+                            font.pixelSize: Styling.monoFontSize(-2)
                             elide: Text.ElideRight
                             width: parent.width
                         }
@@ -132,8 +136,11 @@ StyledRect {
                 }
 
                 background: StyledRect {
-                    variant: Ai.currentChatId === modelData.id ? "focus" : (parent.hovered ? "surfaceVariant" : "transparent")
-                    radius: Styling.radius(6)
+                    variant: Ai.currentChatId === modelData.id || parent.hovered || parent.visualFocus ? "focus" : "transparent"
+                    radius: Styling.radius(-4)
+                    animateRadius: false
+                    border.width: parent.visualFocus ? 1 : 0
+                    border.color: Styling.srItem("overprimary")
                 }
 
                 onClicked: {

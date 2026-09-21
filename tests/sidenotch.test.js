@@ -103,6 +103,16 @@ reconcile();
 assert.equal(state.assistantVisible, false);
 
 const collapsedSource = read('modules/ainotch/AiNotchCollapsed.qml');
+// The animated figure and gauge use the same bounded quantity; values at
+// either end must not wrap the arc or display a percentage outside 0..100.
+const cellSource = read('modules/ainotch/AiUsageCell.qml');
+const fractionExpression = cellSource.match(/property real fraction: (.+)/)[1];
+const percentExpression = cellSource.match(/text: (Math.round\(root.animatedFraction[^\n]+)/)[1];
+for (const [usedPercent, expected] of [[-5, '0%'], [0, '0%'], [42.4, '42%'], [100, '100%'], [110, '100%']]) {
+    const fraction = vm.runInNewContext(fractionExpression, {usedPercent});
+    assert.equal(vm.runInNewContext(percentExpression, {root: {animatedFraction: fraction}}), expected);
+}
+assert.equal(vm.runInNewContext(percentExpression, {root: {animatedFraction: 0.275}}), '28%');
 const capacity = collapsedSource.match(/property int maxUsageCells: (.+)/)[1];
 for (const [height, expected] of [[24, 0], [140, 2], [300, 3]])
     assert.equal(vm.runInNewContext(capacity, {height, cellHeight: 43}), expected);

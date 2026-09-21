@@ -424,7 +424,7 @@ Singleton {
         "lockscreen": ["position"],
         "desktop": ["enabled", "iconSize", "spacingVertical", "textColor"],
         "system": ["idle", "ocr", "updateServiceEnabled"],
-        "ai": ["sidebarPosition", "sidebarWidth", "sidebarMergeIntoFrame", "sidebarReserveSpace", "sidebarCloseOnClickOutside", "notchEnabled", "notchLength", "notchKeepHidden", "notchHoverRegionSize", "notchHoverToOpen", "notchAutoHideWithWindows", "notchUsageEnabled"]
+        "ai": ["sidebarPosition", "sidebarWidth", "sidebarMergeIntoFrame", "sidebarReserveSpace", "sidebarCloseOnClickOutside", "notchEnabled", "notchLength", "notchKeepHidden", "notchHoverRegionSize", "notchHoverToOpen", "notchAutoHideWithWindows", "notchUsageEnabled", "notchTransparentPill"]
     }
 
     // Create a deep copy of the current shell config

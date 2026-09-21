@@ -29,6 +29,9 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.preferredHeight: 32
         variant: "surface"
+        backgroundOpacity: 0.6
+        enableBorder: false
+        animateRadius: false
         topLeftRadius: Styling.radius(4)
         topRightRadius: Styling.radius(4)
         bottomLeftRadius: 0
@@ -47,8 +50,8 @@ ColumnLayout {
             Text {
                 text: root.language || "text"
                 color: Colors.outline
-                font.family: Config.theme.font
-                font.pixelSize: 12
+                font.family: Config.theme.monoFont
+                font.pixelSize: Styling.monoFontSize(-2)
                 font.weight: Font.Bold
             }
 
@@ -61,6 +64,7 @@ ColumnLayout {
                 Layout.preferredHeight: 24
                 flat: true
                 padding: 0
+                Accessible.name: I18n.t("ai.copy_message")
 
                 contentItem: Text {
                     text: Icons.copy
@@ -106,6 +110,9 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: codeText.contentHeight + 16
         variant: "internalbg"
+        backgroundOpacity: 0.6
+        enableBorder: false
+        animateRadius: false
         topLeftRadius: 0
         topRightRadius: 0
         bottomLeftRadius: Styling.radius(4)
@@ -118,8 +125,8 @@ ColumnLayout {
             anchors.fill: parent
             anchors.margins: 8
             text: root.code
-            font.family: "Monospace"
-            font.pixelSize: 13
+            font.family: Config.theme.monoFont
+            font.pixelSize: Styling.monoFontSize(-1)
             color: Colors.overSurface
             readOnly: true
             selectByMouse: true

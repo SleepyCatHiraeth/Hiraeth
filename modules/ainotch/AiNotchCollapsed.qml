@@ -1,12 +1,13 @@
 import QtQuick
 import qs.modules.services
 import qs.modules.theme
+import qs.modules.components
 import qs.modules.turret
 import qs.config
 import "NotchEdge.js" as NotchEdge
 
 // Resting content of the AI notch: one ring per provider showing how much of
-// its five-hour window is spent, and a dot that pulses while a reply is
+// its five-hour window is spent, and a moving filament while a reply is
 // streaming, so the notch answers both "how much is left?" and "is it still
 // working?" without being opened.
 //
@@ -17,6 +18,11 @@ Item {
 
     property bool hovered: false
     property string edge: "right"
+    readonly property bool transparentPill: Config.ai.notchTransparentPill ?? true
+    readonly property rect glassInset: transparentPill
+        ? Qt.rect(statsBubble.x, statsBubble.y, statsBubble.width, statsBubble.height)
+        : Qt.rect(0, 0, 0, 0)
+    readonly property real glassRadius: statsBubble.radius
 
     readonly property bool busy: Ai.isLoading
     readonly property var filamentGeometry: NotchEdge.filamentGeometry(edge, width, height, 2, 3)
@@ -41,10 +47,10 @@ Item {
 
     FontMetrics {
         id: usageFont
-        font.family: Config.theme.font
-        font.pixelSize: Styling.fontSize(-4)
+        font.family: Config.theme.monoFont
+        font.pixelSize: Styling.monoFontSize(-2)
     }
-    readonly property int cellHeight: 30 + Math.ceil(usageFont.height)
+    readonly property int cellHeight: 34 + Math.ceil(usageFont.height)
     // Leave room for the busy indicator even before a request starts.
     readonly property int maxUsageCells: Math.max(0, Math.min(3, Math.floor((height - 16 + 10) / (cellHeight + 10))))
     readonly property string providerSelection: {
@@ -61,10 +67,42 @@ Item {
     readonly property var usageProviders: providerSelection ? providerSelection.split(",") : []
     readonly property bool showUsage: usageProviders.length > 0
 
+    StyledRect {
+        id: statsBubble
+        visible: root.transparentPill
+        anchors.centerIn: parent
+        width: Math.max(0, parent.width - 18)
+        height: Math.max(0, Math.min(parent.height - 4,
+            root.showUsage && !root.turretBusy ? usageColumn.implicitHeight + 6 : width * 1.8))
+        variant: "bg"
+        backgroundOpacity: root.hovered ? 0.58 : 0.7
+        radius: Math.min(width / 2, Styling.radius(4))
+        animateRadius: false
+        enableBorder: false
+
+        Behavior on height {
+            enabled: Motion.enabled && root.visible
+            NumberAnimation { duration: Motion.normal; easing.type: Motion.fastEasing }
+        }
+
+        Behavior on backgroundOpacity {
+            enabled: Motion.enabled && root.visible
+            NumberAnimation { duration: Motion.fast; easing.type: Motion.fastEasing }
+        }
+    }
+
     Column {
+        id: usageColumn
         anchors.centerIn: parent
         spacing: 10
-        visible: root.showUsage && !root.turretBusy
+        visible: opacity > 0.01 && !root.turretBusy
+        opacity: root.showUsage && !root.turretBusy ? 1 : 0
+        scale: 0.96 + 0.04 * opacity
+
+        Behavior on opacity {
+            enabled: Motion.enabled
+            NumberAnimation { duration: Motion.normal; easing.type: Motion.normalEasing }
+        }
 
         Repeater {
             model: root.showUsage ? root.usageProviders : []
@@ -73,9 +111,11 @@ Item {
                 required property var modelData
                 readonly property var reading: root.usageSnapshot.providers[modelData]
                 providerId: modelData
+                edge: root.edge
                 label: reading ? reading.name : modelData
                 usedPercent: reading ? reading.usedPercent : 0
                 stale: AiUsage.providerStale(modelData)
+                resetsAt: reading ? (reading.resetsAt || "") : ""
                 hovered: root.hovered
             }
         }
@@ -90,10 +130,11 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             text: Icons.assistant
             font.family: Icons.font
-            font.pixelSize: root.hovered ? 20 : 18
+            font.pixelSize: 18
+            scale: root.hovered ? 1.1 : 1
             color: root.hovered ? Styling.srItem("overprimary") : Colors.overSurface
 
-            Behavior on font.pixelSize {
+            Behavior on scale {
                 enabled: Motion.enabled
                 NumberAnimation {
                     duration: Motion.fast
@@ -133,7 +174,7 @@ Item {
                 NumberAnimation {
                     from: -filamentSegment.height
                     to: filament.height
-                    duration: Motion.ambient
+                    duration: Motion.ambient * 2
                     easing.type: Motion.ambientEasing
                 }
             }
@@ -194,20 +235,5 @@ Item {
             }
         }
 
-        SequentialAnimation on scale {
-            running: root.visible && root.busy && !root.turretBusy && Motion.enabled
-            loops: Animation.Infinite
-            alwaysRunToEnd: true
-            NumberAnimation {
-                to: 1.6
-                duration: 520
-                easing.type: Easing.InOutSine
-            }
-            NumberAnimation {
-                to: 1.0
-                duration: 520
-                easing.type: Easing.InOutSine
-            }
-        }
     }
 }

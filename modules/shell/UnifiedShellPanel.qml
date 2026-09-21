@@ -256,6 +256,9 @@ PanelWindow {
             id: frameContent
             sidebarProgress: assistantSidebar.expansionProgress
             sidebarWidth: assistantSidebar.effectiveWidth
+            sidebarGlassRect: assistantSidebar.glassRect
+            sidebarGlassRadius: assistantSidebar.glassRadius
+            sidebarGlassVisible: assistantSidebar.glassVisible
             anchors.fill: parent
             targetScreen: unifiedPanel.targetScreen
             hasFullscreenWindow: unifiedPanel.hasFullscreenWindow

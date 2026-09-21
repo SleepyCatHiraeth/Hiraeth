@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Effects
+import QtQuick.Shapes
 import qs.modules.components
 import qs.modules.corners
 import qs.modules.theme
@@ -30,6 +31,9 @@ Item {
     // Surface variant. "transparent" is what the frame-wrapped assistant panel
     // needs so the screen frame draws its own background behind it.
     property string surfaceVariant: "bg"
+    // Optional aperture in body coordinates; the caller owns its glass fill.
+    property rect glassInset: Qt.rect(0, 0, 0, 0)
+    property real glassRadius: 0
 
     readonly property bool isVertical: NotchEdge.isVertical(edge)
     readonly property var bodyRadii: NotchEdge.radii(edge, bodyRadius)
@@ -63,7 +67,7 @@ Item {
         bottomLeftRadius: root.bodyRadii.bl
         bottomRightRadius: root.bodyRadii.br
 
-        layer.enabled: root.clampedFlare > 0
+        layer.enabled: root.clampedFlare > 0 || root.glassInset.width > 0
         layer.smooth: true
         layer.effect: MultiEffect {
             maskEnabled: true
@@ -98,18 +102,37 @@ Item {
             }
         }
 
-        Rectangle {
+        Item {
             id: bodyMask
-            color: "white"
             x: root.isVertical ? 0 : flareLow.width
             y: root.isVertical ? flareLow.height : 0
             width: root.isVertical ? parent.width : parent.width - 2 * root.clampedFlare
             height: root.isVertical ? parent.height - 2 * root.clampedFlare : parent.height
 
-            topLeftRadius: root.bodyRadii.tl
-            topRightRadius: root.bodyRadii.tr
-            bottomLeftRadius: root.bodyRadii.bl
-            bottomRightRadius: root.bodyRadii.br
+            Shape {
+                anchors.fill: parent
+                preferredRendererType: Shape.CurveRenderer
+                ShapePath {
+                    fillColor: "white"
+                    strokeWidth: 0
+                    fillRule: ShapePath.OddEvenFill
+                    PathRectangle {
+                        width: bodyMask.width
+                        height: bodyMask.height
+                        topLeftRadius: root.bodyRadii.tl
+                        topRightRadius: root.bodyRadii.tr
+                        bottomLeftRadius: root.bodyRadii.bl
+                        bottomRightRadius: root.bodyRadii.br
+                    }
+                    PathRectangle {
+                        x: root.glassInset.x
+                        y: root.glassInset.y
+                        width: root.glassInset.width
+                        height: root.glassInset.height
+                        radius: root.glassRadius
+                    }
+                }
+            }
         }
 
         Item {

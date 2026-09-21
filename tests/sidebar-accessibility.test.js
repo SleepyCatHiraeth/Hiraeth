@@ -96,4 +96,29 @@ assert(!/opacity: bubbleArea\.containsMouse[\s\S]{0,300}visible: opacity > 0\.01
     "the action row is never taken out of the layout to hide it");
 assert(/enabled: opacity > 0\.01/.test(sidebar), "a fully transparent action is not a click target");
 
+// The glass terminal has a fixed composer. Transcript layout must reserve its
+// entire footprint, including the model selector, rather than drawing behind it.
+assert(/anchors.bottomMargin: inputContainer.height \+ inputContainer.anchors.bottomMargin/.test(sidebar),
+    "transcript viewport ends above the composer and model selector");
+const modelButton = sidebar.slice(sidebar.indexOf("id: modelButton"));
+assert(/Accessible.name: I18n.t\("ai.cmd_switch_model"\)/.test(modelButton),
+    "model selector is a named keyboard-accessible button");
+assert(!/isWelcome/.test(modelButton), "model selector stays available in populated conversations");
+assert(/root.visualFocus/.test(iconButton) && /border.width: root.visualFocus/.test(iconButton),
+    "header and composer buttons expose visible keyboard focus");
+
 console.log("\nSidebar accessibility: all checks passed");
+
+// The hidden mask source must still paint the glass opening into its texture.
+// A visible binding rendered the inset opaque despite correct geometry.
+const frame = read("modules/frame/ScreenFrameContent.qml");
+const glassMask = frame.slice(frame.indexOf("id: glassMask"));
+assert(/opacity: root.sidebarMerged && root.sidebarGlassVisible/.test(glassMask)
+    && !/visible:/.test(glassMask), "glass opening uses alpha inside the hidden frame mask");
+
+const terminal = sidebar.slice(sidebar.indexOf("id: terminalSurface"), sidebar.indexOf("id: terminalContent"));
+assert(/enableBorder: false/.test(terminal) && /border.width: 0/.test(terminal),
+    "glass surface has no decorative edge highlight");
+const send = sidebar.slice(sidebar.indexOf("glyph: Icons.paperPlane"), sidebar.indexOf("id: modelButton"));
+assert(/visible: !Ai.isLoading\s/.test(send) && /inputField.text.trim\(\).length > 0/.test(send),
+    "empty composer keeps Send in place but disables submission");
