@@ -14,6 +14,31 @@ func TestResolveActionCatalogEntry(t *testing.T) {
 		wantFlags string
 	}{
 		{
+			name:     "turret key-up is release, not repeat",
+			action:   Action{ID: "ambxst.turret.release"},
+			wantDisp: "exec", wantArg: "ambxst run turret-release", wantFlags: "r",
+		},
+		{
+			name:     "mute remains single-shot on release",
+			action:   Action{ID: "audio.mute-toggle"},
+			wantDisp: "exec", wantArg: "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle", wantFlags: "lr",
+		},
+		{
+			name:     "volume repeats while held",
+			action:   Action{ID: "audio.volume-up"},
+			wantDisp: "exec", wantArg: "wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 10%+", wantFlags: "le",
+		},
+		{
+			name:     "brightness repeats while held",
+			action:   Action{ID: "brightness.up"},
+			wantDisp: "exec", wantArg: "ambxst brightness +5", wantFlags: "le",
+		},
+		{
+			name:     "floating action resolves",
+			action:   Action{ID: "window.toggle-float"},
+			wantDisp: "togglefloating",
+		},
+		{
 			name:     "ambxst.launcher carries r flag",
 			action:   Action{ID: "ambxst.launcher"},
 			wantDisp: "exec", wantArg: "ambxst run launcher", wantFlags: "r",

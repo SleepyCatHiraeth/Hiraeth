@@ -76,6 +76,8 @@
   "ai.tools_unsupported": "%1 no puede usar herramientas; permanecen desactivadas para este modelo.",
   "ai.unknown_error": "error desconocido",
   "bar.resources.tooltip": "Recursos del sistema",
+  "bar.systray.overflow": "Iconos ocultos de la bandeja",
+  "bar.systray.overflow_empty": "Arrastra iconos aquí",
   "bar.tooltip.audio_switcher": "Selector de dispositivo de audio",
   "bar.tooltip.controls": "Controles de audio y brillo",
   "bar.tooltip.keyboard_layout": "Disposición del teclado",

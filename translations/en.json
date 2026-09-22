@@ -76,6 +76,8 @@
   "ai.tools_unsupported": "%1 cannot use tools; they stay off for this model.",
   "ai.unknown_error": "unknown error",
   "bar.resources.tooltip": "System Resources",
+  "bar.systray.overflow": "Tray overflow",
+  "bar.systray.overflow_empty": "Drag tray icons here",
   "bar.tooltip.audio_switcher": "Audio Device Switcher",
   "bar.tooltip.controls": "Audio & Brightness Controls",
   "bar.tooltip.keyboard_layout": "Keyboard Layout",

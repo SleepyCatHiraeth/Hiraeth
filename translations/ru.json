@@ -76,6 +76,8 @@
   "ai.tools_unsupported": "%1 не поддерживает инструменты; для этой модели они отключены.",
   "ai.unknown_error": "неизвестная ошибка",
   "bar.resources.tooltip": "Системные ресурсы",
+  "bar.systray.overflow": "Скрытые значки трея",
+  "bar.systray.overflow_empty": "Перетащите значки сюда",
   "bar.tooltip.audio_switcher": "Переключатель аудиоустройств",
   "bar.tooltip.controls": "Управление звуком и яркостью",
   "bar.tooltip.keyboard_layout": "Раскладка клавиатуры",

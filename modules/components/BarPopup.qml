@@ -40,6 +40,10 @@ PopupWindow {
     // popups, layout selector, etc. don't stack on top of each other.
     property string groupId: "bar"
 
+    // Extra windows (e.g. a nested child popup) that must not clear
+    // this popup's focus grab while they are open.
+    property list<var> extraGrabWindows: []
+
     // Signal emitted when popup is closed externally (click outside)
     signal closedExternally
 
@@ -103,16 +107,29 @@ PopupWindow {
     color: "transparent"
     visible: false
 
+    // When true, the transparent shadow margins do not capture input;
+    // only the visible content area does. Lets pointer drags from the
+    // parent window travel over the margins without breaking its grab.
+    property bool clickThroughMargins: false
+
+    Region {
+        id: contentInputMask
+        item: background
+    }
+
+    mask: root.clickThroughMargins ? contentInputMask : null
+
     // Focus grab for click-outside-to-close behavior
     property bool focusActive: false
 
     FocusGrab {
         id: focusGrab
         active: root.visible && root.focusActive
-        windows: [root]
+        windows: [root].concat(root.extraGrabWindows)
 
         onCleared: {
-            if (root.closeOnFocusLost && root.isOpen) {
+            // A child popup taking the grab must not dismiss its parent.
+            if (root.closeOnFocusLost && root.isOpen && root.extraGrabWindows.length === 0) {
                 root.closedExternally();
                 root.close();
             }
@@ -121,17 +138,17 @@ PopupWindow {
 
     // Animation behaviors
     Behavior on popupOpacity {
-        enabled: Config.animDuration > 0
+        enabled: Motion.enabled
         NumberAnimation {
-            duration: Config.animDuration
+            duration: Motion.normal
             easing.type: Easing.OutCubic
         }
     }
 
     Behavior on popupScale {
-        enabled: Config.animDuration > 0
+        enabled: Motion.enabled
         NumberAnimation {
-            duration: Config.animDuration
+            duration: Motion.normal
             easing.type: Easing.OutCubic
         }
     }
@@ -237,9 +254,18 @@ PopupWindow {
         }
     }
 
+    // Re-assert the focus grab after it was cleared externally (e.g. a
+    // nested child popup took over and then closed)
+    function refreshFocusGrab() {
+        if (!visible || !isOpen)
+            return;
+        focusActive = false;
+        focusActive = true;
+    }
+
     Timer {
         id: closeTimer
-        interval: Config.animDuration > 0 ? Config.animDuration + 50 : 50
+        interval: Motion.enabled ? Motion.normal + 50 : 50
         onTriggered: {
             root.visible = false;
         }

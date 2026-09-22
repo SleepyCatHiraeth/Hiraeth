@@ -265,7 +265,7 @@ func TestRenderEmitsDefaultOnlyTurretBinds(t *testing.T) {
 		`argument = "ambxst run turret"`,
 		`key = "DEFAULT_TURRET_RELEASE"`,
 		`argument = "ambxst run turret-release"`,
-		`flags = "e"`,
+		`flags = "r"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("default-only bind missing %q:\n%s", want, out)
