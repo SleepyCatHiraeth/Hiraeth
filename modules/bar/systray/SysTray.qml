@@ -173,15 +173,16 @@ StyledRect {
         }
 
         StyledRect {
+            id: chevronBackground
             anchors.fill: parent
             variant: chevron.activeFocus ? "focus" : "pane"
             radius: Styling.radius(-6)
 
             Rectangle {
                 anchors.fill: parent
-                color: parent.item || "transparent"
+                color: chevronBackground.item
                 opacity: chevron.hot ? 0.45 : (chevron.hovered ? 0.25 : 0)
-                radius: parent.radius
+                radius: chevronBackground.radius
 
                 Behavior on opacity {
                     enabled: Motion.enabled

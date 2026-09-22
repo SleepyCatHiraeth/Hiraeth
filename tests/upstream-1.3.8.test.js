@@ -64,6 +64,9 @@ assert.match(item, /readonly property string iconSource: root\.item\.icon/);
 assert.match(tray, /component ChevronButton: AbstractButton/);
 assert.match(tray, /activeFocusOnTab: true/);
 assert.match(tray, /Accessible\.name: I18n\.t\("bar\.systray\.overflow"\)/);
+// ClippingRectangle reparents visual children to its content item.
+assert.match(tray, /color: chevronBackground\.item/);
+assert.match(tray, /radius: chevronBackground\.radius/);
 for (const source of [tray, item, popup]) {
     assert.doesNotMatch(source, /enabled: Config\.animDuration > 0/);
     assert.match(source, /enabled: Motion\.enabled/);
