@@ -52,6 +52,10 @@ FileView {
         colors: colors
     }
 
+    property GreeterGenerator greeterGenerator: GreeterGenerator {
+        id: greeterGenerator
+    }
+
     property NvChadGenerator nvChadGenerator: NvChadGenerator {
         id: nvChadGenerator
     }
@@ -479,6 +483,7 @@ FileView {
             pywalGenerator.generate(colors);
             kittyGenerator.generate(colors);
             sddmGenerator.generate();
+            greeterGenerator.generate();
             nvChadGenerator.generate(colors);
             discordGenerator.generate(colors);
             spotifyGenerator.generate(colors);
