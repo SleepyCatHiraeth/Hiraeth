@@ -16,8 +16,8 @@ import Quickshell.Wayland
 //   engage   first key or pointer move: the wallpaper blurs and dims, the
 //            clock lifts and shrinks, the glass card assembles in sequence
 //   idle     25 s without input plays engage backwards and clears the field
-//   success  the avatar ring closes, a bloom of accent light spreads from it,
-//            the UI floats away, and everything fades to black for the hand-off
+//   success  the avatar ring ratchets shut, the UI glides away as the blur
+//            clears, and everything fades to black for the hand-off
 PanelWindow {
     id: root
 
@@ -40,7 +40,6 @@ PanelWindow {
     property real rise: 0
     property real t: Session.engaged ? 1 : 0
     property real leave: 0
-    property real bloom: 0
 
     readonly property real engage: Theme.outCubic(t)
 
@@ -82,14 +81,8 @@ PanelWindow {
 
     SequentialAnimation {
         id: outro
-        PauseAnimation { duration: Theme.dur(2.4) }        // ring closes
-        ParallelAnimation {
-            NumberAnimation { target: root; property: "bloom"; to: 1; duration: Theme.dur(4.5); easing.type: Easing.OutCubic }
-            SequentialAnimation {
-                PauseAnimation { duration: Theme.dur(0.8) }
-                NumberAnimation { target: root; property: "leave"; to: 1; duration: Theme.dur(4.2); easing.type: Easing.InOutCubic }
-            }
-        }
+        PauseAnimation { duration: Theme.dur(2.8) }        // ring ratchets shut
+        NumberAnimation { target: root; property: "leave"; to: 1; duration: Theme.dur(4.2); easing.type: Easing.InOutCubic }
         ScriptAction { script: if (root.primary) Session.launch(); }
     }
 
@@ -274,19 +267,6 @@ PanelWindow {
            + 50 * root.unit * (1 - root.engage)
            - 70 * root.unit * Theme.outCubic(root.leave)
         opacity: 1 - root.leave
-    }
-
-    // ── Success bloom ─────────────────────────────────────────────────────
-    Rectangle {
-        visible: root.primary && root.bloom > 0
-        readonly property point origin: card.mapToItem(root.contentItem, card.width / 2, card.height * 0.26)
-        x: origin.x - width / 2
-        y: origin.y - height / 2
-        width: root.diag * 1.2 * root.bloom
-        height: width
-        radius: width / 2
-        color: Theme.primary
-        opacity: 0.32 * (1 - root.bloom)
     }
 
     // ── Weather ───────────────────────────────────────────────────────────

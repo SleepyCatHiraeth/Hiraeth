@@ -1,46 +1,43 @@
 # AGENTS.md: modules/lockscreen/
 
 ## OVERVIEW
-Lock screen UI with PAM authentication via WlSessionLockSurface.
+Lock screen UI on `WlSessionLockSurface`, PAM authentication via
+`Quickshell.Services.Pam`. Visual language shared with the greetd greeter
+(`greeter/`): same clock, avatar ring, and password pill.
 
 ## STRUCTURE
 ```
 modules/lockscreen/
-├── LockScreen.qml       # Main component (750 lines)
-├── ambxst-auth          # Helper script (if any)
-└── config/pam/          # PAM configuration
-    └── password.conf    # Custom PAM rules for lockscreen
+├── LockScreen.qml       # Per-screen surface: background, letterbox bars, clock, card, choreography
+├── LockState.qml        # Singleton: PAM, engaged/idle, phase, lockedAt, host, layout, caps lock
+├── LockStyle.qml        # Singleton: greeter Theme API over Colors/Config (dur, span, easing, pillRadius)
+├── LockCard.qml         # Avatar + ring, user@host, pill, status, meta (from greeter/LoginCard.qml)
+├── LockPill.qml         # Password pill (from greeter/PasswordPill.qml)
+├── LockClock.qml        # Clock (from greeter/Clock.qml)
+├── LockRollingText.qml  # Rolling digits (from greeter/RollingText.qml)
+└── ambxst-auth          # Helper script
 ```
-Related: `modules/widgets/dashboard/widgets/LockPlayer.qml` (music player on lock screen).
+PAM rules: `config/pam/password.conf`.
 
-## WHERE TO LOOK
-| Symbol | Location | Role |
-|--------|----------|------|
-| `WlSessionLockSurface` | `LockScreen.qml:18` | Root; handles Wayland session lock protocol |
-| `PamContext` | `LockScreen.qml:666` | PAM authentication via Quickshell.Services.Pam |
-| `ScreencopyView` | `LockScreen.qml:84` | Captures frozen screen background on lock |
-| `TintedWallpaper` | `LockScreen.qml:30` | Wallpaper with blur effect layer |
-| `failLockSecondsLeft` | `LockScreen.qml:24` | Tracks account lockout after failed attempts |
-| `authPasswordHolder` | `LockScreen.qml:620` | Temp holder for password during PAM auth |
-| `wrongPasswordAnim` | `LockScreen.qml:541` | Shake animation on auth failure |
-| `unlockTimer` | `LockScreen.qml:588` | Triggers GlobalStates.lockscreenVisible = false after exit animation |
+The `Lock*` component files are ports of their `greeter/` counterparts with
+`Theme` -> `LockStyle` and `Info`/`Session` -> `LockState`. The greeter runs
+outside the session and reads a published snapshot, so the two cannot share
+files; keep them in step by hand when changing either.
 
-Key behaviors:
-- On lock: capture screen (`screencopyBackground.captureFrame()`), start entry animations, force focus to password field
-- On auth: store password in temp holder, `pamAuth.start()`, respond to PAM messages via `onPamMessage`
-- On success: trigger exit animation (zoom + fade), start unlockTimer, set lockscreenVisible=false
-- On failure: shake animation, clear password, update failLock countdown
-
-## CONVENTIONS
-Same as root AGENTS.md with additions:
-- Use `Quickshell.Services.Pam` module for authentication
-- Use `WlSessionLockSurface` as root component for lock surfaces
-- Store sensitive data (password) in temporary QtObject, clear immediately after auth
-- Use Process for system commands (`whoami`, `hostname`, `faillock`)
-- Handle PAM message responses in `onPamMessage` signal
+## KEY BEHAVIORS
+- One `PamContext` in `LockState` serves every screen, so success runs the
+  unlock animation on all monitors together.
+- Timelines on `LockScreen`: `lock` (entry), `rise` (clock), `t`/`engage`
+  (card up), `latch` + `leave` (unlock). Every visual reads from them.
+- Unlock: ring ratchets shut (LockCard), bars kick inward (`latch`), then
+  everything glides out; the last step calls `LockState.finish()`, which sets
+  `GlobalStates.lockscreenVisible = false`.
+- `Config.animDuration` 0 (game mode) collapses all motion; the unlock then
+  finishes immediately.
 
 ## ANTI-PATTERNS
-- Never log passwords or send them to debug output
-- Don't modify authPasswordHolder after PAM completion (should be cleared)
-- Don't call pamAuth.start() while already authenticating (check authenticating flag)
-- Don't forget to clear password on both success and failure paths
+- Never log passwords or PAM responses.
+- `LockState.pending` holds the password only until the PAM prompt; keep it
+  cleared on both success and failure.
+- Never add a remote unlock path (see LockscreenService.qml).
+- Escape only disengages the card; it must never end the lock.

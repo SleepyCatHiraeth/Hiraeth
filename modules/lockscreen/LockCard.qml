@@ -1,8 +1,10 @@
 import QtQuick
 import QtQuick.Effects
 import QtQuick.Shapes
+import Quickshell
 
-// Avatar, name, password pill and status line, floating on the blurred wallpaper.
+// Lock variant of greeter/LoginCard.qml: same avatar ring and pill, with the
+// ring closing in ratchet ticks on unlock and "locked since" as meta.
 //
 // `t` (0..1) is the engage timeline. Elements arrive in sequence: the avatar
 // springs in, the name follows, and the password pill
@@ -15,9 +17,9 @@ Item {
     property real t: 1
     property alias pill: pill
 
-    readonly property real avatarIn: Theme.span(t, 0.0, 0.55)
-    readonly property real nameIn: Theme.outCubic(Theme.span(t, 0.14, 0.66))
-    readonly property real pillIn: Theme.outQuint(Theme.span(t, 0.24, 1.0))
+    readonly property real avatarIn: LockStyle.span(t, 0.0, 0.55)
+    readonly property real nameIn: LockStyle.outCubic(LockStyle.span(t, 0.14, 0.66))
+    readonly property real pillIn: LockStyle.outQuint(LockStyle.span(t, 0.24, 1.0))
 
     width: 460 * unit
     height: content.implicitHeight + 76 * unit
@@ -34,18 +36,18 @@ Item {
             width: 112 * root.unit
             height: width
             opacity: Math.min(1, root.avatarIn * 2)
-            scale: 0.4 + 0.6 * Theme.outBack(root.avatarIn)
+            scale: 0.4 + 0.6 * LockStyle.outBack(root.avatarIn)
 
             // Soft glow in the accent colour, brighter while checking.
             RectangularShadow {
                 anchors.fill: avatarBase
                 radius: width / 2
                 blur: 40 * root.unit
-                color: root.failFlash > 0 ? Theme.error : Theme.primary
-                opacity: Session.phase === "authenticating" ? 0.55 : Session.phase === "success" ? 0.85 : 0.18 + 0.5 * root.failFlash
+                color: root.failFlash > 0 ? LockStyle.error : LockStyle.primary
+                opacity: LockState.phase === "authenticating" ? 0.55 : LockState.phase === "success" ? 0.85 : 0.18 + 0.5 * root.failFlash
                 Behavior on opacity {
-                    enabled: Theme.base > 0
-                    NumberAnimation { duration: Theme.dur(1.6); easing.type: Easing.InOutSine }
+                    enabled: LockStyle.base > 0
+                    NumberAnimation { duration: LockStyle.dur(1.6); easing.type: Easing.InOutSine }
                 }
             }
 
@@ -55,22 +57,22 @@ Item {
                 width: parent.width - 16 * root.unit
                 height: width
                 radius: width / 2
-                color: Theme.surfaceContainerHigh
+                color: LockStyle.surfaceContainerHigh
 
                 Text {
                     anchors.centerIn: parent
                     visible: avatarImage.status !== Image.Ready
-                    text: (Theme.user || "?").charAt(0).toUpperCase()
-                    font.family: Theme.clockFont
+                    text: (LockState.user || "?").charAt(0).toUpperCase()
+                    font.family: LockStyle.clockFont
                     font.pixelSize: parent.height * 0.62
-                    color: Theme.primary
+                    color: LockStyle.primary
                 }
             }
 
             Image {
                 id: avatarImage
                 anchors.fill: avatarBase
-                source: Theme.avatar
+                source: "file://" + Quickshell.env("HOME") + "/.face.icon"
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
                 cache: false
@@ -108,19 +110,19 @@ Item {
                 preferredRendererType: Shape.CurveRenderer
 
                 // Success closes the ring in 12 discrete ticks, like a ratchet.
-                property real ratchet: Session.phase === "success" ? 1 : 0
+                property real ratchet: LockState.phase === "success" ? 1 : 0
                 Behavior on ratchet {
-                    enabled: Theme.base > 0
-                    NumberAnimation { duration: Theme.dur(2); easing.type: Easing.InOutSine }
+                    enabled: LockStyle.base > 0
+                    NumberAnimation { duration: LockStyle.dur(2); easing.type: Easing.InOutSine }
                 }
-                property real soft: Session.phase === "authenticating" ? 100 : 0
+                property real soft: LockState.phase === "authenticating" ? 100 : 0
                 Behavior on soft {
-                    enabled: Theme.base > 0
-                    NumberAnimation { duration: Theme.dur(2.2); easing.type: Easing.InOutCubic }
+                    enabled: LockStyle.base > 0
+                    NumberAnimation { duration: LockStyle.dur(2.2); easing.type: Easing.InOutCubic }
                 }
                 readonly property real sweep: ratchet > 0 ? Math.max(soft, 360 * Math.ceil(ratchet * 12) / 12) : soft
                 RotationAnimation on rotation {
-                    running: Session.phase === "authenticating"
+                    running: LockState.phase === "authenticating"
                     onRunningChanged: if (!running) ring.rotation = 0
                     loops: Animation.Infinite
                     from: 0; to: 360
@@ -129,8 +131,8 @@ Item {
 
                 ShapePath {
                     strokeColor: root.failFlash > 0
-                        ? Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, 0.2 + 0.8 * root.failFlash)
-                        : Qt.rgba(Theme.overSurface.r, Theme.overSurface.g, Theme.overSurface.b, 0.12)
+                        ? Qt.rgba(LockStyle.error.r, LockStyle.error.g, LockStyle.error.b, 0.2 + 0.8 * root.failFlash)
+                        : Qt.rgba(LockStyle.overSurface.r, LockStyle.overSurface.g, LockStyle.overSurface.b, 0.12)
                     strokeWidth: 2 * root.unit
                     fillColor: "transparent"
                     PathAngleArc {
@@ -140,7 +142,7 @@ Item {
                     }
                 }
                 ShapePath {
-                    strokeColor: Theme.primary
+                    strokeColor: LockStyle.primary
                     strokeWidth: 3.5 * root.unit
                     fillColor: "transparent"
                     capStyle: ShapePath.RoundCap
@@ -163,10 +165,10 @@ Item {
 
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: Info.greeting + ","
-                font.family: Theme.mono
+                text: "welcome back,"
+                font.family: LockStyle.mono
                 font.pixelSize: 13 * root.unit
-                color: Theme.overSurface
+                color: LockStyle.overSurface
                 opacity: 0.6
             }
 
@@ -174,11 +176,11 @@ Item {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 textFormat: Text.StyledText
-                text: "<b>" + Theme.user + "</b>"
-                      + (Info.host ? "<font color='" + Theme.primary + "'>@" + Info.host + "</font>" : "")
-                font.family: Theme.mono
+                text: "<b>" + LockState.user + "</b>"
+                      + (LockState.host ? "<font color='" + LockStyle.primary + "'>@" + LockState.host + "</font>" : "")
+                font.family: LockStyle.mono
                 font.pixelSize: 22 * root.unit
-                color: Theme.overSurface
+                color: LockStyle.overSurface
             }
         }
 
@@ -190,16 +192,16 @@ Item {
             width: 260 * root.unit
             height: pill.height
 
-            PasswordPill {
+            LockPill {
                 id: pill
                 anchors.centerIn: parent
                 unit: root.unit
                 // Grows from a circle to the full pill.
                 width: height + (parent.width - height) * root.pillIn
-                contentOpacity: Theme.span(root.pillIn, 0.55, 1)
-                opacity: Theme.span(root.t, 0.24, 0.44)
-                busy: Session.phase !== "idle"
-                onSubmitted: password => Session.login(password)
+                contentOpacity: LockStyle.span(root.pillIn, 0.55, 1)
+                opacity: LockStyle.span(root.t, 0.24, 0.44)
+                busy: LockState.phase !== "idle"
+                onSubmitted: password => LockState.unlock(password)
             }
         }
 
@@ -216,21 +218,21 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 property string shownText: ""
                 text: "\u2717 " + shownText.toLowerCase()
-                font.family: Theme.mono
+                font.family: LockStyle.mono
                 font.pixelSize: 13 * root.unit
-                color: Theme.error
+                color: LockStyle.error
                 opacity: 0
             }
 
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "[caps lock]"
-                font.family: Theme.mono
+                font.family: LockStyle.mono
                 font.pixelSize: 13 * root.unit
-                color: Theme.color("yellow", Theme.primary)
-                opacity: Info.capsLock && status.opacity < 0.05 ? root.pillIn : 0
+                color: LockStyle.color("yellow", LockStyle.primary)
+                opacity: LockState.capsLock && status.opacity < 0.05 ? root.pillIn : 0
                 Behavior on opacity {
-                    enabled: Theme.base > 0
+                    enabled: LockStyle.base > 0
                     NumberAnimation { duration: 90 }
                 }
             }
@@ -241,30 +243,26 @@ Item {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             readonly property var parts: {
-                const p = [];
-                if (Info.lastLoginText)
-                    p.push("last login " + Info.lastLoginText);
-                // Pending updates in the accent colour: the one item that asks
-                // for action.
-                if (Info.updates > 0)
-                    p.push("<font color='" + Theme.primary + "'>\u2191 " + Info.updates + (Info.updates === 1 ? " update" : " updates") + "</font>");
-                if (Info.layout)
-                    p.push(Info.layout);
+                const p = ["locked " + Qt.formatTime(LockState.lockedAt, "hh:mm")];
+                const mins = Math.floor((LockState.now - LockState.lockedAt) / 60000);
+                p.push(mins < 1 ? "just now" : mins < 60 ? mins + "m ago" : Math.floor(mins / 60) + "h " + (mins % 60) + "m ago");
+                if (LockState.layout)
+                    p.push(LockState.layout);
                 return p;
             }
             textFormat: Text.StyledText
             text: parts.join("  \u00b7  ")
-            font.family: Theme.mono
+            font.family: LockStyle.mono
             font.pixelSize: 12 * root.unit
-            color: Theme.overSurface
-            opacity: 0.7 * Theme.span(root.t, 0.5, 1)
+            color: LockStyle.overSurface
+            opacity: 0.7 * LockStyle.span(root.t, 0.5, 1)
         }
     }
 
     property real failFlash: 0
 
     Connections {
-        target: Session
+        target: LockState
         function onFailed(message) {
             pill.reject();
             status.shownText = message;
@@ -272,7 +270,7 @@ Item {
             ringFlash.restart();
         }
         function onPhaseChanged() {
-            if (Session.phase === "authenticating")
+            if (LockState.phase === "authenticating")
                 statusOut.restart();
         }
     }
@@ -286,13 +284,13 @@ Item {
 
     ParallelAnimation {
         id: statusIn
-        NumberAnimation { target: status; property: "opacity"; to: 1; duration: Theme.dur(1); easing.type: Easing.OutCubic }
-        NumberAnimation { target: status; property: "y"; from: -8 * root.unit; to: 0; duration: Theme.dur(1.4); easing.type: Easing.OutBack }
+        NumberAnimation { target: status; property: "opacity"; to: 1; duration: LockStyle.dur(1); easing.type: Easing.OutCubic }
+        NumberAnimation { target: status; property: "y"; from: -8 * root.unit; to: 0; duration: LockStyle.dur(1.4); easing.type: Easing.OutBack }
     }
 
     NumberAnimation {
         id: statusOut
         target: status; property: "opacity"; to: 0
-        duration: Theme.dur(0.6)
+        duration: LockStyle.dur(0.6)
     }
 }
