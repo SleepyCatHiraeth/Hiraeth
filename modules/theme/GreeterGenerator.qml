@@ -49,7 +49,7 @@ QtObject {
             wallpaper: wallpaperPath ? "wallpaper." + ext : "",
             font: Config.theme.font,
             monoFont: Config.theme.monoFont,
-            clockFont: "League Gothic",
+            clockFont: Config.theme.font,
             roundness: Config.roundness,
             // theme.animDuration, not Config.animDuration: the latter is 0 while
             // game mode is on, which must not leak into the login screen.
