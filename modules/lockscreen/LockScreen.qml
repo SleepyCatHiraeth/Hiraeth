@@ -8,6 +8,7 @@ import qs.modules.components
 import qs.modules.corners
 import qs.modules.theme
 import qs.modules.globals
+import qs.config
 
 // Lockscreen, same visual language as the greeter, one idea of its own:
 // locking closes the screen into a letterbox. Two dark bars slide in from the
@@ -231,8 +232,12 @@ WlSessionLockSurface {
         color: LockStyle.primary
     }
 
+    // Config.lockscreen.position picks the edge for the player and unlock
+    // hint; the status bar takes the other one.
+    readonly property bool playerOnTop: Config.lockscreen.position === "top"
+
     Bar {
-        atTop: true
+        atTop: !root.playerOnTop
 
         Row {
             anchors.left: parent.left
@@ -278,7 +283,7 @@ WlSessionLockSurface {
     }
 
     Bar {
-        atTop: false
+        atTop: root.playerOnTop
 
         // Now playing, as a status-line segment:
         //   [level meter]  title · artist  │  01:37 ▮▮▮▮▮▯▯▯ 04:03  │  ⏮ ⏯ ⏭

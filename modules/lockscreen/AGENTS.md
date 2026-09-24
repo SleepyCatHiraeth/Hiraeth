@@ -32,6 +32,8 @@ files; keep them in step by hand when changing either.
 - Unlock: ring ratchets shut (LockCard), bars kick inward (`latch`), then
   everything glides out; the last step calls `LockState.finish()`, which sets
   `GlobalStates.lockscreenVisible = false`.
+- `Config.lockscreen.position` picks the edge of the player bar; the status
+  bar takes the other edge.
 - `Config.animDuration` 0 (game mode) collapses all motion; the unlock then
   finishes immediately.
 
