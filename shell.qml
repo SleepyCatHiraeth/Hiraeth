@@ -20,6 +20,7 @@ import qs.modules.frame
 import qs.modules.components
 import qs.modules.desktop
 import qs.modules.lockscreen
+import qs.modules.polkit
 import qs.modules.dock
 import qs.modules.globals
 import qs.modules.shell
@@ -178,6 +179,9 @@ ShellRoot {
         // Surface auto-created per screen
         LockScreen {}
     }
+
+    // Polkit authentication agent (replaces hyprpolkitagent)
+    PolkitDialog {}
 
     CompositorConfig {
         id: compositorConfig
