@@ -222,9 +222,15 @@ Item {
         id: barMouseArea
         hoverEnabled: true
 
-        // Size includes margins
-        width: root.orientation === "horizontal" ? root.width : (root.reveal ? root.totalBarWidth : Math.max((Config.bar && Config.bar.hoverRegionHeight !== undefined ? Config.bar.hoverRegionHeight : 8), 4) + root.frameOffset)
-        height: root.orientation === "vertical" ? root.height : (root.reveal ? root.totalBarHeight : Math.max((Config.bar && Config.bar.hoverRegionHeight !== undefined ? Config.bar.hoverRegionHeight : 8), 4) + root.frameOffset)
+        // Size includes margins. While revealed it also covers the contained
+        // frame's second strip and the compositor's outer gap: the whole band
+        // between the screen edge and the first window. Otherwise the pointer
+        // falls through that band on its way to the bar onto whatever window
+        // lies beneath it (a scrolled-off column in the scrolling layout), and
+        // follow_mouse focuses that window and scrolls it into view.
+        readonly property int edgeBand: (root.actualContainBar ? root.frameOffset : 0) + (Config.compositor?.gapsOut ?? 0)
+        width: root.orientation === "horizontal" ? root.width : (root.reveal ? root.totalBarWidth + edgeBand : Math.max((Config.bar && Config.bar.hoverRegionHeight !== undefined ? Config.bar.hoverRegionHeight : 8), 4) + root.frameOffset)
+        height: root.orientation === "vertical" ? root.height : (root.reveal ? root.totalBarHeight + edgeBand : Math.max((Config.bar && Config.bar.hoverRegionHeight !== undefined ? Config.bar.hoverRegionHeight : 8), 4) + root.frameOffset)
 
 
         // Position using x/y
