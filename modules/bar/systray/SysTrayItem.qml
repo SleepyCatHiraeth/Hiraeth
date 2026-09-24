@@ -109,24 +109,37 @@ MouseArea {
         id: systrayPopup
         anchorItem: root
         bar: root.bar
+        variant: "bg"
 
         // Nested inside the overflow popup it must not close it
         groupId: root.inOverflow ? "systrayMenu" : "bar"
 
-        // Use a reasonable width for the menu
-        contentWidth: 220
-        // Height adapts to content, with a max limit if needed.
-        // Must include vertical padding (8 top + 8 bottom = 16)
-        contentHeight: Math.min(itemsColumn.implicitHeight + 16, 400)
+        contentWidth: 236
+        // Height follows the content (including an opening submenu, which
+        // grows smoothly), capped so long menus scroll.
+        contentHeight: Math.min(menuHeader.height + itemsColumn.implicitHeight + 2 * popupPadding + 6, 420)
 
-        popupPadding: 8
+        popupPadding: 6
         // 8px standard margin + 8px SysTray container padding to ensure correct offset from the main bar
         visualMargin: 16
 
+        // Drives the staggered row entrance each time the menu opens.
+        property real reveal: 0
         onIsOpenChanged: {
+            if (isOpen) {
+                reveal = 0;
+                revealAnim.restart();
+            }
             if (!root.inOverflow || !root.overflowPopupRef)
                 return;
             root.overflowPopupRef.activeChildMenu = isOpen ? systrayPopup : null;
+        }
+        NumberAnimation {
+            id: revealAnim
+            target: systrayPopup
+            property: "reveal"
+            to: 1
+            duration: Motion.enabled ? Motion.base * 2 : 0
         }
 
         // Using QsMenuOpener to access menu items
@@ -135,8 +148,50 @@ MouseArea {
             menu: root.item.menu
         }
 
+        // Header: the app's name as a prompt line.
+        Item {
+            id: menuHeader
+            width: parent.width
+            height: 30
+            opacity: Math.min(1, systrayPopup.reveal * 4)
+
+            Row {
+                anchors.left: parent.left
+                anchors.leftMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 8
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "❯"
+                    font.family: Config.theme.monoFont
+                    font.pixelSize: 12
+                    font.weight: Font.Bold
+                    color: Colors.primary
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: menuHeader.width - 40
+                    text: (root.item.tooltipTitle || root.item.title || root.item.id || "").toLowerCase()
+                    font.family: Config.theme.monoFont
+                    font.pixelSize: 11
+                    color: Colors.outline
+                    elide: Text.ElideRight
+                }
+            }
+
+            Rectangle {
+                anchors.bottom: parent.bottom
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: (parent.width - 16) * Math.min(1, systrayPopup.reveal * 2)
+                height: 1
+                color: Qt.rgba(Colors.overSurface.r, Colors.overSurface.g, Colors.overSurface.b, 0.1)
+            }
+        }
+
         ScrollView {
             anchors.fill: parent
+            anchors.topMargin: menuHeader.height + 4
             contentWidth: availableWidth
             clip: true
 
@@ -145,79 +200,127 @@ MouseArea {
             ColumnLayout {
                 id: itemsColumn
                 width: parent.width
-                spacing: 2
+                spacing: 1
 
                 Repeater {
                     model: menuOpener.children ? menuOpener.children.values : []
 
                     delegate: ColumnLayout {
+                        id: entry
                         required property var modelData
+                        required property int index
 
                         Layout.fillWidth: true
-                        spacing: 2
+                        spacing: 1
 
                         property bool submenuExpanded: false
+
+                        // Rows arrive one after another, sliding in from the bar side.
+                        readonly property real arrive: {
+                            const from = Math.min(index, 12) * 0.045;
+                            const x = Math.max(0, Math.min(1, (systrayPopup.reveal - from) / 0.45));
+                            return 1 - Math.pow(1 - x, 3);
+                        }
+                        opacity: arrive
+                        transform: Translate {
+                            x: (1 - entry.arrive) * (systrayPopup.barAtRight ? 10 : -10)
+                        }
 
                         SystrayMenuItem {
                             Layout.fillWidth: true
 
-                            textStr: modelData.text || ""
-                            iconSource: modelData.icon || ""
+                            textStr: entry.modelData.text || ""
+                            iconSource: entry.modelData.icon || ""
                             isImageIcon: iconSource.indexOf("/") !== -1 || iconSource.indexOf(".") !== -1
-                            isSeparator: modelData.isSeparator || false
-                            hasSubmenu: modelData.hasChildren || false
-                            expanded: parent.submenuExpanded
-                            buttonType: modelData.buttonType || 0
-                            checkState: modelData.checkState || 0
+                            isSeparator: entry.modelData.isSeparator || false
+                            entryEnabled: entry.modelData.enabled ?? true
+                            hasSubmenu: entry.modelData.hasChildren || false
+                            expanded: entry.submenuExpanded
+                            buttonType: entry.modelData.buttonType || 0
+                            checkState: entry.modelData.checkState || 0
 
                             onClicked: {
-                                if (modelData.hasChildren) {
-                                    parent.submenuExpanded = !parent.submenuExpanded;
+                                if (entry.modelData.hasChildren) {
+                                    entry.submenuExpanded = !entry.submenuExpanded;
                                 } else {
-                                    if (modelData.triggered) {
-                                        modelData.triggered();
-                                    } else if (modelData.activate) {
-                                        modelData.activate();
+                                    if (entry.modelData.triggered) {
+                                        entry.modelData.triggered();
+                                    } else if (entry.modelData.activate) {
+                                        entry.modelData.activate();
                                     }
                                     systrayPopup.close();
                                 }
                             }
                         }
 
-                        // Submenu children — uses its own QsMenuOpener to trigger lazy loading
-                        ColumnLayout {
-                            visible: submenuExpanded && modelData.hasChildren
+                        // Submenu children — uses its own QsMenuOpener to trigger lazy loading.
+                        // The wrapper animates its height so the menu grows instead of jumping.
+                        Item {
+                            id: submenuWrap
                             Layout.fillWidth: true
-                            spacing: 2
+                            Layout.preferredHeight: entry.submenuExpanded ? subColumn.implicitHeight : 0
+                            visible: Layout.preferredHeight > 0
+                            clip: true
+                            opacity: entry.submenuExpanded ? 1 : 0
+
+                            Behavior on Layout.preferredHeight {
+                                enabled: Motion.enabled
+                                NumberAnimation {
+                                    duration: Motion.normal
+                                    easing.type: Easing.OutQuint
+                                }
+                            }
+                            Behavior on opacity {
+                                enabled: Motion.enabled
+                                NumberAnimation {
+                                    duration: Motion.fast
+                                }
+                            }
 
                             QsMenuOpener {
                                 id: subMenuOpener
-                                menu: modelData.hasChildren ? modelData : null
+                                menu: entry.modelData.hasChildren ? entry.modelData : null
                             }
 
-                            Repeater {
-                                model: subMenuOpener.children ? subMenuOpener.children.values : []
+                            // Guide line tying the children to their parent row.
+                            Rectangle {
+                                x: 11
+                                y: 4
+                                width: 1
+                                height: parent.height - 8
+                                color: Qt.rgba(Colors.primary.r, Colors.primary.g, Colors.primary.b, 0.3)
+                            }
 
-                                delegate: SystrayMenuItem {
-                                    required property var modelData
+                            ColumnLayout {
+                                id: subColumn
+                                width: parent.width
+                                spacing: 1
 
-                                    Layout.fillWidth: true
-                                    depth: 1
+                                Repeater {
+                                    model: subMenuOpener.children ? subMenuOpener.children.values : []
 
-                                    textStr: modelData.text || ""
-                                    iconSource: modelData.icon || ""
-                                    isImageIcon: iconSource.indexOf("/") !== -1 || iconSource.indexOf(".") !== -1
-                                    isSeparator: modelData.isSeparator || false
-                                    buttonType: modelData.buttonType || 0
-                                    checkState: modelData.checkState || 0
+                                    delegate: SystrayMenuItem {
+                                        required property var modelData
 
-                                    onClicked: {
-                                        if (modelData.triggered) {
-                                            modelData.triggered();
-                                        } else if (modelData.activate) {
-                                            modelData.activate();
+                                        Layout.fillWidth: true
+                                        depth: 1
+
+                                        textStr: modelData.text || ""
+                                        iconSource: modelData.icon || ""
+                                        isImageIcon: iconSource.indexOf("/") !== -1 || iconSource.indexOf(".") !== -1
+                                        isSeparator: modelData.isSeparator || false
+                                        entryEnabled: modelData.enabled ?? true
+                                        buttonType: modelData.buttonType || 0
+                                        checkState: modelData.checkState || 0
+
+                                        onClicked: {
+                                            if (modelData.triggered) {
+                                                modelData.triggered();
+                                            } else if (modelData.activate) {
+                                                modelData.activate();
+                                            }
+                                            systrayPopup.close();
                                         }
-                                        systrayPopup.close();
                                     }
                                 }
                             }
@@ -227,6 +330,7 @@ MouseArea {
             }
         }
     }
+
 
     IconImage {
         id: trayIcon
