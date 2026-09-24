@@ -75,7 +75,13 @@ Singleton {
 
              const srcPath = presetPath + "/" + jsonFile
              const dstPath = configDir + "/config/" + jsonFile
-             copyCmd += `cp "${srcPath}" "${dstPath}" && `
+             if (jsonFile === "theme.json") {
+                 // Font families belong to the user, not the preset: keep the
+                 // current ones. Plain copy if the merge fails.
+                 copyCmd += `{ jq --slurpfile cur "${dstPath}" '.font = ($cur[0].font // .font) | .monoFont = ($cur[0].monoFont // .monoFont)' "${srcPath}" > "${dstPath}.tmp" && mv "${dstPath}.tmp" "${dstPath}" || cp "${srcPath}" "${dstPath}"; } && `
+             } else {
+                 copyCmd += `cp "${srcPath}" "${dstPath}" && `
+             }
         }
         
         // Update active preset file
