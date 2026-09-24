@@ -28,7 +28,7 @@ Button {
     readonly property bool isVertical: isLeft || isRight
 
     readonly property bool isSeparator: appToplevel?.appId === "SEPARATOR"
-    readonly property var desktopEntry: (isSeparator || !appToplevel) ? null : DesktopEntries.heuristicLookup(appToplevel.appId)
+    readonly property var desktopEntry: appToplevel?.desktopEntry ?? null
     readonly property bool appIsActive: !isSeparator && (appToplevel?.toplevels?.some(t => t.activated === true) ?? false)
     readonly property bool appIsRunning: !isSeparator && (appToplevel?.toplevelCount ?? 0) > 0
 

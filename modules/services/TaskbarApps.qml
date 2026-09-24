@@ -201,6 +201,13 @@ Singleton {
         property var toplevels: []
         property int toplevelCount: toplevels.length
         property bool pinned
+        // Re-resolved whenever the desktop-entry list changes: a rescan (new or edited
+        // .desktop file) destroys the old entry objects, which would leave a one-shot
+        // lookup null and the pinned button without icon or launch target.
+        readonly property var desktopEntry: {
+            DesktopEntries.applications.values;
+            return appId === "SEPARATOR" ? null : DesktopEntries.heuristicLookup(appId);
+        }
     }
     
     Component {
