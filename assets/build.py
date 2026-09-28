@@ -21,55 +21,55 @@ C = dict(bg="#05070f", sky="#070a17", navy="#0b1330", ink="#cfdaf7", core="#f6f7
 
 # Gallery, in page order: (number, folder, title, subtitle, [(tile, caption), ...]).
 SECTIONS = [
-    ("01", "shell", "Shell", "My desktop shell on Hyprland, built on Quickshell.", [
-        ("bar", "the sidebar bar"),
-        ("launcher", "type to find an app"),
-        ("notch", "user, splash line, notifications"),
-        ("dashboard", "media, calendar, quick toggles"),
-        ("notifications", "toasts drop out of the notch"),
-        ("overview", "every workspace at a glance"),
-        ("assistant", "ai sidebar"),
-        ("capture", "screenshot and recording tools"),
-        ("settings", "sorted groups, one window"),
-        ("power", "lock, sleep, log out, reboot"),
-        ("wallpapers", "picker with images, gifs, videos"),
-        ("weather", "clock popup: calendar, live weather sky, focus timer"),
-        ("presets", "whole-shell presets, one click"),
-        ("mixer", "volume, mic and brightness meters"),
-        ("power-profile", "saver, balanced, performance"),
+    ("01", "shell", "Shell", "Quickshell on Hyprland", [
+        ("bar", "Vertical sidebar with workspaces, tray and clock"),
+        ("launcher", "Type to search apps"),
+        ("notch", "User, splash line and notifications"),
+        ("dashboard", "Media, calendar and quick toggles"),
+        ("notifications", "Toasts that drop out of the notch"),
+        ("overview", "Every workspace at a glance"),
+        ("assistant", "AI sidebar"),
+        ("capture", "Screenshots and screen recording"),
+        ("settings", "All settings in one window, grouped"),
+        ("power", "Lock, sleep, log out, reboot"),
+        ("wallpapers", "Picker for images, GIFs and videos"),
+        ("weather", "Calendar, live weather and focus timer"),
+        ("presets", "Switch the whole shell in one click"),
+        ("mixer", "Volume, microphone and brightness"),
+        ("power-profile", "Saver, balanced, performance"),
     ]),
-    ("02", "greeter", "Greeter", "My login screen. greetd, Hyprland, Quickshell.", [
-        ("login", "avatar card, clock, splash line"),
-        ("typing", "the cipher pill"),
-        ("unlock", "into the session"),
-        ("wallpapers", "follows whatever wallpaper I use"),
-        ("live-wallpaper", "gifs and videos too"),
+    ("02", "greeter", "Greeter", "greetd login screen", [
+        ("login", "Avatar card, clock and splash line"),
+        ("typing", "Password field"),
+        ("unlock", "Straight into the session"),
+        ("wallpapers", "Uses the current desktop wallpaper"),
+        ("live-wallpaper", "Animated wallpapers work too"),
     ]),
-    ("03", "polkit", "Polkit", "My own authentication agent. Replaced hyprpolkitagent.", [
-        ("prompt", "slides up out of the frame"),
+    ("03", "polkit", "Polkit", "Authentication agent", [
+        ("prompt", "Slides up out of the screen frame"),
     ]),
-    ("04", "lockscreen", "Lockscreen", "The sky keeps running behind the clock.", [
-        ("lock", "lock and unlock"),
-        ("card", "type and the card appears"),
+    ("04", "lockscreen", "Lockscreen", "Clock over the live sky", [
+        ("lock", "Lock and unlock"),
+        ("card", "The password card appears as you type"),
     ]),
-    ("05", "sky", "Sky", "My live wallpaper. A whole galaxy that runs like a clock.", [
-        ("galaxy", "far light, spiral arms, dust"),
-        ("systems", "the home system turning"),
-        ("ships", "a ship crossing, then jumping"),
-        ("events", "warp out"),
-        ("far-light", "hr 1, the far light"),
+    ("05", "sky", "Sky", "Live galaxy wallpaper", [
+        ("galaxy", "Spiral arms, dust and distant light"),
+        ("systems", "The home system in motion"),
+        ("ships", "A ship crosses, then jumps"),
+        ("events", "Warp out"),
+        ("far-light", "HR 1, the far light"),
     ]),
-    ("06", "desktop", "Desktop", "Things that live on the wallpaper.", [
-        ("splash", "hyprctl splash under the notch"),
-        ("osd", "volume and brightness"),
+    ("06", "desktop", "Desktop", "On the wallpaper", [
+        ("splash", "Hyprland splash line under the notch"),
+        ("osd", "Volume and brightness"),
     ]),
-    ("07", "brand", "Brand", "Wordmark Sky. Michroma and seven stars.", [
-        ("lockup", "the mark"),
-        ("meters", "system metrics as segment meters"),
+    ("07", "brand", "Brand", "Wordmark and constellation", [
+        ("lockup", "Wordmark and seven-star constellation"),
+        ("meters", "System metrics as segment meters"),
     ]),
-    ("08", "system", "System", "Everything around the shell.", [
-        ("fastfetch", "logo rendered by the shell"),
-        ("terminal", "kitty and yazi in the sky palette"),
+    ("08", "system", "System", "Terminal and tools", [
+        ("fastfetch", "Logo rendered by the shell"),
+        ("terminal", "kitty and yazi in the Hiraeth palette"),
     ]),
 ]
 
@@ -251,7 +251,7 @@ def type_specimen():
     body += galaxy(1130, 115, 70, r, .4, 1.3)
     body += text("MICHROMA", 46, 40, 88, C["ink"], track=.16)
     body += text("ABCDEFGHIJKLMNOPQRSTUVWXYZ  0123456789", 16, 40, 142, C["blue"], track=.18)
-    body += text("ONE FACE FOR THE SHELL, THE GREETER, POLKIT AND EVERY DESIGN", 9, 40, 188, C["muted"], track=.3)
+    body += text("DISPLAY FACE · ALWAYS UPPERCASE · WIDE TRACKING", 9, 40, 188, C["muted"], track=.3)
     put("type.svg", svg(w, h, body))
 
 
@@ -261,7 +261,8 @@ def cell(d, f, title, caps):
     img = f'<img src="{d}/{f}" width="100%" alt="{title}: {name.replace("-", " ")}">'
     if f.endswith(".svg"):
         return f'<td width="50%">{img}</td>'
-    return f'<td width="50%">{img}<br><sub>{name.replace("-", " ")} · {caps.get(name, "")}</sub></td>'.replace(" · </sub>", "</sub>")
+    label = {"osd": "OSD"}.get(name, name.replace("-", " ").capitalize())
+    return f'<td width="50%">{img}<br><sub><b>{label}</b> — {caps.get(name, "")}</sub></td>'.replace(" — </sub>", "</sub>")
 
 
 def gallery_md():
