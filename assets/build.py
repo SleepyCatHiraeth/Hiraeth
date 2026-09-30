@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Build the README artwork: banner, section headers, palette, type, gallery tiles.
+"""Build the README artwork: section headers, palette and type specimen, each in a dark and a light version.
 
 Text is drawn as Michroma outlines (fontTools), so it renders on GitHub without a web font.
-Everything sits in the same flat navy sky as the live wallpaper: glowing dots, fading tails,
-particle discs, tiny ships. Nothing photoreal, no static orbit rings.
+Backgrounds are transparent; the README picks the version that matches the viewer's theme.
+The banner and brand lockup come from render.py, which draws them with the shell's own components.
 Run: python3 assets/build.py   (needs fontTools; the brand venv has it)
 """
-import math, os, random, re
+import os
 from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
@@ -16,61 +16,21 @@ BRAND = os.path.expanduser("~/Project/Hiraeth/brand")
 FONT = TTFont(os.path.join(BRAND, "Michroma.ttf"))
 GS, CMAP, UPM = FONT.getGlyphSet(), FONT.getBestCmap(), FONT["head"].unitsPerEm
 
-C = dict(bg="#05070f", sky="#070a17", navy="#0b1330", ink="#cfdaf7", core="#f6f7ff",
-         engine="#a8eefc", blue="#b6c4ff", muted="#8189a8", line="#1b2140")
+PAL = [("BG", "#05070f"), ("SKY", "#070a17"), ("NAVY", "#0b1330"), ("LINE", "#1b2140"), ("MUTED", "#8189a8"),
+       ("BLUE", "#b6c4ff"), ("ENGINE", "#a8eefc"), ("INK", "#cfdaf7"), ("CORE", "#f6f7ff")]
 
-# Gallery, in page order: (number, folder, title, subtitle, [(tile, caption), ...]).
+# Ink colours per GitHub theme.
+THEMES = {
+    "dark": dict(ink="#cfdaf7", muted="#8189a8", line="#2a3358", accent="#a8eefc", edge="#2a3358"),
+    "light": dict(ink="#0b1330", muted="#5b6488", line="#d3d9ec", accent="#3b6fd8", edge="#c3cbe3"),
+}
+
 SECTIONS = [
-    ("01", "shell", "Shell", "Quickshell on Hyprland", [
-        ("bar", "Vertical sidebar with workspaces, tray and clock"),
-        ("launcher", "Type to search apps"),
-        ("notch", "User, splash line and notifications"),
-        ("dashboard", "Media, calendar and quick toggles"),
-        ("notifications", "Toasts that drop out of the notch"),
-        ("overview", "Every workspace at a glance"),
-        ("assistant", "AI sidebar"),
-        ("capture", "Screenshots and screen recording"),
-        ("settings", "All settings in one window, grouped"),
-        ("power", "Lock, sleep, log out, reboot"),
-        ("wallpapers", "Picker for images, GIFs and videos"),
-        ("weather", "Calendar, live weather and focus timer"),
-        ("presets", "Switch the whole shell in one click"),
-        ("mixer", "Volume, microphone and brightness"),
-        ("power-profile", "Saver, balanced, performance"),
-    ]),
-    ("02", "greeter", "Greeter", "greetd login screen", [
-        ("login", "Avatar card, clock and splash line"),
-        ("typing", "Password field"),
-        ("unlock", "Straight into the session"),
-        ("wallpapers", "Uses the current desktop wallpaper"),
-        ("live-wallpaper", "Animated wallpapers work too"),
-    ]),
-    ("03", "polkit", "Polkit", "Authentication agent", [
-        ("prompt", "Slides up out of the screen frame"),
-    ]),
-    ("04", "lockscreen", "Lockscreen", "Clock over the live sky", [
-        ("lock", "Lock and unlock"),
-        ("card", "The password card appears as you type"),
-    ]),
-    ("05", "sky", "Sky", "Live galaxy wallpaper", [
-        ("galaxy", "Spiral arms, dust and distant light"),
-        ("systems", "The home system in motion"),
-        ("ships", "A ship crosses, then jumps"),
-        ("events", "Warp out"),
-        ("far-light", "HR 1, the far light"),
-    ]),
-    ("06", "desktop", "Desktop", "On the wallpaper", [
-        ("splash", "Hyprland splash line under the notch"),
-        ("osd", "Volume and brightness"),
-    ]),
-    ("07", "brand", "Brand", "Wordmark and constellation", [
-        ("lockup", "Wordmark and seven-star constellation"),
-        ("meters", "System metrics as segment meters"),
-    ]),
-    ("08", "system", "System", "Terminal and tools", [
-        ("fastfetch", "Logo rendered by the shell"),
-        ("terminal", "kitty and yazi in the Hiraeth palette"),
-    ]),
+    ("01", "shell", "Shell", "Bar, notch, panels"),
+    ("02", "login", "Login", "Greeter, lock, polkit"),
+    ("03", "sky", "Sky", "Live wallpaper"),
+    ("04", "terminal", "Terminal", "Fetch, yazi"),
+    ("05", "design", "Design", "Mark, colour, type"),
 ]
 
 
@@ -92,64 +52,12 @@ def text(s, size, x, y, fill, anchor="start", op=1, track=0.12):
     return f'<path d="{text_path(s, size, x, y, track)[0]}" fill="{fill}" opacity="{op}"/>'
 
 
-DEFS = (f'<defs><linearGradient id="n" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{C["navy"]}"/>'
-        f'<stop offset="1" stop-color="{C["bg"]}"/></linearGradient>'
-        f'<radialGradient id="glow"><stop offset="0" stop-color="{C["blue"]}" stop-opacity=".5"/>'
-        f'<stop offset=".35" stop-color="{C["blue"]}" stop-opacity=".12"/><stop offset="1" stop-color="{C["blue"]}" stop-opacity="0"/></radialGradient>'
-        f'<radialGradient id="eng"><stop offset="0" stop-color="{C["engine"]}" stop-opacity=".9"/>'
-        f'<stop offset="1" stop-color="{C["engine"]}" stop-opacity="0"/></radialGradient>'
-        f'<linearGradient id="tail" x1="0" x2="1"><stop offset="0" stop-color="{C["ink"]}" stop-opacity="0"/>'
-        f'<stop offset="1" stop-color="{C["ink"]}" stop-opacity=".7"/></linearGradient></defs>')
-
-
-def star(x, y, r, spikes=False):
-    o = f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r*7:.1f}" fill="url(#glow)"/>'
-    if spikes:
-        s = r * 9
-        o += (f'<line x1="{x-s:.1f}" y1="{y:.1f}" x2="{x+s:.1f}" y2="{y:.1f}" stroke="{C["core"]}" stroke-width=".5" opacity=".45"/>'
-              f'<line x1="{x:.1f}" y1="{y-s:.1f}" x2="{x:.1f}" y2="{y+s:.1f}" stroke="{C["core"]}" stroke-width=".5" opacity=".45"/>')
-    return o + f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r:.2f}" fill="{C["core"]}"/>'
-
-
-def galaxy(x, y, rad, r, tilt=.45, rot=0):
-    """Particle disc with two trailing arms, flat dots only."""
-    o, a0 = "", rot
-    for arm in (0, math.pi):
-        for i in range(70):
-            t = i / 70
-            a = a0 + arm + t * 3.4
-            d = rad * (.08 + t)
-            px = x + math.cos(a) * d + r.gauss(0, rad * .05)
-            py = y + math.sin(a) * d * tilt + r.gauss(0, rad * .03)
-            o += f'<circle cx="{px:.1f}" cy="{py:.1f}" r="{.4+ (1-t)*.6:.2f}" fill="{C["blue"]}" opacity="{.15+(1-t)*.45:.2f}"/>'
-    return o + f'<circle cx="{x}" cy="{y}" r="{rad*.5:.1f}" fill="url(#glow)"/>' + f'<circle cx="{x}" cy="{y}" r="1.4" fill="{C["core"]}"/>'
-
-
-def comet(x, y, length, ang):
-    """Head at x,y; the tail fades out behind it along ang."""
-    return (f'<g transform="rotate({math.degrees(ang):.1f} {x:.1f} {y:.1f})">'
-            f'<rect x="{x-length:.1f}" y="{y-.5:.1f}" width="{length:.1f}" height="1" fill="url(#tail)"/></g>'
-            + star(x, y, 1.1))
-
-
-def ship(x, y, ang, k=1.0):
-    pts = [(9, 0), (-5, -4), (-3, 0), (-5, 4)]
-    p = " ".join(f"{px*k:.1f},{py*k:.1f}" for px, py in pts)
-    return (f'<g transform="translate({x:.1f} {y:.1f}) rotate({ang:.1f})">'
-            f'<circle cx="{-5*k:.1f}" cy="0" r="{5*k:.1f}" fill="url(#eng)"/>'
-            f'<polygon points="{p}" fill="{C["ink"]}"/></g>')
-
-
-def space(w, h, seed, dens=1.0):
-    """Flat navy sky: dust, a few bright stars, sometimes a galaxy, a comet or a small fleet."""
-    r = random.Random(seed)
-    o = DEFS + f'<rect width="{w}" height="{h}" fill="url(#n)"/>'
-    for _ in range(int(w * h / 1500 * dens)):
-        o += (f'<circle cx="{r.random()*w:.1f}" cy="{r.random()*h:.1f}" r="{r.random()*.7+.3:.2f}" '
-              f'fill="{C["ink"]}" opacity="{r.random()*.35+.08:.2f}"/>')
-    for _ in range(max(2, int(w * h / 60000))):
-        o += star(r.random() * w, r.random() * h, r.uniform(.8, 1.6), r.random() < .3)
-    return o, r
+def far_light(x, y, c):
+    """The brand's bright star, small: core, halo ring, hairline spikes."""
+    return (f'<circle cx="{x}" cy="{y}" r="9" fill="none" stroke="{c}" stroke-width=".8" opacity=".35"/>'
+            f'<line x1="{x-14}" y1="{y}" x2="{x+14}" y2="{y}" stroke="{c}" stroke-width=".7" opacity=".6"/>'
+            f'<line x1="{x}" y1="{y-14}" x2="{x}" y2="{y+14}" stroke="{c}" stroke-width=".7" opacity=".6"/>'
+            f'<circle cx="{x}" cy="{y}" r="2.6" fill="{c}"/>')
 
 
 def svg(w, h, body):
@@ -157,141 +65,45 @@ def svg(w, h, body):
 
 
 def put(rel, data):
-    p = os.path.normpath(os.path.join(ROOT, rel))
+    p = os.path.join(ROOT, rel)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     open(p, "w").write(data)
 
 
-def lockup(x, y, w):
-    """Nest the brand master (generated by brand.py, not redrawn) at x,y with width w."""
-    src = open(os.path.join(BRAND, "svg", "hiraeth-lockup-notag.svg")).read()
-    vb = re.search(r'viewBox="([^"]+)"', src).group(1)
-    vw, vh = map(float, vb.split()[2:])
-    inner = re.sub(r"^<svg[^>]*>|</svg>$", "", src)
-    return f'<svg x="{x}" y="{y}" width="{w}" height="{w*vh/vw:.1f}" viewBox="{vb}">{inner}</svg>'
+def header(num, key, title, sub, t, th):
+    w, h = 1280, 100
+    body = far_light(20, 44, th["ink"])
+    body += text(title.upper(), 28, 58, 58, th["ink"], track=.16)
+    body += text(sub.upper(), 10, w, 56, th["muted"], "end", track=.3)
+    # Hairline that stops short of the star, as on the mark.
+    body += f'<line x1="58" y1="86" x2="{w}" y2="86" stroke="{th["line"]}" stroke-width="1"/>'
+    put(f"headers/{num}-{key}-{t}.svg", svg(w, h, body))
 
 
-def banner():
-    w, h = 1280, 480
-    body, r = space(w, h, 7, 1.3)
-    body += galaxy(170, 120, 90, r, .42, .6)
-    body += galaxy(1120, 360, 55, r, .5, 2.2)
-    body += comet(1040, 90, 120, math.radians(160))
-    body += ship(250, 390, -12, 1.1) + ship(282, 402, -12, .9) + ship(268, 372, -12, .8)
-    body += lockup((w - 520) / 2, 44, 520)
-    body += text("SHELL · SYSTEM", 11, w / 2, 400, C["blue"], "middle", op=.75, track=.45)
-    body += f'<line x1="{w/2-170}" y1="{h-46}" x2="{w/2+170}" y2="{h-46}" stroke="{C["line"]}"/>'
-    body += text("MY SHELL · MY SKY · MY SYSTEM", 9, w / 2, h - 22, C["muted"], "middle", track=.4)
-    put("banner.svg", svg(w, h, body))
+def palette(t, th):
+    cw = 140
+    w, h = cw * len(PAL) - 16, 170
+    body = ""
+    for i, (label, hexv) in enumerate(PAL):
+        x = i * cw
+        body += f'<rect x="{x+.5}" y=".5" width="{cw-17}" height="104" rx="8" fill="{hexv}" stroke="{th["edge"]}"/>'
+        body += text(label, 10, x, 134, th["ink"], track=.25)
+        body += text(hexv.upper(), 9, x, 158, th["muted"], track=.2)
+    put(f"palette-{t}.svg", svg(w, h, body))
 
 
-def header(num, key, title, sub):
-    w, h = 1280, 140
-    body, r = space(w, h, int(num) * 13, 1.1)
-    motif = int(num) % 3
-    if motif == 0:
-        body += galaxy(w - 150, h / 2, 60, r, .45, int(num))
-    elif motif == 1:
-        body += comet(w - 90, 40, 150, math.radians(165))
-    else:
-        body += ship(w - 220, 80, -8, 1.1) + ship(w - 190, 92, -8, .9) + ship(w - 205, 64, -8, .8)
-    body += f'<rect x=".5" y=".5" width="{w-1}" height="{h-1}" rx="8" fill="none" stroke="{C["line"]}"/>'
-    body += star(58, 60, 1.4, True)
-    body += text(num, 11, 50, 100, C["engine"], track=.3)
-    body += text(title.upper(), 30, 110, 70, C["ink"], track=.14)
-    body += text(sub.upper(), 9, 110, 102, C["muted"], track=.22)
-    put(f"headers/{num}-{key}.svg", svg(w, h, body))
-
-
-REAL = (".png", ".jpg", ".jpeg", ".webp", ".gif")
-
-
-def tile(num, key, i, name, cap):
-    """Draw the pending tile unless a real screenshot with the same stem exists."""
-    stem = os.path.join(ROOT, "..", "gallery", f"{num}-{key}", f"{i+1:02d}-{name}")
-    if any(os.path.exists(stem + e) for e in REAL):
-        if os.path.exists(stem + ".svg"):
-            os.remove(stem + ".svg")
-        return
-    w, h = 800, 500
-    body, r = space(w, h, int(num) * 100 + i, 1.2)
-    pick = (int(num) + i) % 3
-    if pick == 0:
-        body += galaxy(r.uniform(120, 680), r.choice([90, 410]), r.uniform(45, 70), r, .45, r.random() * 6)
-    elif pick == 1:
-        body += comet(r.uniform(500, 740), r.uniform(50, 110), r.uniform(90, 150), math.radians(r.uniform(150, 170)))
-    else:
-        x, y, a = r.uniform(80, 250), r.uniform(380, 440), r.uniform(-20, -5)
-        body += ship(x, y, a) + ship(x + 26, y + 12, a, .85) + ship(x + 14, y - 18, a, .75)
-    body += f'<rect x=".5" y=".5" width="{w-1}" height="{h-1}" rx="8" fill="none" stroke="{C["line"]}"/>'
-    body += text(f"{num}.{i+1:02d}", 11, 36, 50, C["engine"], track=.3)
-    body += text(name.upper(), 30, w / 2, h / 2, C["ink"], "middle", track=.16)
-    body += text(cap.upper(), 10, w / 2, h / 2 + 36, C["blue"], "middle", op=.8, track=.25)
-    body += text("SCREENSHOT SOON", 8, w - 36, h - 30, C["muted"], "end", track=.35)
-    put(f"../gallery/{num}-{key}/{i+1:02d}-{name}.svg", svg(w, h, body))
-
-
-def palette():
-    sw = [("BG", "bg"), ("SKY", "sky"), ("NAVY", "navy"), ("LINE", "line"), ("MUTED", "muted"),
-          ("BLUE", "blue"), ("ENGINE", "engine"), ("INK", "ink"), ("CORE", "core")]
-    cw = 136
-    w, h = cw * len(sw) + 40, 210
-    body, _ = space(w, h, 3, .6)
-    for i, (label, k) in enumerate(sw):
-        x = 20 + i * cw
-        body += f'<rect x="{x}" y="22" width="{cw-12}" height="110" rx="6" fill="{C[k]}" stroke="{C["line"]}"/>'
-        body += text(label, 10, x, 160, C["ink"], track=.25)
-        body += text(C[k].upper(), 9, x, 184, C["muted"], track=.2)
-    put("palette.svg", svg(w, h, body))
-
-
-def type_specimen():
-    w, h = 1280, 230
-    body, r = space(w, h, 99, 1.0)
-    body += galaxy(1130, 115, 70, r, .4, 1.3)
-    body += text("MICHROMA", 46, 40, 88, C["ink"], track=.16)
-    body += text("ABCDEFGHIJKLMNOPQRSTUVWXYZ  0123456789", 16, 40, 142, C["blue"], track=.18)
-    body += text("DISPLAY FACE · ALWAYS UPPERCASE · WIDE TRACKING", 9, 40, 188, C["muted"], track=.3)
-    put("type.svg", svg(w, h, body))
-
-
-def cell(d, f, title, caps):
-    """One gallery cell. Real screenshots get their caption underneath; placeholder tiles carry it inside."""
-    name = os.path.splitext(f)[0][3:]
-    img = f'<img src="{d}/{f}" width="100%" alt="{title}: {name.replace("-", " ")}">'
-    if f.endswith(".svg"):
-        return f'<td width="50%">{img}</td>'
-    label = {"osd": "OSD"}.get(name, name.replace("-", " ").capitalize())
-    return f'<td width="50%">{img}<br><sub><b>{label}</b> — {caps.get(name, "")}</sub></td>'.replace(" — </sub>", "</sub>")
-
-
-def gallery_md():
-    """Header strip per section, then its folder's images in filename order, two per row."""
-    out = []
-    for num, key, title, sub, shots in SECTIONS:
-        d = f"gallery/{num}-{key}"
-        caps = dict(shots)
-        files = sorted(f for f in os.listdir(os.path.join(ROOT, "..", d)) if f.endswith(REAL + (".svg",)))
-        out.append(f'<a id="{key}"></a>\n\n<img src="assets/headers/{num}-{key}.svg" width="100%" alt="{num} {title}">\n')
-        rows = []
-        for j in range(0, len(files), 2):
-            rows.append("<tr>" + "".join(cell(d, f, title, caps) for f in files[j:j + 2]) + "</tr>")
-        out.append("<table>\n" + "\n".join(rows) + "\n</table>\n")
-    return "\n".join(out)
-
-
-def write_readme():
-    p = os.path.join(ROOT, "..", "README.md")
-    s = open(p).read()
-    a, b = "<!-- gallery:start -->", "<!-- gallery:end -->"
-    open(p, "w").write(s[:s.index(a) + len(a)] + "\n" + gallery_md() + "\n" + s[s.index(b):])
+def type_specimen(t, th):
+    w, h = 1280, 190
+    body = text("MICHROMA", 46, 0, 60, th["ink"], track=.16)
+    body += text("ABCDEFGHIJKLMNOPQRSTUVWXYZ  0123456789", 16, 0, 116, th["ink"], op=.8, track=.18)
+    body += text("DISPLAY FACE  /  UPPERCASE  /  WIDE TRACKING", 9, 0, 166, th["muted"], track=.3)
+    put(f"type-{t}.svg", svg(w, h, body))
 
 
 if __name__ == "__main__":
-    banner(); palette(); type_specimen()
-    for num, key, title, sub, shots in SECTIONS:
-        header(num, key, title, sub)
-        for i, (name, cap) in enumerate(shots):
-            tile(num, key, i, name, cap)
-    write_readme()
-    print("built", sum(len(s[4]) for s in SECTIONS), "tiles,", len(SECTIONS), "headers")
+    for t, th in THEMES.items():
+        palette(t, th)
+        type_specimen(t, th)
+        for num, key, title, sub in SECTIONS:
+            header(num, key, title, sub, t, th)
+    print("built", len(SECTIONS), "headers, palette and type, in", len(THEMES), "themes")

@@ -1,150 +1,170 @@
-<img src="assets/banner.svg" width="100%" alt="Hiraeth">
+<img src="assets/banner.png" width="100%" alt="Hiraeth">
 
 <p align="center">
-  <a href="#shell">Shell</a> ·
-  <a href="#greeter">Greeter</a> ·
-  <a href="#polkit">Polkit</a> ·
-  <a href="#lockscreen">Lockscreen</a> ·
-  <a href="#sky">Sky</a> ·
-  <a href="#desktop">Desktop</a> ·
-  <a href="#brand">Brand</a> ·
-  <a href="#system">System</a> ·
-  <a href="#design">Design</a>
+  <a href="#shell">Shell</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="#login">Login</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="#sky">Sky</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="#terminal">Terminal</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="#design">Design</a>
 </p>
 
-**Hiraeth** is a complete desktop for Hyprland on CachyOS: a Quickshell shell, a greetd login
-screen, a polkit agent, a lockscreen and a live galaxy wallpaper, all built to one design.
+<br>
 
-The name is Welsh for a longing for a home you can't return to.
+Hiraeth is my desktop for Hyprland on CachyOS. The shell, login screen, lockscreen, polkit prompt
+and wallpaper share one look: a dark night sky, thin lines and a few bright stars.
 
-<img src="media/tour.gif" width="100%" alt="Hiraeth desktop with the sidebar and dashboard open">
+*Hiraeth* is a Welsh word for homesickness for a place you can't go back to.
 
-<p align="center">
-  <a href="media/tour.mp4"><b>Full tour</b></a> (1 min) ·
-  <a href="media/greeter.mp4"><b>Greeter</b></a> ·
-  <a href="media/polkit-first-version.mp4">Polkit, first version</a>
-</p>
+<img src="media/tour.gif" width="100%" alt="Opening the sidebar, dashboard and launcher">
 
-## Components
+<p align="center"><sub><a href="media/tour.mp4">Full tour, 1 min</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="media/greeter.mp4">Greeter</a>&nbsp;&nbsp;·&nbsp;&nbsp;<a href="media/polkit-first-version.mp4">First polkit prototype</a></sub></p>
 
-| Component | Description | Repository |
-| --- | --- | --- |
-| **Shell** | Bar, notch, launcher, dashboard, notifications, overview, assistant | this repo |
-| **Greeter** | greetd login screen, replaces SDDM | [Hiraeth-greeter](https://github.com/SleepyCatHiraeth/Hiraeth-greeter) |
-| **Polkit** | Authentication agent, replaces hyprpolkitagent | [Hiraeth-polkit](https://github.com/SleepyCatHiraeth/Hiraeth-polkit) |
-| **Lockscreen** | Clock over the live sky | this repo |
-| **Sky** | Live `.sky` wallpaper | this repo |
-| **System** | fastfetch, kitty and yazi themes | this repo |
+| Part | What it is | Source |
+| :-- | :-- | :-- |
+| Shell | Quickshell config: sidebar, notch, launcher, dashboard, notifications | not public yet |
+| Greeter | greetd login screen | [Hiraeth-greeter](https://github.com/SleepyCatHiraeth/Hiraeth-greeter) |
+| Polkit | Authentication agent | [Hiraeth-polkit](https://github.com/SleepyCatHiraeth/Hiraeth-polkit) |
+| Sky | Animated wallpaper, also behind the lockscreen | not public yet |
 
-> [!NOTE]
-> The shell source is not published yet. This repository currently holds the showcase and the design assets.
+<br>
 
-<!-- gallery:start -->
 <a id="shell"></a>
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/headers/01-shell-dark.svg"><img src="assets/headers/01-shell-light.svg" width="100%" alt="Shell"></picture>
 
-<img src="assets/headers/01-shell.svg" width="100%" alt="01 Shell">
+The bar sits on the left edge, the notch at the top. Everything else opens out of one of the two.
 
-<table>
-<tr><td width="50%"><img src="gallery/01-shell/01-bar.gif" width="100%" alt="Shell: bar"><br><sub><b>Bar</b> — Vertical sidebar with workspaces, tray and clock</sub></td><td width="50%"><img src="gallery/01-shell/02-launcher.gif" width="100%" alt="Shell: launcher"><br><sub><b>Launcher</b> — Type to search apps</sub></td></tr>
-<tr><td width="50%"><img src="gallery/01-shell/03-notch.gif" width="100%" alt="Shell: notch"><br><sub><b>Notch</b> — User, splash line and notifications</sub></td><td width="50%"><img src="gallery/01-shell/04-dashboard.gif" width="100%" alt="Shell: dashboard"><br><sub><b>Dashboard</b> — Media, calendar and quick toggles</sub></td></tr>
-<tr><td width="50%"><img src="gallery/01-shell/05-notifications.gif" width="100%" alt="Shell: notifications"><br><sub><b>Notifications</b> — Toasts that drop out of the notch</sub></td><td width="50%"><img src="gallery/01-shell/06-overview.gif" width="100%" alt="Shell: overview"><br><sub><b>Overview</b> — Every workspace at a glance</sub></td></tr>
-<tr><td width="50%"><img src="gallery/01-shell/07-assistant.gif" width="100%" alt="Shell: assistant"><br><sub><b>Assistant</b> — AI sidebar</sub></td><td width="50%"><img src="gallery/01-shell/08-capture.gif" width="100%" alt="Shell: capture"><br><sub><b>Capture</b> — Screenshots and screen recording</sub></td></tr>
-<tr><td width="50%"><img src="gallery/01-shell/09-settings.gif" width="100%" alt="Shell: settings"><br><sub><b>Settings</b> — All settings in one window, grouped</sub></td><td width="50%"><img src="gallery/01-shell/10-power.gif" width="100%" alt="Shell: power"><br><sub><b>Power</b> — Lock, sleep, log out, reboot</sub></td></tr>
-<tr><td width="50%"><img src="gallery/01-shell/11-wallpapers.gif" width="100%" alt="Shell: wallpapers"><br><sub><b>Wallpapers</b> — Picker for images, GIFs and videos</sub></td><td width="50%"><img src="gallery/01-shell/12-weather.gif" width="100%" alt="Shell: weather"><br><sub><b>Weather</b> — Calendar, live weather and focus timer</sub></td></tr>
-<tr><td width="50%"><img src="gallery/01-shell/13-presets.gif" width="100%" alt="Shell: presets"><br><sub><b>Presets</b> — Switch the whole shell in one click</sub></td><td width="50%"><img src="gallery/01-shell/14-mixer.gif" width="100%" alt="Shell: mixer"><br><sub><b>Mixer</b> — Volume, microphone and brightness</sub></td></tr>
-<tr><td width="50%"><img src="gallery/01-shell/15-power-profile.gif" width="100%" alt="Shell: power profile"><br><sub><b>Power profile</b> — Saver, balanced, performance</sub></td></tr>
-</table>
-
-<a id="greeter"></a>
-
-<img src="assets/headers/02-greeter.svg" width="100%" alt="02 Greeter">
+<img src="gallery/01-shell/04-dashboard.gif" width="100%" alt="Dashboard">
+<p align="center"><sub>Dashboard with media, calendar, toggles and notifications</sub></p>
 
 <table>
-<tr><td width="50%"><img src="gallery/02-greeter/01-login.png" width="100%" alt="Greeter: login"><br><sub><b>Login</b> — Avatar card, clock and splash line</sub></td><td width="50%"><img src="gallery/02-greeter/02-typing.gif" width="100%" alt="Greeter: typing"><br><sub><b>Typing</b> — Password field</sub></td></tr>
-<tr><td width="50%"><img src="gallery/02-greeter/03-unlock.gif" width="100%" alt="Greeter: unlock"><br><sub><b>Unlock</b> — Straight into the session</sub></td><td width="50%"><img src="gallery/02-greeter/04-wallpapers.gif" width="100%" alt="Greeter: wallpapers"><br><sub><b>Wallpapers</b> — Uses the current desktop wallpaper</sub></td></tr>
-<tr><td width="50%"><img src="gallery/02-greeter/05-live-wallpaper.png" width="100%" alt="Greeter: live wallpaper"><br><sub><b>Live wallpaper</b> — Animated wallpapers work too</sub></td></tr>
+<tr>
+<td width="50%"><img src="gallery/01-shell/02-launcher.gif" width="100%" alt="Launcher"><br><sub>Launcher</sub></td>
+<td width="50%"><img src="gallery/01-shell/06-overview.gif" width="100%" alt="Overview"><br><sub>Workspace overview</sub></td>
+</tr>
+<tr>
+<td><img src="gallery/01-shell/09-settings.gif" width="100%" alt="Settings"><br><sub>Settings and keybinds</sub></td>
+<td><img src="gallery/01-shell/13-presets.gif" width="100%" alt="Presets"><br><sub>Presets swap the whole setup at once</sub></td>
+</tr>
+<tr>
+<td><img src="gallery/01-shell/07-assistant.gif" width="100%" alt="Assistant"><br><sub>Assistant panel</sub></td>
+<td><img src="gallery/01-shell/12-weather.gif" width="100%" alt="Weather and calendar"><br><sub>Calendar, weather and a focus timer</sub></td>
+</tr>
+<tr>
+<td><img src="gallery/01-shell/14-mixer.gif" width="100%" alt="Mixer"><br><sub>Volume, mic and brightness</sub></td>
+<td><img src="gallery/01-shell/15-power-profile.gif" width="100%" alt="Power profile"><br><sub>Power profile, cycled from the bar</sub></td>
+</tr>
+<tr>
+<td><img src="gallery/01-shell/11-wallpapers.gif" width="100%" alt="Wallpapers"><br><sub>Wallpaper picker for images, GIFs and video</sub></td>
+<td><img src="gallery/07-brand/02-meters.gif" width="100%" alt="System monitor"><br><sub>System monitor</sub></td>
+</tr>
 </table>
 
-<a id="polkit"></a>
-
-<img src="assets/headers/03-polkit.svg" width="100%" alt="03 Polkit">
+The notch holds the user, a Hyprland splash line and anything short-lived.
 
 <table>
-<tr><td width="50%"><img src="gallery/03-polkit/01-prompt.gif" width="100%" alt="Polkit: prompt"><br><sub><b>Prompt</b> — Slides up out of the screen frame</sub></td></tr>
+<tr>
+<td width="50%"><img src="gallery/01-shell/03-notch.gif" width="100%" alt="Notch"><br><sub>Notch</sub></td>
+<td width="50%"><img src="gallery/01-shell/05-notifications.gif" width="100%" alt="Notification"><br><sub>Notification</sub></td>
+</tr>
+<tr>
+<td><img src="gallery/01-shell/08-capture.gif" width="100%" alt="Screen capture"><br><sub>Screenshot and recording tools</sub></td>
+<td><img src="gallery/01-shell/10-power.gif" width="100%" alt="Power menu"><br><sub>Power menu</sub></td>
+</tr>
+<tr>
+<td><img src="gallery/06-desktop/02-osd.gif" width="100%" alt="Volume OSD"><br><sub>Volume OSD</sub></td>
+<td><img src="gallery/06-desktop/01-splash.png" width="100%" alt="Splash line"><br><sub>Splash line</sub></td>
+</tr>
 </table>
 
-<a id="lockscreen"></a>
+<br>
 
-<img src="assets/headers/04-lockscreen.svg" width="100%" alt="04 Lockscreen">
+<a id="login"></a>
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/headers/02-login-dark.svg"><img src="assets/headers/02-login-light.svg" width="100%" alt="Login"></picture>
+
+The greeter replaces SDDM and uses whatever wallpaper the desktop has, animated ones included.
+The lockscreen and the polkit prompt follow the same layout.
+
+<img src="gallery/02-greeter/01-login.png" width="100%" alt="Greeter">
 
 <table>
-<tr><td width="50%"><img src="gallery/04-lockscreen/01-lock.gif" width="100%" alt="Lockscreen: lock"><br><sub><b>Lock</b> — Lock and unlock</sub></td><td width="50%"><img src="gallery/04-lockscreen/02-card.png" width="100%" alt="Lockscreen: card"><br><sub><b>Card</b> — The password card appears as you type</sub></td></tr>
+<tr>
+<td width="50%"><img src="gallery/02-greeter/02-typing.gif" width="100%" alt="Typing the password"><br><sub>Password</sub></td>
+<td width="50%"><img src="gallery/02-greeter/03-unlock.gif" width="100%" alt="Logging in"><br><sub>Logging in</sub></td>
+</tr>
+<tr>
+<td><img src="gallery/02-greeter/04-wallpapers.gif" width="100%" alt="Greeter wallpapers"><br><sub>Desktop wallpaper carried over</sub></td>
+<td><img src="gallery/02-greeter/05-live-wallpaper.png" width="100%" alt="Animated wallpaper"><br><sub>Animated wallpaper</sub></td>
+</tr>
 </table>
+
+<img src="gallery/04-lockscreen/01-lock.gif" width="100%" alt="Lockscreen">
+<p align="center"><sub>Lockscreen over the live sky</sub></p>
+
+<table>
+<tr>
+<td width="50%"><img src="gallery/04-lockscreen/02-card.png" width="100%" alt="Lockscreen password card"><br><sub>The password card shows up once you type</sub></td>
+<td width="50%"><img src="gallery/03-polkit/01-prompt.gif" width="100%" alt="Polkit prompt"><br><sub>Polkit prompt</sub></td>
+</tr>
+</table>
+
+<br>
 
 <a id="sky"></a>
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/headers/03-sky-dark.svg"><img src="assets/headers/03-sky-light.svg" width="100%" alt="Sky"></picture>
 
-<img src="assets/headers/05-sky.svg" width="100%" alt="05 Sky">
+A wallpaper drawn live instead of a picture. Stars drift, the galaxy turns slowly, and now and
+then a ship passes through.
 
-<table>
-<tr><td width="50%"><img src="gallery/05-sky/01-galaxy.gif" width="100%" alt="Sky: galaxy"><br><sub><b>Galaxy</b> — Spiral arms, dust and distant light</sub></td><td width="50%"><img src="gallery/05-sky/02-systems.gif" width="100%" alt="Sky: systems"><br><sub><b>Systems</b> — The home system in motion</sub></td></tr>
-<tr><td width="50%"><img src="gallery/05-sky/03-ships.gif" width="100%" alt="Sky: ships"><br><sub><b>Ships</b> — A ship crosses, then jumps</sub></td><td width="50%"><img src="gallery/05-sky/04-events.gif" width="100%" alt="Sky: events"><br><sub><b>Events</b> — Warp out</sub></td></tr>
-<tr><td width="50%"><img src="gallery/05-sky/05-far-light.png" width="100%" alt="Sky: far light"><br><sub><b>Far light</b> — HR 1, the far light</sub></td></tr>
-</table>
-
-<a id="desktop"></a>
-
-<img src="assets/headers/06-desktop.svg" width="100%" alt="06 Desktop">
+<img src="gallery/05-sky/01-galaxy.gif" width="100%" alt="Galaxy">
 
 <table>
-<tr><td width="50%"><img src="gallery/06-desktop/01-splash.png" width="100%" alt="Desktop: splash"><br><sub><b>Splash</b> — Hyprland splash line under the notch</sub></td><td width="50%"><img src="gallery/06-desktop/02-osd.gif" width="100%" alt="Desktop: osd"><br><sub><b>OSD</b> — Volume and brightness</sub></td></tr>
+<tr>
+<td width="50%"><img src="gallery/05-sky/02-systems.gif" width="100%" alt="Home system"><br><sub>Home system</sub></td>
+<td width="50%"><img src="gallery/05-sky/03-ships.gif" width="100%" alt="Ship"><br><sub>A ship crossing, then jumping</sub></td>
+</tr>
+<tr>
+<td><img src="gallery/05-sky/04-events.gif" width="100%" alt="Warp"><br><sub>Warp out</sub></td>
+<td><img src="gallery/05-sky/05-far-light.png" width="100%" alt="Far light"><br><sub>HR 1, the far light from the logo</sub></td>
+</tr>
 </table>
 
-<a id="brand"></a>
+<br>
 
-<img src="assets/headers/07-brand.svg" width="100%" alt="07 Brand">
+<a id="terminal"></a>
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/headers/04-terminal-dark.svg"><img src="assets/headers/04-terminal-light.svg" width="100%" alt="Terminal"></picture>
 
-<table>
-<tr><td width="50%"><img src="gallery/07-brand/01-lockup.png" width="100%" alt="Brand: lockup"><br><sub><b>Lockup</b> — Wordmark and seven-star constellation</sub></td><td width="50%"><img src="gallery/07-brand/02-meters.gif" width="100%" alt="Brand: meters"><br><sub><b>Meters</b> — System metrics as segment meters</sub></td></tr>
-</table>
+<img src="gallery/08-system/02-terminal.png" width="100%" alt="Terminal and yazi">
+<p align="center"><sub>The terminal and yazi in the Hiraeth colours</sub></p>
 
-<a id="system"></a>
+<p align="center"><img src="gallery/08-system/01-fastfetch.png" width="60%" alt="fastfetch"></p>
+<p align="center"><sub>fastfetch, with the logo drawn by the shell</sub></p>
 
-<img src="assets/headers/08-system.svg" width="100%" alt="08 System">
-
-<table>
-<tr><td width="50%"><img src="gallery/08-system/01-fastfetch.png" width="100%" alt="System: fastfetch"><br><sub><b>Fastfetch</b> — Logo rendered by the shell</sub></td><td width="50%"><img src="gallery/08-system/02-terminal.png" width="100%" alt="System: terminal"><br><sub><b>Terminal</b> — kitty and yazi in the Hiraeth palette</sub></td></tr>
-</table>
-
-<!-- gallery:end -->
+<br>
 
 <a id="design"></a>
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/headers/05-design-dark.svg"><img src="assets/headers/05-design-light.svg" width="100%" alt="Design"></picture>
 
-## Design
+The logo is HIRAETH in Michroma under seven stars, one for each letter. The brightest one sits
+over the A. The bar icons are small constellations drawn the same way.
 
-### Palette
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/palette-dark.svg"><img src="assets/palette-light.svg" width="100%" alt="Palette"></picture>
 
-<img src="assets/palette.svg" width="100%" alt="Hiraeth palette">
+| Name | Hex | Used for |
+| :-- | :-- | :-- |
+| bg | `#05070f` | Deepest background |
+| sky | `#070a17` | Wallpaper |
+| navy | `#0b1330` | Panels |
+| line | `#1b2140` | Borders |
+| muted | `#8189a8` | Secondary text |
+| blue | `#b6c4ff` | Accents, star glow |
+| engine | `#a8eefc` | Active states |
+| ink | `#cfdaf7` | Text and lines |
+| core | `#f6f7ff` | Highlights |
 
-| Token | Hex | Use |
-| --- | --- | --- |
-| `bg` | `#05070f` | Deepest background |
-| `sky` | `#070a17` | Wallpaper and canvas |
-| `navy` | `#0b1330` | Panels, top of the sky |
-| `line` | `#1b2140` | Borders and dividers |
-| `muted` | `#8189a8` | Secondary text |
-| `blue` | `#b6c4ff` | Accents, star glow |
-| `engine` | `#a8eefc` | Active states, numbers |
-| `ink` | `#cfdaf7` | Text and hairlines |
-| `core` | `#f6f7ff` | Highlights |
+<br>
 
-### Typography
+<picture><source media="(prefers-color-scheme: dark)" srcset="assets/type-dark.svg"><img src="assets/type-light.svg" width="100%" alt="Michroma"></picture>
 
-<img src="assets/type.svg" width="100%" alt="Michroma type specimen">
-
-[Michroma](https://fonts.google.com/specimen/Michroma) for display text, set in uppercase with wide tracking.
+<br>
 
 ## Credits
 
-- [Quickshell](https://quickshell.org) — the QML toolkit the shell is built on
-- [Ambxst](https://github.com/Axenide/Ambxst) — the shell Hiraeth started from
+- [Quickshell](https://quickshell.org), the QML toolkit the shell runs on
+- [Ambxst](https://github.com/Axenide/Ambxst), which the shell started as a fork of
 - [Michroma](https://fonts.google.com/specimen/Michroma) by Vernon Adams, SIL Open Font License
